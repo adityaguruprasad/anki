@@ -1,0 +1,30 @@
+-- Create users table
+CREATE TABLE users (
+  id SERIAL PRIMARY KEY,
+  username VARCHAR(50) UNIQUE NOT NULL,
+  email VARCHAR(100) UNIQUE NOT NULL,
+  password_hash VARCHAR(100) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create decks table
+CREATE TABLE decks (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id),
+  name VARCHAR(100) NOT NULL,
+  description TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create cards table
+CREATE TABLE cards (
+  id SERIAL PRIMARY KEY,
+  deck_id INTEGER REFERENCES decks(id),
+  front_content TEXT NOT NULL,
+  back_content TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  last_reviewed TIMESTAMP,
+  next_review TIMESTAMP,
+  review_count INTEGER DEFAULT 0,
+  ease_factor FLOAT DEFAULT 2.5
+);
