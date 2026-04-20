@@ -4,6 +4,7 @@ const { Pool } = require('pg');
 const { register, login, authenticateToken } = require('./auth');
 const { calculateNextReview } = require('./spacedRepetition');
 const { buildSchedulingInsights } = require('./schedulingInsights');
+const { getDueCardsByDeck, submitStudySession } = require('./apiHandlers');
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -46,39 +47,8 @@ app.post('/api/decks', async (req, res) => {
   }
 });
 
-app.get('/api/cards/:deckId', async (req, res) => {
-  try {
-    const { deckId } = req.params;
-    const { rows } = await pool.query(
-      'SELECT * FROM cards WHERE deck_id = $1 AND next_review <= NOW()',
-      [deckId]
-    );
-    res.json(rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-app.post('/api/study-session', async (req, res) => {
-  try {
-    const { cardId, quality } = req.body;
-    const { rows } = await pool.query('SELECT * FROM cards WHERE id = $1', [cardId]);
-    const card = rows[0];
-
-    const { ease_factor, interval, next_review } = calculateNextReview(card, quality);
-
-    await pool.query(
-      'UPDATE cards SET last_reviewed = NOW(), next_review = $1, interval = $2, ease_factor = $3, review_count = review_count + 1 WHERE id = $4',
-      [next_review, interval, ease_factor, cardId]
-    );
-
-    res.json({ success: true });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
+app.get('/api/cards/:deckId', (req, res) => getDueCardsByDeck(req, res, pool));
+app.post('/api/study-session', (req, res) => submitStudySession(req, res, pool, calculateNextReview));
 
 app.get('/api/stats', async (req, res) => {
   try {
@@ -119,6 +89,12 @@ app.get('/api/scheduling-insights', async (req, res) => {
   }
 });
 
-app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
-});
+if (require.main === module) {
+  app.listen(port, () => {
+    console.log(`Server running on port ${port}`);
+  });
+}
+
+module.exports = {
+  app,
+};
