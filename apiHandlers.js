@@ -4,9 +4,35 @@ function isValidQuality(quality) {
   return Number.isInteger(quality) && quality >= 0 && quality <= 5;
 }
 
+function validatePositiveIntegerIdentifier(value, fieldName) {
+  if (typeof value === 'number') {
+    if (Number.isInteger(value) && value > 0) {
+      return { ok: true, value };
+    }
+    return { ok: false, error: `Invalid ${fieldName}: must be a positive integer` };
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (/^\d+$/.test(trimmed)) {
+      const parsed = Number.parseInt(trimmed, 10);
+      if (parsed > 0) {
+        return { ok: true, value: parsed };
+      }
+    }
+  }
+
+  return { ok: false, error: `Invalid ${fieldName}: must be a positive integer` };
+}
+
 async function getDueCardsByDeck(req, res, db) {
   try {
-    const { deckId } = req.params;
+    const deckIdValidation = validatePositiveIntegerIdentifier(req.params?.deckId, 'deckId');
+    if (!deckIdValidation.ok) {
+      return res.status(400).json({ error: deckIdValidation.error });
+    }
+
+    const deckId = deckIdValidation.value;
     const deckResult = await db.query(
       'SELECT id FROM decks WHERE id = $1 AND user_id = $2',
       [deckId, req.user.userId]
@@ -33,6 +59,12 @@ async function getDueCardsByDeck(req, res, db) {
 async function submitStudySession(req, res, db, calculateNextReview) {
   try {
     const { cardId, quality } = req.body;
+    const cardIdValidation = validatePositiveIntegerIdentifier(cardId, 'cardId');
+    if (!cardIdValidation.ok) {
+      return res.status(400).json({ error: cardIdValidation.error });
+    }
+
+    const validCardId = cardIdValidation.value;
     if (!isValidQuality(quality)) {
       return res.status(400).json({ error: 'Invalid quality: must be an integer between 0 and 5' });
     }
@@ -42,7 +74,7 @@ async function submitStudySession(req, res, db, calculateNextReview) {
        FROM cards c
        JOIN decks d ON d.id = c.deck_id
        WHERE c.id = $1 AND d.user_id = $2`,
-      [cardId, req.user.userId]
+      [validCardId, req.user.userId]
     );
     if (cardResult.rowCount === 0) {
       return res.status(404).json({ error: 'Card not found' });
@@ -53,7 +85,7 @@ async function submitStudySession(req, res, db, calculateNextReview) {
 
     await db.query(
       'UPDATE cards SET last_reviewed = NOW(), next_review = $1, interval = $2, ease_factor = $3, review_count = review_count + 1 WHERE id = $4',
-      [next_review, interval, ease_factor, cardId]
+      [next_review, interval, ease_factor, validCardId]
     );
 
     return res.json({ success: true });
@@ -97,4 +129,5 @@ module.exports = {
   getDueCardsByDeck,
   submitStudySession,
   isValidQuality,
+  validatePositiveIntegerIdentifier,
 };

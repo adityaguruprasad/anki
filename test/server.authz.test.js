@@ -1,7 +1,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { getDueCardsByDeck, submitStudySession, isValidQuality } = require('../apiHandlers');
+const {
+  getDueCardsByDeck,
+  submitStudySession,
+  isValidQuality,
+  validatePositiveIntegerIdentifier,
+} = require('../apiHandlers');
 
 function createRes() {
   return {
@@ -43,6 +48,41 @@ test('isValidQuality accepts only integers from 0 to 5', () => {
   assert.equal(isValidQuality('3'), false);
 });
 
+test('validatePositiveIntegerIdentifier accepts only positive integer-like values', () => {
+  assert.deepEqual(
+    validatePositiveIntegerIdentifier(5, 'deckId'),
+    { ok: true, value: 5 }
+  );
+  assert.deepEqual(
+    validatePositiveIntegerIdentifier(' 42 ', 'deckId'),
+    { ok: true, value: 42 }
+  );
+
+  const invalidValues = [undefined, null, '', '  ', 'abc', '1.2', '1e2', 0, -1, 1.5];
+  for (const value of invalidValues) {
+    assert.deepEqual(
+      validatePositiveIntegerIdentifier(value, 'deckId'),
+      { ok: false, error: 'Invalid deckId: must be a positive integer' }
+    );
+  }
+});
+
+test('GET /api/cards/:deckId returns 400 for invalid deckId and skips db query', async () => {
+  const invalidDeckIds = [undefined, null, '', 'abc', '1.2', '0', ' -5 ', 0, -2, 1.3];
+
+  for (const deckId of invalidDeckIds) {
+    const db = createDb([]);
+    const req = { params: { deckId }, user: { userId: 'user-1' } };
+    const res = createRes();
+
+    await getDueCardsByDeck(req, res, db);
+
+    assert.equal(res.statusCode, 400);
+    assert.deepEqual(res.body, { error: 'Invalid deckId: must be a positive integer' });
+    assert.equal(db.calls.length, 0);
+  }
+});
+
 test('GET /api/cards/:deckId returns 404 when deck is not owned by user', async () => {
   const db = createDb([{ rowCount: 0, rows: [] }]);
   const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
@@ -69,6 +109,22 @@ test('GET /api/cards/:deckId returns due cards for owned deck', async () => {
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, dueCards);
   assert.equal(db.calls.length, 2);
+});
+
+test('POST /api/study-session returns 400 for invalid cardId and skips db query', async () => {
+  const invalidCardIds = [undefined, null, '', 'abc', '1.2', '0', ' -7 ', 0, -1, 2.4];
+
+  for (const cardId of invalidCardIds) {
+    const db = createDb([]);
+    const req = { body: { cardId, quality: 3 }, user: { userId: 'user-1' } };
+    const res = createRes();
+
+    await submitStudySession(req, res, db);
+
+    assert.equal(res.statusCode, 400);
+    assert.deepEqual(res.body, { error: 'Invalid cardId: must be a positive integer' });
+    assert.equal(db.calls.length, 0);
+  }
 });
 
 test('POST /api/study-session returns 400 for invalid quality', async () => {
