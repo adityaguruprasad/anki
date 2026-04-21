@@ -4,7 +4,7 @@ const { Pool } = require('pg');
 const { register, login, authenticateToken } = require('./auth');
 const { calculateNextReview } = require('./spacedRepetition');
 const { buildSchedulingInsights } = require('./schedulingInsights');
-const { getDueCardsByDeck, submitStudySession } = require('./apiHandlers');
+const { createDeck, getDueCardsByDeck, submitStudySession } = require('./apiHandlers');
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -34,17 +34,7 @@ app.get('/api/decks', async (req, res) => {
 });
 
 app.post('/api/decks', async (req, res) => {
-  const { name } = req.body;
-  try {
-    const { rows } = await pool.query(
-      'INSERT INTO decks (user_id, name) VALUES ($1, $2) RETURNING *',
-      [req.user.userId, name]
-    );
-    res.status(201).json(rows[0]);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
+  return createDeck(req, res, pool);
 });
 
 app.get('/api/cards/:deckId', (req, res) => getDueCardsByDeck(req, res, pool));

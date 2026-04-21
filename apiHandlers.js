@@ -1,3 +1,5 @@
+const { validateDeckName } = require('./deckNameValidation');
+
 function isValidQuality(quality) {
   return Number.isInteger(quality) && quality >= 0 && quality <= 5;
 }
@@ -61,7 +63,37 @@ async function submitStudySession(req, res, db, calculateNextReview) {
   }
 }
 
+async function createDeck(req, res, db) {
+  try {
+    const validationResult = validateDeckName(req.body?.name);
+    if (!validationResult.ok) {
+      return res.status(400).json({ error: validationResult.error });
+    }
+
+    const deckName = validationResult.value;
+    const duplicateResult = await db.query(
+      'SELECT id FROM decks WHERE user_id = $1 AND LOWER(TRIM(name)) = LOWER($2)',
+      [req.user.userId, deckName]
+    );
+
+    if (duplicateResult.rowCount > 0) {
+      return res.status(409).json({ error: 'Deck name already exists for this user' });
+    }
+
+    const { rows } = await db.query(
+      'INSERT INTO decks (user_id, name) VALUES ($1, $2) RETURNING *',
+      [req.user.userId, deckName]
+    );
+
+    return res.status(201).json(rows[0]);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
 module.exports = {
+  createDeck,
   getDueCardsByDeck,
   submitStudySession,
   isValidQuality,
