@@ -103,6 +103,20 @@ function getDefaultPasswordHasher() {
   }
 }
 
+function normalizeEmail(value) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const email = value.trim().toLowerCase();
+  const parts = email.split('@');
+  if (parts.length !== 2 || parts[0] === '' || parts[1] === '') {
+    return null;
+  }
+
+  return email;
+}
+
 function createAuthHandlers(db, options = {}) {
   if (!db || typeof db.query !== 'function') {
     throw new TypeError('createAuthHandlers requires a database object with a query method');
@@ -116,12 +130,24 @@ function createAuthHandlers(db, options = {}) {
   const passwordHasher = options.passwordHasher || getDefaultPasswordHasher();
 
   const register = async (req, res) => {
-    const { username, email, password } = req.body;
+    const { username, email, password } = req.body || {};
+    const trimmedUsername = typeof username === 'string' ? username.trim() : '';
+    const normalizedEmail = normalizeEmail(email);
+    if (trimmedUsername === '') {
+      return res.status(400).json({ error: 'Username is required' });
+    }
+    if (normalizedEmail == null) {
+      return res.status(400).json({ error: 'Valid email is required' });
+    }
+    if (typeof password !== 'string' || password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    }
+
     try {
       const hashedPassword = await passwordHasher.hash(password, 10);
       const result = await db.query(
         'INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3) RETURNING id',
-        [username, email, hashedPassword]
+        [trimmedUsername, normalizedEmail, hashedPassword]
       );
       const token = signToken({ userId: result.rows[0].id }, jwtSecret, {
         expiresInSeconds: jwtExpiresInSeconds,
@@ -133,9 +159,17 @@ function createAuthHandlers(db, options = {}) {
   };
 
   const login = async (req, res) => {
-    const { email, password } = req.body;
+    const { email, password } = req.body || {};
+    const normalizedEmail = normalizeEmail(email);
+    if (normalizedEmail == null) {
+      return res.status(400).json({ error: 'Valid email is required' });
+    }
+    if (typeof password !== 'string' || password.length === 0) {
+      return res.status(400).json({ error: 'Password is required' });
+    }
+
     try {
-      const result = await db.query('SELECT * FROM users WHERE email = $1', [email]);
+      const result = await db.query('SELECT * FROM users WHERE email = $1', [normalizedEmail]);
       if (result.rows.length === 0) {
         return res.status(401).json({ error: 'Invalid credentials' });
       }
