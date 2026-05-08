@@ -6,7 +6,7 @@ function isValidQuality(quality) {
 
 function validatePositiveIntegerIdentifier(value, fieldName) {
   if (typeof value === 'number') {
-    if (Number.isInteger(value) && value > 0) {
+    if (Number.isSafeInteger(value) && value > 0) {
       return { ok: true, value };
     }
     return { ok: false, error: `Invalid ${fieldName}: must be a positive integer` };
@@ -15,9 +15,9 @@ function validatePositiveIntegerIdentifier(value, fieldName) {
   if (typeof value === 'string') {
     const trimmed = value.trim();
     if (/^\d+$/.test(trimmed)) {
-      const parsed = Number.parseInt(trimmed, 10);
-      if (parsed > 0) {
-        return { ok: true, value: parsed };
+      const parsed = BigInt(trimmed);
+      if (parsed > 0n && parsed <= BigInt(Number.MAX_SAFE_INTEGER)) {
+        return { ok: true, value: Number(parsed) };
       }
     }
   }

@@ -224,11 +224,33 @@ test('validatePositiveIntegerIdentifier accepts only positive integer-like value
     { ok: true, value: 5 }
   );
   assert.deepEqual(
+    validatePositiveIntegerIdentifier(Number.MAX_SAFE_INTEGER, 'deckId'),
+    { ok: true, value: Number.MAX_SAFE_INTEGER }
+  );
+  assert.deepEqual(
     validatePositiveIntegerIdentifier(' 42 ', 'deckId'),
     { ok: true, value: 42 }
   );
+  assert.deepEqual(
+    validatePositiveIntegerIdentifier(` ${Number.MAX_SAFE_INTEGER} `, 'deckId'),
+    { ok: true, value: Number.MAX_SAFE_INTEGER }
+  );
 
-  const invalidValues = [undefined, null, '', '  ', 'abc', '1.2', '1e2', 0, -1, 1.5];
+  const invalidValues = [
+    undefined,
+    null,
+    '',
+    '  ',
+    'abc',
+    '1.2',
+    '1e2',
+    0,
+    -1,
+    1.5,
+    Number.MAX_SAFE_INTEGER + 1,
+    `${Number.MAX_SAFE_INTEGER + 1}`,
+    '9007199254740993',
+  ];
   for (const value of invalidValues) {
     assert.deepEqual(
       validatePositiveIntegerIdentifier(value, 'deckId'),
@@ -238,7 +260,19 @@ test('validatePositiveIntegerIdentifier accepts only positive integer-like value
 });
 
 test('GET /api/cards/:deckId returns 400 for invalid deckId and skips db query', async () => {
-  const invalidDeckIds = [undefined, null, '', 'abc', '1.2', '0', ' -5 ', 0, -2, 1.3];
+  const invalidDeckIds = [
+    undefined,
+    null,
+    '',
+    'abc',
+    '1.2',
+    '0',
+    ' -5 ',
+    0,
+    -2,
+    1.3,
+    '9007199254740992',
+  ];
 
   for (const deckId of invalidDeckIds) {
     const db = createDb([]);
@@ -468,7 +502,20 @@ test('GET /api/scheduling-insights keeps null averageEaseFactor when no positive
 });
 
 test('POST /api/study-session returns 400 for invalid cardId and skips db query', async () => {
-  const invalidCardIds = [undefined, null, '', 'abc', '1.2', '0', ' -7 ', 0, -1, 2.4];
+  const invalidCardIds = [
+    undefined,
+    null,
+    '',
+    'abc',
+    '1.2',
+    '0',
+    ' -7 ',
+    0,
+    -1,
+    2.4,
+    '9007199254740992',
+    Number.MAX_SAFE_INTEGER + 1,
+  ];
 
   for (const cardId of invalidCardIds) {
     const db = createDb([]);
