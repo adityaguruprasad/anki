@@ -25,6 +25,11 @@ function validatePositiveIntegerIdentifier(value, fieldName) {
   return { ok: false, error: `Invalid ${fieldName}: must be a positive integer` };
 }
 
+function toAggregateCount(value) {
+  const count = Number(value);
+  return Number.isFinite(count) ? count : 0;
+}
+
 async function getDueCardsByDeck(req, res, db) {
   try {
     const deckIdValidation = validatePositiveIntegerIdentifier(req.params?.deckId, 'deckId');
@@ -139,12 +144,13 @@ async function getStats(req, res, db) {
       [req.user.userId]
     );
 
+    const stats = rows[0] ?? {};
     return res.json({
-      totalCards: rows[0].totalCards,
-      totalDecks: rows[0].totalDecks,
-      todayReviews: rows[0].todayReviews,
-      weekReviews: rows[0].weekReviews,
-      monthReviews: rows[0].monthReviews,
+      totalCards: toAggregateCount(stats.totalCards),
+      totalDecks: toAggregateCount(stats.totalDecks),
+      todayReviews: toAggregateCount(stats.todayReviews),
+      weekReviews: toAggregateCount(stats.weekReviews),
+      monthReviews: toAggregateCount(stats.monthReviews),
     });
   } catch (err) {
     console.error(err);

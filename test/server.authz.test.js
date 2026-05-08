@@ -127,7 +127,46 @@ test('GET /api/stats returns expected shape with a single user-scoped query', as
   await getStats(req, res, db);
 
   assert.equal(res.statusCode, 200);
-  assert.deepEqual(res.body, stats);
+  assert.deepEqual(res.body, {
+    totalCards: 12,
+    totalDecks: 3,
+    todayReviews: 4,
+    weekReviews: 7,
+    monthReviews: 10,
+  });
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, ['user-1']);
+  assert.match(db.calls[0].sql, /WHERE d\.user_id = \$1/);
+});
+
+test('GET /api/stats returns zero for null and empty aggregate values', async () => {
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [
+        {
+          totalCards: null,
+          totalDecks: '',
+          todayReviews: undefined,
+          weekReviews: null,
+          monthReviews: '',
+        },
+      ],
+    },
+  ]);
+  const req = { user: { userId: 'user-1' } };
+  const res = createRes();
+
+  await getStats(req, res, db);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, {
+    totalCards: 0,
+    totalDecks: 0,
+    todayReviews: 0,
+    weekReviews: 0,
+    monthReviews: 0,
+  });
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, ['user-1']);
   assert.match(db.calls[0].sql, /WHERE d\.user_id = \$1/);
