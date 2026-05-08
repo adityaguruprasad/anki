@@ -302,8 +302,11 @@ test('GET /api/cards/:deckId returns 404 when deck is not owned by user', async 
   assert.match(db.calls[0].sql, /WHERE d\.id = \$1 AND d\.user_id = \$2/);
 });
 
-test('GET /api/cards/:deckId returns due cards for owned deck with one query', async () => {
-  const dueCards = [{ id: 1 }, { id: 2 }];
+test('GET /api/cards/:deckId returns due cards for owned deck with one ordered query', async () => {
+  const dueCards = [
+    { id: 1, next_review: '2026-05-07T12:00:00.000Z' },
+    { id: 2, next_review: '2026-05-08T12:00:00.000Z' },
+  ];
   const db = createDb([
     {
       rowCount: 2,
@@ -317,10 +320,12 @@ test('GET /api/cards/:deckId returns due cards for owned deck with one query', a
 
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, dueCards);
+  assert.equal(Object.hasOwn(res.body[0], '__owned_deck_id'), false);
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, [42, 'user-1']);
   assert.match(db.calls[0].sql, /LEFT JOIN cards c/);
   assert.match(db.calls[0].sql, /WHERE d\.id = \$1 AND d\.user_id = \$2/);
+  assert.match(db.calls[0].sql, /ORDER BY c\.next_review ASC,\s*c\.id ASC/);
 });
 
 test('GET /api/cards/:deckId returns empty array for owned deck with no due cards', async () => {

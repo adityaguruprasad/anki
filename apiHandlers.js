@@ -95,7 +95,8 @@ async function getDueCardsByDeck(req, res, db) {
        LEFT JOIN cards c
          ON c.deck_id = d.id
         AND c.next_review <= NOW()
-       WHERE d.id = $1 AND d.user_id = $2`,
+       WHERE d.id = $1 AND d.user_id = $2
+       ORDER BY c.next_review ASC, c.id ASC`,
       [deckId, req.user.userId]
     );
 
