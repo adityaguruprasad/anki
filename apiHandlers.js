@@ -38,23 +38,28 @@ async function getDueCardsByDeck(req, res, db) {
     }
 
     const deckId = deckIdValidation.value;
-    const deckResult = await db.query(
-      'SELECT id FROM decks WHERE id = $1 AND user_id = $2',
+    const { rows } = await db.query(
+      `SELECT c.*, d.id AS "__owned_deck_id"
+       FROM decks d
+       LEFT JOIN cards c
+         ON c.deck_id = d.id
+        AND c.next_review <= NOW()
+       WHERE d.id = $1 AND d.user_id = $2`,
       [deckId, req.user.userId]
     );
 
-    if (deckResult.rowCount === 0) {
+    if (rows.length === 0) {
       return res.status(404).json({ error: 'Deck not found for user' });
     }
 
-    const { rows } = await db.query(
-      `SELECT c.*
-       FROM cards c
-       JOIN decks d ON d.id = c.deck_id
-       WHERE c.deck_id = $1 AND d.user_id = $2 AND c.next_review <= NOW()`,
-      [deckId, req.user.userId]
-    );
-    return res.json(rows);
+    const dueCards = rows
+      .filter((row) => row.id !== null)
+      .map((row) => {
+        const card = { ...row };
+        delete card.__owned_deck_id;
+        return card;
+      });
+    return res.json(dueCards);
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Internal server error' });

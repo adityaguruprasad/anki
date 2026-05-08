@@ -94,13 +94,17 @@ test('GET /api/cards/:deckId returns 404 when deck is not owned by user', async 
   assert.equal(res.statusCode, 404);
   assert.deepEqual(res.body, { error: 'Deck not found for user' });
   assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [42, 'user-1']);
+  assert.match(db.calls[0].sql, /WHERE d\.id = \$1 AND d\.user_id = \$2/);
 });
 
-test('GET /api/cards/:deckId returns due cards for owned deck', async () => {
+test('GET /api/cards/:deckId returns due cards for owned deck with one query', async () => {
   const dueCards = [{ id: 1 }, { id: 2 }];
   const db = createDb([
-    { rowCount: 1, rows: [{ id: 42 }] },
-    { rowCount: 2, rows: dueCards },
+    {
+      rowCount: 2,
+      rows: dueCards.map((card) => ({ ...card, __owned_deck_id: 42 })),
+    },
   ]);
   const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
   const res = createRes();
@@ -109,7 +113,28 @@ test('GET /api/cards/:deckId returns due cards for owned deck', async () => {
 
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, dueCards);
-  assert.equal(db.calls.length, 2);
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [42, 'user-1']);
+  assert.match(db.calls[0].sql, /LEFT JOIN cards c/);
+  assert.match(db.calls[0].sql, /WHERE d\.id = \$1 AND d\.user_id = \$2/);
+});
+
+test('GET /api/cards/:deckId returns empty array for owned deck with no due cards', async () => {
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [{ id: null, __owned_deck_id: 42 }],
+    },
+  ]);
+  const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+  const res = createRes();
+
+  await getDueCardsByDeck(req, res, db);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, []);
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [42, 'user-1']);
 });
 
 test('GET /api/stats returns expected shape with a single user-scoped query', async () => {
