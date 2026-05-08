@@ -3,8 +3,7 @@ const cors = require('cors');
 const { Pool } = require('pg');
 const { register, login, authenticateToken } = require('./auth');
 const { calculateNextReview } = require('./spacedRepetition');
-const { buildSchedulingInsights } = require('./schedulingInsights');
-const { createDeck, getDueCardsByDeck, getStats, submitStudySession } = require('./apiHandlers');
+const { createDeck, getDueCardsByDeck, getStats, getSchedulingInsights, submitStudySession } = require('./apiHandlers');
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -42,23 +41,7 @@ app.post('/api/study-session', (req, res) => submitStudySession(req, res, pool, 
 
 app.get('/api/stats', (req, res) => getStats(req, res, pool));
 
-app.get('/api/scheduling-insights', async (req, res) => {
-  try {
-    const { rows } = await pool.query(
-      `SELECT c.id, c.next_review, c.ease_factor, c.review_count
-       FROM cards c
-       JOIN decks d ON d.id = c.deck_id
-       WHERE d.user_id = $1`,
-      [req.user.userId]
-    );
-
-    const insights = buildSchedulingInsights(rows);
-    res.json(insights);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
+app.get('/api/scheduling-insights', (req, res) => getSchedulingInsights(req, res, pool));
 
 if (require.main === module) {
   app.listen(port, () => {

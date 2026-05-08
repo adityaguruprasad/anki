@@ -30,6 +30,42 @@ function toAggregateCount(value) {
   return Number.isFinite(count) ? count : 0;
 }
 
+function toNullableAggregateNumber(value) {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function startOfLocalDay(date) {
+  const day = new Date(date);
+  day.setHours(0, 0, 0, 0);
+  return day;
+}
+
+function addLocalDays(date, days) {
+  const day = new Date(date);
+  day.setDate(day.getDate() + days);
+  return day;
+}
+
+function getSchedulingInsightDateBoundaries(now = new Date()) {
+  // Preserve the previous app-local day bucketing for scheduling insights.
+  const todayStart = startOfLocalDay(now);
+  const tomorrowStart = addLocalDays(todayStart, 1);
+  const afterTomorrowStart = addLocalDays(todayStart, 2);
+  const sevenDayEndExclusive = addLocalDays(todayStart, 7);
+
+  return {
+    todayStart,
+    tomorrowStart,
+    afterTomorrowStart,
+    sevenDayEndExclusive,
+  };
+}
+
 async function getDueCardsByDeck(req, res, db) {
   try {
     const deckIdValidation = validatePositiveIntegerIdentifier(req.params?.deckId, 'deckId');
@@ -163,9 +199,70 @@ async function getStats(req, res, db) {
   }
 }
 
+async function getSchedulingInsights(req, res, db, now = new Date()) {
+  try {
+    const {
+      todayStart,
+      tomorrowStart,
+      afterTomorrowStart,
+      sevenDayEndExclusive,
+    } = getSchedulingInsightDateBoundaries(now);
+
+    const { rows } = await db.query(
+      `SELECT
+         COUNT(c.id) AS "totalCards",
+         COUNT(c.id) FILTER (WHERE c.next_review < $2) AS "overdue",
+         COUNT(c.id) FILTER (
+           WHERE c.next_review >= $2
+             AND c.next_review < $3
+         ) AS "dueToday",
+         COUNT(c.id) FILTER (
+           WHERE c.next_review >= $3
+             AND c.next_review < $4
+         ) AS "dueTomorrow",
+         COUNT(c.id) FILTER (
+           WHERE c.next_review >= $2
+             AND c.next_review < $5
+         ) AS "dueNext7Days",
+         COUNT(c.id) FILTER (
+           WHERE c.ease_factor > 0
+             AND c.ease_factor <= 1.6
+             AND COALESCE(c.review_count, 0) >= 5
+         ) AS "leechCandidates",
+         ROUND((AVG(c.ease_factor) FILTER (WHERE c.ease_factor > 0))::numeric, 2) AS "averageEaseFactor"
+       FROM cards c
+       JOIN decks d ON d.id = c.deck_id
+       WHERE d.user_id = $1`,
+      [req.user.userId, todayStart, tomorrowStart, afterTomorrowStart, sevenDayEndExclusive]
+    );
+
+    const stats = rows[0] ?? {};
+    const overdue = toAggregateCount(stats.overdue);
+    const dueToday = toAggregateCount(stats.dueToday);
+    const focusLoad = overdue + dueToday;
+    const averageEaseFactor = toNullableAggregateNumber(stats.averageEaseFactor);
+
+    return res.json({
+      totalCards: toAggregateCount(stats.totalCards),
+      overdue,
+      dueToday,
+      dueTomorrow: toAggregateCount(stats.dueTomorrow),
+      dueNext7Days: toAggregateCount(stats.dueNext7Days),
+      leechCandidates: toAggregateCount(stats.leechCandidates),
+      averageEaseFactor,
+      recommendedDailyReviewTarget: Math.max(10, Math.ceil(focusLoad * 1.2)),
+      suggestedNewCards: Math.max(0, 20 - focusLoad),
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
 module.exports = {
   createDeck,
   getStats,
+  getSchedulingInsights,
   getDueCardsByDeck,
   submitStudySession,
   isValidQuality,

@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const {
   getStats,
+  getSchedulingInsights,
   getDueCardsByDeck,
   submitStudySession,
   isValidQuality,
@@ -195,6 +196,107 @@ test('GET /api/stats returns zero for null and empty aggregate values', async ()
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, ['user-1']);
   assert.match(db.calls[0].sql, /WHERE d\.user_id = \$1/);
+});
+
+test('GET /api/scheduling-insights returns expected shape from one aggregate query', async () => {
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [
+        {
+          totalCards: '30',
+          overdue: '3',
+          dueToday: '2',
+          dueTomorrow: '4',
+          dueNext7Days: '12',
+          leechCandidates: '5',
+          averageEaseFactor: '2.35',
+        },
+      ],
+    },
+  ]);
+  const req = { user: { userId: 'user-1' } };
+  const res = createRes();
+
+  const now = new Date(2026, 4, 8, 15, 45, 12, 345);
+
+  await getSchedulingInsights(req, res, db, now);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, {
+    totalCards: 30,
+    overdue: 3,
+    dueToday: 2,
+    dueTomorrow: 4,
+    dueNext7Days: 12,
+    leechCandidates: 5,
+    averageEaseFactor: 2.35,
+    recommendedDailyReviewTarget: 10,
+    suggestedNewCards: 15,
+  });
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [
+    'user-1',
+    new Date(2026, 4, 8),
+    new Date(2026, 4, 9),
+    new Date(2026, 4, 10),
+    new Date(2026, 4, 15),
+  ]);
+  assert.match(db.calls[0].sql, /COUNT\(c\.id\)/);
+  assert.match(db.calls[0].sql, /WHERE d\.user_id = \$1/);
+  assert.match(db.calls[0].sql, /c\.next_review < \$2/);
+  assert.match(db.calls[0].sql, /c\.next_review >= \$2\s+AND c\.next_review < \$3/);
+  assert.match(db.calls[0].sql, /c\.next_review >= \$3\s+AND c\.next_review < \$4/);
+  assert.match(db.calls[0].sql, /c\.next_review >= \$2\s+AND c\.next_review < \$5/);
+  assert.doesNotMatch(db.calls[0].sql, /\bCURRENT_DATE\b/i);
+  assert.doesNotMatch(db.calls[0].sql, /SELECT\s+c\.id\b/i);
+  assert.doesNotMatch(db.calls[0].sql, /\bc\.next_review,\s*c\.ease_factor,\s*c\.review_count\b/i);
+});
+
+test('GET /api/scheduling-insights keeps null averageEaseFactor when no positive ease factors exist', async () => {
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [
+        {
+          totalCards: '4',
+          overdue: '9',
+          dueToday: '2',
+          dueTomorrow: '0',
+          dueNext7Days: '2',
+          leechCandidates: '0',
+          averageEaseFactor: null,
+        },
+      ],
+    },
+  ]);
+  const req = { user: { userId: 'user-1' } };
+  const res = createRes();
+
+  const now = new Date(2026, 4, 8, 15, 45, 12, 345);
+
+  await getSchedulingInsights(req, res, db, now);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, {
+    totalCards: 4,
+    overdue: 9,
+    dueToday: 2,
+    dueTomorrow: 0,
+    dueNext7Days: 2,
+    leechCandidates: 0,
+    averageEaseFactor: null,
+    recommendedDailyReviewTarget: 14,
+    suggestedNewCards: 9,
+  });
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [
+    'user-1',
+    new Date(2026, 4, 8),
+    new Date(2026, 4, 9),
+    new Date(2026, 4, 10),
+    new Date(2026, 4, 15),
+  ]);
 });
 
 test('POST /api/study-session returns 400 for invalid cardId and skips db query', async () => {
