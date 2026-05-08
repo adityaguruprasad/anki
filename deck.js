@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { useHistory } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
 const DeckManagement = () => {
+  const history = useHistory();
   const [decks, setDecks] = useState([]);
   const [newDeckName, setNewDeckName] = useState('');
 
@@ -68,7 +70,9 @@ const DeckManagement = () => {
                 <h3 className="text-lg font-semibold">{deck.name}</h3>
                 <p className="text-sm text-gray-500">Cards: {totalCards}</p>
                 <p className="text-sm text-gray-500">Due: {dueCards}</p>
-                <Button className="mt-2">Study</Button>
+                <Button className="mt-2" onClick={() => history.push(`/study?${new URLSearchParams({ deckId: deck.id })}`)}>
+                  Study
+                </Button>
               </CardContent>
             </Card>
           );
