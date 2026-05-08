@@ -16,6 +16,9 @@ CREATE TABLE decks (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE UNIQUE INDEX decks_user_id_normalized_name_unique_idx
+  ON decks (user_id, (LOWER(TRIM(name))));
+
 -- Create cards table
 CREATE TABLE cards (
   id SERIAL PRIMARY KEY,

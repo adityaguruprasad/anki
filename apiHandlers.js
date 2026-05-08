@@ -149,19 +149,17 @@ async function createDeck(req, res, db) {
     }
 
     const deckName = validationResult.value;
-    const duplicateResult = await db.query(
-      'SELECT id FROM decks WHERE user_id = $1 AND LOWER(TRIM(name)) = LOWER($2)',
+    const { rows } = await db.query(
+      `INSERT INTO decks (user_id, name)
+       VALUES ($1, $2)
+       ON CONFLICT (user_id, (LOWER(TRIM(name)))) DO NOTHING
+       RETURNING *`,
       [req.user.userId, deckName]
     );
 
-    if (duplicateResult.rowCount > 0) {
+    if (rows.length === 0) {
       return res.status(409).json({ error: 'Deck name already exists for this user' });
     }
-
-    const { rows } = await db.query(
-      'INSERT INTO decks (user_id, name) VALUES ($1, $2) RETURNING *',
-      [req.user.userId, deckName]
-    );
 
     return res.status(201).json(rows[0]);
   } catch (err) {

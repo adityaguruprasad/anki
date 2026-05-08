@@ -53,7 +53,7 @@ test('validateDeckName rejects over-length names', () => {
 });
 
 test('POST /api/decks returns 409 when a case-insensitive duplicate exists', async () => {
-  const db = createDb([{ rowCount: 1, rows: [{ id: 10 }] }]);
+  const db = createDb([{ rowCount: 0, rows: [] }]);
   const req = { body: { name: ' spanish ' }, user: { userId: 'user-1' } };
   const res = createRes();
 
@@ -79,10 +79,7 @@ test('POST /api/decks returns 400 when validation fails', async () => {
 
 test('POST /api/decks inserts trimmed name and returns 201', async () => {
   const createdRow = { id: 22, user_id: 'user-1', name: 'Spanish' };
-  const db = createDb([
-    { rowCount: 0, rows: [] },
-    { rowCount: 1, rows: [createdRow] },
-  ]);
+  const db = createDb([{ rowCount: 1, rows: [createdRow] }]);
   const req = { body: { name: '  Spanish  ' }, user: { userId: 'user-1' } };
   const res = createRes();
 
@@ -90,6 +87,6 @@ test('POST /api/decks inserts trimmed name and returns 201', async () => {
 
   assert.equal(res.statusCode, 201);
   assert.deepEqual(res.body, createdRow);
-  assert.equal(db.calls.length, 2);
-  assert.deepEqual(db.calls[1].params, ['user-1', 'Spanish']);
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, ['user-1', 'Spanish']);
 });
