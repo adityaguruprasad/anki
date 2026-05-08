@@ -275,6 +275,76 @@ async function getDecks(req, res, db) {
   }
 }
 
+async function deleteDeck(req, res, db) {
+  const deckIdValidation = validatePositiveIntegerIdentifier(req.params?.deckId, 'deckId');
+  if (!deckIdValidation.ok) {
+    return res.status(400).json({ error: deckIdValidation.error });
+  }
+
+  const deckId = deckIdValidation.value;
+  let client;
+  let transactionStarted = false;
+
+  try {
+    client = typeof db.connect === 'function' ? await db.connect() : db;
+
+    await client.query('BEGIN');
+    transactionStarted = true;
+
+    const deckResult = await client.query(
+      `SELECT id
+       FROM decks
+       WHERE id = $1 AND user_id = $2
+       FOR UPDATE`,
+      [deckId, req.user.userId]
+    );
+
+    if (deckResult.rowCount === 0) {
+      await client.query('ROLLBACK');
+      transactionStarted = false;
+      return res.status(404).json({ error: 'Deck not found' });
+    }
+
+    await client.query(
+      `DELETE FROM cards
+       WHERE deck_id = $1`,
+      [deckId]
+    );
+
+    const deleteResult = await client.query(
+      `DELETE FROM decks
+       WHERE id = $1 AND user_id = $2`,
+      [deckId, req.user.userId]
+    );
+
+    if (deleteResult.rowCount === 0) {
+      await client.query('ROLLBACK');
+      transactionStarted = false;
+      return res.status(404).json({ error: 'Deck not found' });
+    }
+
+    await client.query('COMMIT');
+    transactionStarted = false;
+
+    return res.json({ success: true });
+  } catch (err) {
+    if (transactionStarted) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackErr) {
+        console.error(rollbackErr);
+      }
+    }
+
+    console.error(err);
+    return res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    if (client && typeof client.release === 'function') {
+      client.release();
+    }
+  }
+}
+
 async function getStats(req, res, db, now = new Date()) {
   try {
     const todayStart = startOfLocalDay(now);
@@ -381,6 +451,7 @@ async function getSchedulingInsights(req, res, db, now = new Date()) {
 module.exports = {
   createCard,
   createDeck,
+  deleteDeck,
   getDecks,
   getStats,
   getSchedulingInsights,

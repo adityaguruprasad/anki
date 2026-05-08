@@ -9,6 +9,8 @@ const DeckManagement = () => {
   const [decks, setDecks] = useState([]);
   const [newDeckName, setNewDeckName] = useState('');
   const [cardForms, setCardForms] = useState({});
+  const [deleteErrors, setDeleteErrors] = useState({});
+  const [deletingDecks, setDeletingDecks] = useState({});
 
   useEffect(() => {
     fetchDecks();
@@ -132,6 +134,58 @@ const DeckManagement = () => {
     }
   };
 
+  const deleteDeck = async (deckId) => {
+    if (!window.confirm('Delete this deck and all of its cards?')) {
+      return;
+    }
+
+    setDeleteErrors((currentErrors) => ({
+      ...currentErrors,
+      [deckId]: '',
+    }));
+    setDeletingDecks((currentDecks) => ({
+      ...currentDecks,
+      [deckId]: true,
+    }));
+
+    try {
+      const response = await fetch(`http://localhost:3001/api/decks/${deckId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        setDeleteErrors((currentErrors) => ({
+          ...currentErrors,
+          [deckId]: data.error || 'Unable to delete deck.',
+        }));
+        return;
+      }
+
+      setDeleteErrors((currentErrors) => {
+        const nextErrors = { ...currentErrors };
+        delete nextErrors[deckId];
+        return nextErrors;
+      });
+      fetchDecks();
+    } catch (error) {
+      console.error('Error deleting deck:', error);
+      setDeleteErrors((currentErrors) => ({
+        ...currentErrors,
+        [deckId]: 'Network error. Please try again.',
+      }));
+    } finally {
+      setDeletingDecks((currentDecks) => {
+        const nextDecks = { ...currentDecks };
+        delete nextDecks[deckId];
+        return nextDecks;
+      });
+    }
+  };
+
   return (
     <div className="max-w-2xl mx-auto mt-10">
       <h2 className="text-2xl font-bold mb-4">Manage Decks</h2>
@@ -150,6 +204,8 @@ const DeckManagement = () => {
           const totalCards = deck.totalCards ?? 0;
           const dueCards = deck.dueCards ?? 0;
           const cardForm = cardForms[deck.id] || {};
+          const deleteError = deleteErrors[deck.id];
+          const isDeletingDeck = Boolean(deletingDecks[deck.id]);
 
           return (
             <Card key={deck.id}>
@@ -160,6 +216,16 @@ const DeckManagement = () => {
                 <Button className="mt-2" onClick={() => history.push(`/study?${new URLSearchParams({ deckId: deck.id })}`)}>
                   Study
                 </Button>
+                <Button
+                  className="mt-2 ml-2 bg-red-600 hover:bg-red-700"
+                  disabled={isDeletingDeck}
+                  onClick={() => deleteDeck(deck.id)}
+                >
+                  {isDeletingDeck ? 'Deleting...' : 'Delete'}
+                </Button>
+                {deleteError && (
+                  <p className="mt-2 text-sm text-red-600">{deleteError}</p>
+                )}
                 <form className="mt-4 space-y-2" onSubmit={(event) => addCard(event, deck.id)}>
                   <Input
                     type="text"

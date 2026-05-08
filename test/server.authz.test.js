@@ -6,6 +6,7 @@ const path = require('node:path');
 const {
   createCard,
   createDeck,
+  deleteDeck,
   getDecks,
   getStats,
   getSchedulingInsights,
@@ -43,6 +44,22 @@ function createDb(results) {
       return next;
     },
   };
+}
+
+function createConnectedDb(poolResults, clientResults) {
+  const db = createDb(poolResults);
+  const client = createDb(clientResults);
+  client.releaseCalls = 0;
+  client.release = () => {
+    client.releaseCalls += 1;
+  };
+  db.connectCalls = 0;
+  db.client = client;
+  db.connect = async () => {
+    db.connectCalls += 1;
+    return client;
+  };
+  return db;
 }
 
 test('POST /api/decks returns 400 for invalid deck name and skips db query', async () => {
@@ -207,6 +224,151 @@ test('GET /api/decks returns 500 when the db query fails', async () => {
   assert.deepEqual(res.body, { error: 'Internal server error' });
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, ['user-1']);
+});
+
+test('DELETE /api/decks/:deckId returns 400 for invalid deckId and skips db query', async () => {
+  const invalidDeckIds = [
+    undefined,
+    null,
+    '',
+    'abc',
+    '1.2',
+    '0',
+    ' -5 ',
+    0,
+    -2,
+    1.3,
+    '9007199254740992',
+  ];
+
+  for (const deckId of invalidDeckIds) {
+    const db = createConnectedDb([], []);
+    const req = { params: { deckId }, user: { userId: 'user-1' } };
+    const res = createRes();
+
+    await deleteDeck(req, res, db);
+
+    assert.equal(res.statusCode, 400);
+    assert.deepEqual(res.body, { error: 'Invalid deckId: must be a positive integer' });
+    assert.equal(db.calls.length, 0);
+    assert.equal(db.connectCalls, 0);
+    assert.equal(db.client.calls.length, 0);
+    assert.equal(db.client.releaseCalls, 0);
+  }
+});
+
+test('DELETE /api/decks/:deckId deletes cards then deck using a connected client transaction', async () => {
+  const db = createConnectedDb([], [
+    { rowCount: null, rows: [] },
+    { rowCount: 1, rows: [{ id: 42 }] },
+    { rowCount: 3, rows: [] },
+    { rowCount: 1, rows: [] },
+    { rowCount: null, rows: [] },
+  ]);
+  const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+  const res = createRes();
+
+  await deleteDeck(req, res, db);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, { success: true });
+  assert.equal(db.calls.length, 0);
+  assert.equal(db.connectCalls, 1);
+  assert.equal(db.client.calls.length, 5);
+  assert.equal(db.client.calls[0].sql, 'BEGIN');
+  assert.match(db.client.calls[1].sql, /SELECT\s+id\s+FROM\s+decks/i);
+  assert.match(db.client.calls[1].sql, /WHERE\s+id\s+=\s+\$1\s+AND\s+user_id\s+=\s+\$2/i);
+  assert.match(db.client.calls[1].sql, /FOR\s+UPDATE/i);
+  assert.deepEqual(db.client.calls[1].params, [42, 'user-1']);
+  assert.match(db.client.calls[2].sql, /DELETE\s+FROM\s+cards/i);
+  assert.match(db.client.calls[2].sql, /WHERE\s+deck_id\s+=\s+\$1/i);
+  assert.deepEqual(db.client.calls[2].params, [42]);
+  assert.match(db.client.calls[3].sql, /DELETE\s+FROM\s+decks/i);
+  assert.match(db.client.calls[3].sql, /WHERE\s+id\s+=\s+\$1\s+AND\s+user_id\s+=\s+\$2/i);
+  assert.deepEqual(db.client.calls[3].params, [42, 'user-1']);
+  assert.equal(db.client.calls[4].sql, 'COMMIT');
+  assert.equal(db.client.releaseCalls, 1);
+});
+
+test('DELETE /api/decks/:deckId returns 404 for missing or unowned deck without deleting cards', async () => {
+  const db = createConnectedDb([], [
+    { rowCount: null, rows: [] },
+    { rowCount: 0, rows: [] },
+    { rowCount: null, rows: [] },
+  ]);
+  const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+  const res = createRes();
+
+  await deleteDeck(req, res, db);
+
+  assert.equal(res.statusCode, 404);
+  assert.deepEqual(res.body, { error: 'Deck not found' });
+  assert.equal(db.calls.length, 0);
+  assert.equal(db.connectCalls, 1);
+  assert.equal(db.client.calls.length, 3);
+  assert.equal(db.client.calls[0].sql, 'BEGIN');
+  assert.match(db.client.calls[1].sql, /SELECT\s+id\s+FROM\s+decks/i);
+  assert.match(db.client.calls[1].sql, /WHERE\s+id\s+=\s+\$1\s+AND\s+user_id\s+=\s+\$2/i);
+  assert.match(db.client.calls[1].sql, /FOR\s+UPDATE/i);
+  assert.deepEqual(db.client.calls[1].params, [42, 'user-1']);
+  assert.equal(db.client.calls[2].sql, 'ROLLBACK');
+  assert.equal(db.client.calls.some((call) => /DELETE\s+FROM\s+cards/i.test(call.sql)), false);
+  assert.equal(db.client.releaseCalls, 1);
+});
+
+test('DELETE /api/decks/:deckId rolls back on connected client failure after BEGIN', async () => {
+  const db = createConnectedDb([], [
+    { rowCount: null, rows: [] },
+    { rowCount: 1, rows: [{ id: 42 }] },
+    new Error('delete failed'),
+    { rowCount: null, rows: [] },
+  ]);
+  const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+  const res = createRes();
+  const originalError = console.error;
+  console.error = () => {};
+
+  try {
+    await deleteDeck(req, res, db);
+  } finally {
+    console.error = originalError;
+  }
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Internal server error' });
+  assert.equal(db.calls.length, 0);
+  assert.equal(db.connectCalls, 1);
+  assert.equal(db.client.calls.length, 4);
+  assert.equal(db.client.calls[0].sql, 'BEGIN');
+  assert.match(db.client.calls[1].sql, /SELECT\s+id\s+FROM\s+decks/i);
+  assert.match(db.client.calls[1].sql, /FOR\s+UPDATE/i);
+  assert.match(db.client.calls[2].sql, /DELETE\s+FROM\s+cards/i);
+  assert.equal(db.client.calls[3].sql, 'ROLLBACK');
+  assert.equal(db.client.releaseCalls, 1);
+});
+
+test('DELETE /api/decks/:deckId falls back to db query transaction when connect is unavailable', async () => {
+  const db = createDb([
+    { rowCount: null, rows: [] },
+    { rowCount: 1, rows: [{ id: 42 }] },
+    { rowCount: 3, rows: [] },
+    { rowCount: 1, rows: [] },
+    { rowCount: null, rows: [] },
+  ]);
+  const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+  const res = createRes();
+
+  await deleteDeck(req, res, db);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, { success: true });
+  assert.equal(db.calls.length, 5);
+  assert.equal(db.calls[0].sql, 'BEGIN');
+  assert.match(db.calls[1].sql, /SELECT\s+id\s+FROM\s+decks/i);
+  assert.match(db.calls[1].sql, /FOR\s+UPDATE/i);
+  assert.match(db.calls[2].sql, /DELETE\s+FROM\s+cards/i);
+  assert.match(db.calls[3].sql, /DELETE\s+FROM\s+decks/i);
+  assert.equal(db.calls[4].sql, 'COMMIT');
 });
 
 test('isValidQuality accepts only integers from 0 to 5', () => {
