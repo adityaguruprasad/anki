@@ -3,7 +3,7 @@ const cors = require('cors');
 const { Pool } = require('pg');
 const { register, login, authenticateToken } = require('./auth');
 const { calculateNextReview } = require('./spacedRepetition');
-const { createDeck, getDueCardsByDeck, getStats, getSchedulingInsights, submitStudySession } = require('./apiHandlers');
+const { createDeck, getDecks, getDueCardsByDeck, getStats, getSchedulingInsights, submitStudySession } = require('./apiHandlers');
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -22,15 +22,7 @@ app.post('/api/login', login);
 // Protected routes
 app.use(authenticateToken);
 
-app.get('/api/decks', async (req, res) => {
-  try {
-    const { rows } = await pool.query('SELECT * FROM decks WHERE user_id = $1', [req.user.userId]);
-    res.json(rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
+app.get('/api/decks', (req, res) => getDecks(req, res, pool));
 
 app.post('/api/decks', async (req, res) => {
   return createDeck(req, res, pool);

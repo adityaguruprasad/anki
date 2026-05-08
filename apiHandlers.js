@@ -183,6 +183,32 @@ async function createDeck(req, res, db) {
   }
 }
 
+async function getDecks(req, res, db) {
+  try {
+    const { rows } = await db.query(
+      `SELECT
+         d.*,
+         COUNT(c.id) AS "totalCards",
+         COUNT(c.id) FILTER (WHERE c.next_review <= NOW()) AS "dueCards"
+       FROM decks d
+       LEFT JOIN cards c ON c.deck_id = d.id
+       WHERE d.user_id = $1
+       GROUP BY d.id
+       ORDER BY d.created_at DESC, d.id DESC`,
+      [req.user.userId]
+    );
+
+    return res.json(rows.map((deck) => ({
+      ...deck,
+      totalCards: toAggregateCount(deck.totalCards),
+      dueCards: toAggregateCount(deck.dueCards),
+    })));
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
 async function getStats(req, res, db) {
   try {
     const { rows } = await db.query(
@@ -274,6 +300,7 @@ async function getSchedulingInsights(req, res, db, now = new Date()) {
 
 module.exports = {
   createDeck,
+  getDecks,
   getStats,
   getSchedulingInsights,
   getDueCardsByDeck,

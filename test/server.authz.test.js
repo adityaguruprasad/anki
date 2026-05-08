@@ -5,6 +5,7 @@ const path = require('node:path');
 
 const {
   createDeck,
+  getDecks,
   getStats,
   getSchedulingInsights,
   getDueCardsByDeck,
@@ -111,6 +112,100 @@ test('anki.db enforces unique normalized deck names per user', () => {
   const schema = fs.readFileSync(path.join(__dirname, '..', 'anki.db'), 'utf8');
 
   assert.match(schema, /CREATE\s+UNIQUE\s+INDEX\s+\S+\s+ON\s+decks\s*\(\s*user_id\s*,\s*\(\s*LOWER\(TRIM\(name\)\)\s*\)\s*\)/i);
+});
+
+test('GET /api/decks returns decks with one user-scoped aggregate query', async () => {
+  const db = createDb([
+    {
+      rowCount: 2,
+      rows: [
+        { id: 1, user_id: 'user-1', name: 'Biology', description: null, created_at: '2026-05-08', totalCards: '10', dueCards: '3' },
+        { id: 2, user_id: 'user-1', name: 'Math', description: 'Algebra', created_at: '2026-05-08', totalCards: '4', dueCards: '0' },
+      ],
+    },
+  ]);
+  const req = { user: { userId: 'user-1' } };
+  const res = createRes();
+
+  await getDecks(req, res, db);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, [
+    { id: 1, user_id: 'user-1', name: 'Biology', description: null, created_at: '2026-05-08', totalCards: 10, dueCards: 3 },
+    { id: 2, user_id: 'user-1', name: 'Math', description: 'Algebra', created_at: '2026-05-08', totalCards: 4, dueCards: 0 },
+  ]);
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, ['user-1']);
+  assert.match(db.calls[0].sql, /FROM decks d/);
+  assert.match(db.calls[0].sql, /LEFT JOIN cards c ON c\.deck_id = d\.id/);
+  assert.match(db.calls[0].sql, /WHERE d\.user_id = \$1/);
+  assert.match(db.calls[0].sql, /GROUP BY d\.id/);
+  assert.match(db.calls[0].sql, /ORDER BY d\.created_at DESC,\s*d\.id DESC/);
+  assert.match(db.calls[0].sql, /COUNT\(c\.id\) AS "totalCards"/);
+  assert.match(db.calls[0].sql, /COUNT\(c\.id\) FILTER \(WHERE c\.next_review <= NOW\(\)\) AS "dueCards"/);
+});
+
+test('GET /api/decks preserves empty decks with zero counts', async () => {
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [
+        { id: 3, user_id: 'user-1', name: 'Empty', description: null, created_at: '2026-05-08', totalCards: '0', dueCards: '0' },
+      ],
+    },
+  ]);
+  const req = { user: { userId: 'user-1' } };
+  const res = createRes();
+
+  await getDecks(req, res, db);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, [
+    { id: 3, user_id: 'user-1', name: 'Empty', description: null, created_at: '2026-05-08', totalCards: 0, dueCards: 0 },
+  ]);
+  assert.equal(db.calls.length, 1);
+  assert.match(db.calls[0].sql, /LEFT JOIN cards c/);
+});
+
+test('GET /api/decks converts aggregate strings to numbers', async () => {
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [
+        { id: 4, user_id: 'user-1', name: 'Chemistry', totalCards: '12', dueCards: '5' },
+      ],
+    },
+  ]);
+  const req = { user: { userId: 'user-1' } };
+  const res = createRes();
+
+  await getDecks(req, res, db);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, [
+    { id: 4, user_id: 'user-1', name: 'Chemistry', totalCards: 12, dueCards: 5 },
+  ]);
+  assert.equal(typeof res.body[0].totalCards, 'number');
+  assert.equal(typeof res.body[0].dueCards, 'number');
+});
+
+test('GET /api/decks returns 500 when the db query fails', async () => {
+  const db = createDb([new Error('db unavailable')]);
+  const req = { user: { userId: 'user-1' } };
+  const res = createRes();
+  const originalError = console.error;
+  console.error = () => {};
+
+  try {
+    await getDecks(req, res, db);
+  } finally {
+    console.error = originalError;
+  }
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Internal server error' });
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, ['user-1']);
 });
 
 test('isValidQuality accepts only integers from 0 to 5', () => {

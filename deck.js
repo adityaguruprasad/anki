@@ -58,15 +58,21 @@ const DeckManagement = () => {
         <Button onClick={createDeck}>Create Deck</Button>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {decks.map(deck => (
-          <Card key={deck.id}>
-            <CardContent className="p-4">
-              <h3 className="text-lg font-semibold">{deck.name}</h3>
-              <p className="text-sm text-gray-500">Cards: {deck.card_count || 0}</p>
-              <Button className="mt-2">Study</Button>
-            </CardContent>
-          </Card>
-        ))}
+        {decks.map(deck => {
+          const totalCards = deck.totalCards ?? 0;
+          const dueCards = deck.dueCards ?? 0;
+
+          return (
+            <Card key={deck.id}>
+              <CardContent className="p-4">
+                <h3 className="text-lg font-semibold">{deck.name}</h3>
+                <p className="text-sm text-gray-500">Cards: {totalCards}</p>
+                <p className="text-sm text-gray-500">Due: {dueCards}</p>
+                <Button className="mt-2">Study</Button>
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
     </div>
   );
