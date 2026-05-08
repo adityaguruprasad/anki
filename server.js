@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
-const { register, login, authenticateToken } = require('./auth');
+const { createAuthHandlers } = require('./auth');
 const { calculateNextReview } = require('./spacedRepetition');
 const { createDeck, getDecks, getDueCardsByDeck, getStats, getSchedulingInsights, submitStudySession } = require('./apiHandlers');
 
@@ -14,6 +14,7 @@ app.use(express.json());
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
+const { register, login, authenticateToken } = createAuthHandlers(pool);
 
 // Auth routes
 app.post('/api/register', register);
