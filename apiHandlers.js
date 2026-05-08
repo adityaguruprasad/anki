@@ -39,6 +39,8 @@ function toNullableAggregateNumber(value) {
   return Number.isFinite(number) ? number : null;
 }
 
+// Stats and scheduling buckets intentionally use the Node process local timezone;
+// keep Node TZ aligned with the database/session timezone for timestamp columns.
 function startOfLocalDay(date) {
   const day = new Date(date);
   day.setHours(0, 0, 0, 0);
@@ -209,19 +211,33 @@ async function getDecks(req, res, db) {
   }
 }
 
-async function getStats(req, res, db) {
+async function getStats(req, res, db, now = new Date()) {
   try {
+    const todayStart = startOfLocalDay(now);
+    const tomorrowStart = addLocalDays(todayStart, 1);
+    const sevenDayLookbackStart = addLocalDays(todayStart, -7);
+    const thirtyDayLookbackStart = addLocalDays(todayStart, -30);
+
     const { rows } = await db.query(
       `SELECT
          COUNT(c.id) AS "totalCards",
          COUNT(DISTINCT d.id) AS "totalDecks",
-         COUNT(c.id) FILTER (WHERE c.last_reviewed >= CURRENT_DATE) AS "todayReviews",
-         COUNT(c.id) FILTER (WHERE c.last_reviewed >= CURRENT_DATE - INTERVAL '7 days') AS "weekReviews",
-         COUNT(c.id) FILTER (WHERE c.last_reviewed >= CURRENT_DATE - INTERVAL '30 days') AS "monthReviews"
+         COUNT(c.id) FILTER (
+           WHERE c.last_reviewed >= $2
+             AND c.last_reviewed < $3
+         ) AS "todayReviews",
+         COUNT(c.id) FILTER (
+           WHERE c.last_reviewed >= $4
+             AND c.last_reviewed < $3
+         ) AS "weekReviews",
+         COUNT(c.id) FILTER (
+           WHERE c.last_reviewed >= $5
+             AND c.last_reviewed < $3
+         ) AS "monthReviews"
        FROM decks d
        LEFT JOIN cards c ON c.deck_id = d.id
        WHERE d.user_id = $1`,
-      [req.user.userId]
+      [req.user.userId, todayStart, tomorrowStart, sevenDayLookbackStart, thirtyDayLookbackStart]
     );
 
     const stats = rows[0] ?? {};

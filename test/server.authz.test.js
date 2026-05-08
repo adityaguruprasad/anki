@@ -351,8 +351,9 @@ test('GET /api/stats returns expected shape with a single user-scoped query', as
   const db = createDb([{ rowCount: 1, rows: [stats] }]);
   const req = { user: { userId: 'user-1' } };
   const res = createRes();
+  const now = new Date(2026, 4, 8, 15, 45, 12, 345);
 
-  await getStats(req, res, db);
+  await getStats(req, res, db, now);
 
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, {
@@ -363,8 +364,81 @@ test('GET /api/stats returns expected shape with a single user-scoped query', as
     monthReviews: 10,
   });
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, ['user-1']);
+  assert.deepEqual(db.calls[0].params, [
+    'user-1',
+    new Date(2026, 4, 8),
+    new Date(2026, 4, 9),
+    new Date(2026, 4, 1),
+    new Date(2026, 3, 8),
+  ]);
   assert.match(db.calls[0].sql, /WHERE d\.user_id = \$1/);
+  assert.match(db.calls[0].sql, /c\.last_reviewed >= \$2\s+AND c\.last_reviewed < \$3/);
+  assert.match(db.calls[0].sql, /c\.last_reviewed >= \$4\s+AND c\.last_reviewed < \$3/);
+  assert.match(db.calls[0].sql, /c\.last_reviewed >= \$5\s+AND c\.last_reviewed < \$3/);
+  assert.doesNotMatch(db.calls[0].sql, /\bCURRENT_DATE\b/i);
+});
+
+test('GET /api/stats uses app-local review windows for aggregate counts', async () => {
+  const reviewedCards = [
+    new Date(2026, 4, 8, 0, 30),
+    new Date(2026, 4, 8, 23, 59, 59, 999),
+    new Date(2026, 4, 9),
+    new Date(2026, 4, 7, 12),
+    new Date(2026, 3, 20, 12),
+    null,
+  ];
+  const db = {
+    calls: [],
+    async query(sql, params) {
+      this.calls.push({ sql, params });
+      const [, todayStart, tomorrowStart, sevenDayLookbackStart, thirtyDayLookbackStart] = params;
+      const inWindow = (reviewedAt, start) => (
+        reviewedAt instanceof Date
+          && reviewedAt >= start
+          && reviewedAt < tomorrowStart
+      );
+
+      return {
+        rowCount: 1,
+        rows: [
+          {
+            totalCards: String(reviewedCards.length),
+            totalDecks: '1',
+            todayReviews: String(reviewedCards.filter((reviewedAt) => (
+              inWindow(reviewedAt, todayStart)
+            )).length),
+            weekReviews: String(reviewedCards.filter((reviewedAt) => (
+              inWindow(reviewedAt, sevenDayLookbackStart)
+            )).length),
+            monthReviews: String(reviewedCards.filter((reviewedAt) => (
+              inWindow(reviewedAt, thirtyDayLookbackStart)
+            )).length),
+          },
+        ],
+      };
+    },
+  };
+  const req = { user: { userId: 'user-1' } };
+  const res = createRes();
+  const now = new Date(2026, 4, 8, 15, 45, 12, 345);
+
+  await getStats(req, res, db, now);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(db.calls[0].params, [
+    'user-1',
+    new Date(2026, 4, 8),
+    new Date(2026, 4, 9),
+    new Date(2026, 4, 1),
+    new Date(2026, 3, 8),
+  ]);
+  assert.deepEqual(res.body, {
+    totalCards: 6,
+    totalDecks: 1,
+    todayReviews: 2,
+    weekReviews: 3,
+    monthReviews: 4,
+  });
 });
 
 test('GET /api/stats returns zero for null and empty aggregate values', async () => {
@@ -396,7 +470,12 @@ test('GET /api/stats returns zero for null and empty aggregate values', async ()
     monthReviews: 0,
   });
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, ['user-1']);
+  assert.equal(db.calls[0].params[0], 'user-1');
+  const dateParams = db.calls[0].params.slice(1);
+  assert.equal(dateParams.length, 4);
+  dateParams.forEach((param) => {
+    assert.ok(param instanceof Date);
+  });
   assert.match(db.calls[0].sql, /WHERE d\.user_id = \$1/);
 });
 
