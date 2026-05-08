@@ -19,6 +19,9 @@ CREATE TABLE decks (
 CREATE UNIQUE INDEX decks_user_id_normalized_name_unique_idx
   ON decks (user_id, (LOWER(TRIM(name))));
 
+CREATE INDEX decks_user_id_created_at_id_idx
+  ON decks (user_id, created_at DESC, id DESC);
+
 -- Create cards table
 CREATE TABLE cards (
   id SERIAL PRIMARY KEY,
@@ -32,3 +35,9 @@ CREATE TABLE cards (
   review_count INTEGER DEFAULT 0,
   ease_factor FLOAT DEFAULT 2.5
 );
+
+CREATE INDEX cards_deck_id_next_review_idx
+  ON cards (deck_id, next_review);
+
+CREATE INDEX cards_deck_id_last_reviewed_idx
+  ON cards (deck_id, last_reviewed);
