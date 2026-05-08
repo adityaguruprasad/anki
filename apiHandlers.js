@@ -168,6 +168,36 @@ async function createCard(req, res, db) {
   }
 }
 
+async function deleteCard(req, res, db) {
+  try {
+    const cardIdValidation = validatePositiveIntegerIdentifier(req.params?.cardId, 'cardId');
+    if (!cardIdValidation.ok) {
+      return res.status(400).json({ error: cardIdValidation.error });
+    }
+
+    const deleteResult = await db.query(
+      `DELETE FROM cards
+       WHERE id = $1
+         AND EXISTS (
+           SELECT 1
+           FROM decks d
+           WHERE d.id = cards.deck_id
+             AND d.user_id = $2
+         )`,
+      [cardIdValidation.value, req.user.userId]
+    );
+
+    if (deleteResult.rowCount === 0) {
+      return res.status(404).json({ error: 'Card not found' });
+    }
+
+    return res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
 async function submitStudySession(req, res, db, calculateNextReview) {
   try {
     const { cardId, quality } = req.body;
@@ -451,6 +481,7 @@ async function getSchedulingInsights(req, res, db, now = new Date()) {
 module.exports = {
   createCard,
   createDeck,
+  deleteCard,
   deleteDeck,
   getDecks,
   getStats,

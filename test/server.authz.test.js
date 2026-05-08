@@ -6,6 +6,7 @@ const path = require('node:path');
 const {
   createCard,
   createDeck,
+  deleteCard,
   deleteDeck,
   getDecks,
   getStats,
@@ -630,6 +631,70 @@ test('POST /api/cards returns 404 when deck is missing or not owned by user', as
   assert.match(db.calls[0].sql, /INSERT\s+INTO\s+cards/i);
   assert.match(db.calls[0].sql, /FROM\s+decks\s+d/i);
   assert.match(db.calls[0].sql, /WHERE\s+d\.id\s+=\s+\$1\s+AND\s+d\.user_id\s+=\s+\$2/i);
+});
+
+test('DELETE /api/cards/:cardId deletes an owned card with one user-scoped query', async () => {
+  const db = createDb([{ rowCount: 1, rows: [] }]);
+  const req = { params: { cardId: '77' }, user: { userId: 'user-1' } };
+  const res = createRes();
+
+  await deleteCard(req, res, db);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, { success: true });
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [77, 'user-1']);
+  assert.match(db.calls[0].sql, /DELETE\s+FROM\s+cards/i);
+  assert.match(db.calls[0].sql, /WHERE\s+id\s+=\s+\$1/i);
+  assert.match(db.calls[0].sql, /EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+decks\s+d/i);
+  assert.match(db.calls[0].sql, /d\.id\s+=\s+cards\.deck_id/i);
+  assert.match(db.calls[0].sql, /d\.user_id\s+=\s+\$2/i);
+  assert.doesNotMatch(db.calls[0].sql, /SELECT[\s\S]+FROM\s+cards/i);
+});
+
+test('DELETE /api/cards/:cardId returns 400 for invalid cardId and skips db query', async () => {
+  const invalidCardIds = [
+    undefined,
+    null,
+    '',
+    'abc',
+    '1.2',
+    '0',
+    ' -7 ',
+    0,
+    -1,
+    2.4,
+    '9007199254740992',
+    Number.MAX_SAFE_INTEGER + 1,
+  ];
+
+  for (const cardId of invalidCardIds) {
+    const db = createDb([]);
+    const req = { params: { cardId }, user: { userId: 'user-1' } };
+    const res = createRes();
+
+    await deleteCard(req, res, db);
+
+    assert.equal(res.statusCode, 400);
+    assert.deepEqual(res.body, { error: 'Invalid cardId: must be a positive integer' });
+    assert.equal(db.calls.length, 0);
+  }
+});
+
+test('DELETE /api/cards/:cardId returns 404 for missing or unowned card with one user-scoped query', async () => {
+  const db = createDb([{ rowCount: 0, rows: [] }]);
+  const req = { params: { cardId: '77' }, user: { userId: 'user-1' } };
+  const res = createRes();
+
+  await deleteCard(req, res, db);
+
+  assert.equal(res.statusCode, 404);
+  assert.deepEqual(res.body, { error: 'Card not found' });
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [77, 'user-1']);
+  assert.match(db.calls[0].sql, /DELETE\s+FROM\s+cards/i);
+  assert.match(db.calls[0].sql, /EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+decks\s+d/i);
+  assert.match(db.calls[0].sql, /d\.user_id\s+=\s+\$2/i);
 });
 
 test('GET /api/stats returns expected shape with a single user-scoped query', async () => {
