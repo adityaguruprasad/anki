@@ -129,10 +129,25 @@ async function submitStudySession(req, res, db, calculateNextReview) {
     const card = cardResult.rows[0];
     const { ease_factor, interval, next_review } = calculateNextReview(card, quality);
 
-    await db.query(
-      'UPDATE cards SET last_reviewed = NOW(), next_review = $1, interval = $2, ease_factor = $3, review_count = review_count + 1 WHERE id = $4',
-      [next_review, interval, ease_factor, validCardId]
+    const updateResult = await db.query(
+      `UPDATE cards
+       SET last_reviewed = NOW(),
+           next_review = $1,
+           interval = $2,
+           ease_factor = $3,
+           review_count = review_count + 1
+       WHERE id = $4
+         AND EXISTS (
+           SELECT 1
+           FROM decks d
+           WHERE d.id = cards.deck_id
+             AND d.user_id = $5
+         )`,
+      [next_review, interval, ease_factor, validCardId, req.user.userId]
     );
+    if (updateResult.rowCount === 0) {
+      return res.status(404).json({ error: 'Card not found' });
+    }
 
     return res.json({ success: true });
   } catch (err) {

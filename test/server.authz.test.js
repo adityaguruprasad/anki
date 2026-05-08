@@ -425,6 +425,7 @@ test('POST /api/study-session returns 404 when card is not in user decks', async
 });
 
 test('POST /api/study-session keeps successful response shape', async () => {
+  const nextReview = new Date().toISOString();
   const db = createDb([
     { rowCount: 1, rows: [{ id: 7, deck_id: 1, ease_factor: 2.5, interval: 2, review_count: 2 }] },
     { rowCount: 1, rows: [] },
@@ -435,10 +436,37 @@ test('POST /api/study-session keeps successful response shape', async () => {
   await submitStudySession(req, res, db, () => ({
     ease_factor: 2.6,
     interval: 3,
-    next_review: new Date().toISOString(),
+    next_review: nextReview,
   }));
 
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, { success: true });
   assert.equal(db.calls.length, 2);
+  assert.match(db.calls[1].sql, /UPDATE\s+cards/i);
+  assert.match(db.calls[1].sql, /WHERE\s+id\s+=\s+\$4/i);
+  assert.match(db.calls[1].sql, /EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+decks\s+d/i);
+  assert.match(db.calls[1].sql, /d\.id\s+=\s+cards\.deck_id/i);
+  assert.match(db.calls[1].sql, /d\.user_id\s+=\s+\$5/i);
+  assert.deepEqual(db.calls[1].params, [nextReview, 3, 2.6, 7, 'user-1']);
+});
+
+test('POST /api/study-session returns 404 when final user-scoped update finds no card', async () => {
+  const db = createDb([
+    { rowCount: 1, rows: [{ id: 7, deck_id: 1, ease_factor: 2.5, interval: 2, review_count: 2 }] },
+    { rowCount: 0, rows: [] },
+  ]);
+  const req = { body: { cardId: 7, quality: 4 }, user: { userId: 'user-1' } };
+  const res = createRes();
+
+  await submitStudySession(req, res, db, () => ({
+    ease_factor: 2.6,
+    interval: 3,
+    next_review: '2026-05-08T12:00:00.000Z',
+  }));
+
+  assert.equal(res.statusCode, 404);
+  assert.deepEqual(res.body, { error: 'Card not found' });
+  assert.equal(db.calls.length, 2);
+  assert.match(db.calls[1].sql, /d\.user_id\s+=\s+\$5/i);
+  assert.deepEqual(db.calls[1].params, ['2026-05-08T12:00:00.000Z', 3, 2.6, 7, 'user-1']);
 });
