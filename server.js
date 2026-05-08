@@ -3,7 +3,7 @@ const cors = require('cors');
 const { Pool } = require('pg');
 const { createAuthHandlers } = require('./auth');
 const { calculateNextReview } = require('./spacedRepetition');
-const { createDeck, getDecks, getDueCardsByDeck, getStats, getSchedulingInsights, submitStudySession } = require('./apiHandlers');
+const { createCard, createDeck, getDecks, getDueCardsByDeck, getStats, getSchedulingInsights, submitStudySession } = require('./apiHandlers');
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -29,6 +29,7 @@ app.post('/api/decks', async (req, res) => {
   return createDeck(req, res, pool);
 });
 
+app.post('/api/cards', (req, res) => createCard(req, res, pool));
 app.get('/api/cards/:deckId', (req, res) => getDueCardsByDeck(req, res, pool));
 app.post('/api/study-session', (req, res) => submitStudySession(req, res, pool, calculateNextReview));
 

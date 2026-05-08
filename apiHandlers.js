@@ -39,6 +39,19 @@ function toNullableAggregateNumber(value) {
   return Number.isFinite(number) ? number : null;
 }
 
+function validateCardContent(value, fieldName) {
+  if (typeof value !== 'string') {
+    return { ok: false, error: `Invalid ${fieldName}: must be a non-empty string` };
+  }
+
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return { ok: false, error: `Invalid ${fieldName}: must be a non-empty string` };
+  }
+
+  return { ok: true, value: trimmed };
+}
+
 // Stats and scheduling buckets intentionally use the Node process local timezone;
 // keep Node TZ aligned with the database/session timezone for timestamp columns.
 function startOfLocalDay(date) {
@@ -98,6 +111,56 @@ async function getDueCardsByDeck(req, res, db) {
         return card;
       });
     return res.json(dueCards);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+async function createCard(req, res, db) {
+  try {
+    const deckIdValidation = validatePositiveIntegerIdentifier(req.body?.deckId, 'deckId');
+    if (!deckIdValidation.ok) {
+      return res.status(400).json({ error: deckIdValidation.error });
+    }
+
+    const frontContentValidation = validateCardContent(req.body?.frontContent, 'frontContent');
+    if (!frontContentValidation.ok) {
+      return res.status(400).json({ error: frontContentValidation.error });
+    }
+
+    const backContentValidation = validateCardContent(req.body?.backContent, 'backContent');
+    if (!backContentValidation.ok) {
+      return res.status(400).json({ error: backContentValidation.error });
+    }
+
+    const { rows } = await db.query(
+      `INSERT INTO cards (
+         deck_id,
+         front_content,
+         back_content,
+         next_review,
+         interval,
+         ease_factor,
+         review_count
+       )
+       SELECT d.id, $3, $4, NOW(), 1, 2.5, 0
+       FROM decks d
+       WHERE d.id = $1 AND d.user_id = $2
+       RETURNING *`,
+      [
+        deckIdValidation.value,
+        req.user.userId,
+        frontContentValidation.value,
+        backContentValidation.value,
+      ]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Deck not found' });
+    }
+
+    return res.status(201).json(rows[0]);
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Internal server error' });
@@ -315,6 +378,7 @@ async function getSchedulingInsights(req, res, db, now = new Date()) {
 }
 
 module.exports = {
+  createCard,
   createDeck,
   getDecks,
   getStats,

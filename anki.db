@@ -28,6 +28,7 @@ CREATE TABLE cards (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   last_reviewed TIMESTAMP,
   next_review TIMESTAMP,
+  interval INTEGER DEFAULT 1,
   review_count INTEGER DEFAULT 0,
   ease_factor FLOAT DEFAULT 2.5
 );

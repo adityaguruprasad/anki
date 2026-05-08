@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const {
+  createCard,
   createDeck,
   getDecks,
   getStats,
@@ -338,6 +339,130 @@ test('GET /api/cards/:deckId returns empty array for owned deck with no due card
   assert.deepEqual(res.body, []);
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, [42, 'user-1']);
+});
+
+test('POST /api/cards creates a card in an owned deck with one atomic insert-select query', async () => {
+  const createdCard = {
+    id: 77,
+    deck_id: 42,
+    front_content: 'Capital of France?',
+    back_content: 'Paris',
+    next_review: '2026-05-08T12:00:00.000Z',
+    interval: 1,
+    ease_factor: 2.5,
+    review_count: 0,
+  };
+  const db = createDb([{ rowCount: 1, rows: [createdCard] }]);
+  const req = {
+    body: {
+      deckId: '42',
+      frontContent: '  Capital of France?  ',
+      backContent: '  Paris  ',
+    },
+    user: { userId: 'user-1' },
+  };
+  const res = createRes();
+
+  await createCard(req, res, db);
+
+  assert.equal(res.statusCode, 201);
+  assert.deepEqual(res.body, createdCard);
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [42, 'user-1', 'Capital of France?', 'Paris']);
+  assert.match(db.calls[0].sql, /INSERT\s+INTO\s+cards\s*\(/i);
+  assert.match(db.calls[0].sql, /deck_id,\s*front_content,\s*back_content,\s*next_review,\s*interval,\s*ease_factor,\s*review_count/i);
+  assert.match(db.calls[0].sql, /SELECT\s+d\.id,\s*\$3,\s*\$4,\s*NOW\(\),\s*1,\s*2\.5,\s*0/i);
+  assert.match(db.calls[0].sql, /FROM\s+decks\s+d/i);
+  assert.match(db.calls[0].sql, /WHERE\s+d\.id\s+=\s+\$1\s+AND\s+d\.user_id\s+=\s+\$2/i);
+  assert.match(db.calls[0].sql, /RETURNING\s+\*/i);
+  assert.doesNotMatch(db.calls[0].sql, /INSERT[\s\S]+VALUES/i);
+});
+
+test('POST /api/cards returns 400 for invalid deckId and skips db query', async () => {
+  const invalidDeckIds = [
+    undefined,
+    null,
+    '',
+    'abc',
+    '1.2',
+    '0',
+    ' -5 ',
+    0,
+    -2,
+    1.3,
+    '9007199254740992',
+  ];
+
+  for (const deckId of invalidDeckIds) {
+    const db = createDb([]);
+    const req = {
+      body: {
+        deckId,
+        frontContent: 'Front',
+        backContent: 'Back',
+      },
+      user: { userId: 'user-1' },
+    };
+    const res = createRes();
+
+    await createCard(req, res, db);
+
+    assert.equal(res.statusCode, 400);
+    assert.deepEqual(res.body, { error: 'Invalid deckId: must be a positive integer' });
+    assert.equal(db.calls.length, 0);
+  }
+});
+
+test('POST /api/cards returns 400 for blank front or back content and skips db query', async () => {
+  const invalidContentCases = [
+    [{ frontContent: '', backContent: 'Back' }, 'Invalid frontContent: must be a non-empty string'],
+    [{ frontContent: '   ', backContent: 'Back' }, 'Invalid frontContent: must be a non-empty string'],
+    [{ frontContent: 123, backContent: 'Back' }, 'Invalid frontContent: must be a non-empty string'],
+    [{ frontContent: 'Front', backContent: '' }, 'Invalid backContent: must be a non-empty string'],
+    [{ frontContent: 'Front', backContent: '   ' }, 'Invalid backContent: must be a non-empty string'],
+    [{ frontContent: 'Front', backContent: null }, 'Invalid backContent: must be a non-empty string'],
+  ];
+
+  for (const [body, error] of invalidContentCases) {
+    const db = createDb([]);
+    const req = {
+      body: {
+        deckId: 42,
+        ...body,
+      },
+      user: { userId: 'user-1' },
+    };
+    const res = createRes();
+
+    await createCard(req, res, db);
+
+    assert.equal(res.statusCode, 400);
+    assert.deepEqual(res.body, { error });
+    assert.equal(db.calls.length, 0);
+  }
+});
+
+test('POST /api/cards returns 404 when deck is missing or not owned by user', async () => {
+  const db = createDb([{ rowCount: 0, rows: [] }]);
+  const req = {
+    body: {
+      deckId: '42',
+      frontContent: 'Front',
+      backContent: 'Back',
+    },
+    user: { userId: 'user-1' },
+  };
+  const res = createRes();
+
+  await createCard(req, res, db);
+
+  assert.equal(res.statusCode, 404);
+  assert.deepEqual(res.body, { error: 'Deck not found' });
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [42, 'user-1', 'Front', 'Back']);
+  assert.match(db.calls[0].sql, /INSERT\s+INTO\s+cards/i);
+  assert.match(db.calls[0].sql, /FROM\s+decks\s+d/i);
+  assert.match(db.calls[0].sql, /WHERE\s+d\.id\s+=\s+\$1\s+AND\s+d\.user_id\s+=\s+\$2/i);
 });
 
 test('GET /api/stats returns expected shape with a single user-scoped query', async () => {
