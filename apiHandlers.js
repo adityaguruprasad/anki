@@ -124,8 +124,37 @@ async function createDeck(req, res, db) {
   }
 }
 
+async function getStats(req, res, db) {
+  try {
+    const { rows } = await db.query(
+      `SELECT
+         COUNT(c.id) AS "totalCards",
+         COUNT(DISTINCT d.id) AS "totalDecks",
+         COUNT(c.id) FILTER (WHERE c.last_reviewed >= CURRENT_DATE) AS "todayReviews",
+         COUNT(c.id) FILTER (WHERE c.last_reviewed >= CURRENT_DATE - INTERVAL '7 days') AS "weekReviews",
+         COUNT(c.id) FILTER (WHERE c.last_reviewed >= CURRENT_DATE - INTERVAL '30 days') AS "monthReviews"
+       FROM decks d
+       LEFT JOIN cards c ON c.deck_id = d.id
+       WHERE d.user_id = $1`,
+      [req.user.userId]
+    );
+
+    return res.json({
+      totalCards: rows[0].totalCards,
+      totalDecks: rows[0].totalDecks,
+      todayReviews: rows[0].todayReviews,
+      weekReviews: rows[0].weekReviews,
+      monthReviews: rows[0].monthReviews,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
 module.exports = {
   createDeck,
+  getStats,
   getDueCardsByDeck,
   submitStudySession,
   isValidQuality,

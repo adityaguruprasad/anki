@@ -4,7 +4,7 @@ const { Pool } = require('pg');
 const { register, login, authenticateToken } = require('./auth');
 const { calculateNextReview } = require('./spacedRepetition');
 const { buildSchedulingInsights } = require('./schedulingInsights');
-const { createDeck, getDueCardsByDeck, submitStudySession } = require('./apiHandlers');
+const { createDeck, getDueCardsByDeck, getStats, submitStudySession } = require('./apiHandlers');
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -40,26 +40,7 @@ app.post('/api/decks', async (req, res) => {
 app.get('/api/cards/:deckId', (req, res) => getDueCardsByDeck(req, res, pool));
 app.post('/api/study-session', (req, res) => submitStudySession(req, res, pool, calculateNextReview));
 
-app.get('/api/stats', async (req, res) => {
-  try {
-    const totalCards = await pool.query('SELECT COUNT(*) FROM cards WHERE deck_id IN (SELECT id FROM decks WHERE user_id = $1)', [req.user.userId]);
-    const totalDecks = await pool.query('SELECT COUNT(*) FROM decks WHERE user_id = $1', [req.user.userId]);
-    const todayReviews = await pool.query('SELECT COUNT(*) FROM cards WHERE deck_id IN (SELECT id FROM decks WHERE user_id = $1) AND last_reviewed >= CURRENT_DATE', [req.user.userId]);
-    const weekReviews = await pool.query('SELECT COUNT(*) FROM cards WHERE deck_id IN (SELECT id FROM decks WHERE user_id = $1) AND last_reviewed >= CURRENT_DATE - INTERVAL \'7 days\'', [req.user.userId]);
-    const monthReviews = await pool.query('SELECT COUNT(*) FROM cards WHERE deck_id IN (SELECT id FROM decks WHERE user_id = $1) AND last_reviewed >= CURRENT_DATE - INTERVAL \'30 days\'', [req.user.userId]);
-
-    res.json({
-      totalCards: totalCards.rows[0].count,
-      totalDecks: totalDecks.rows[0].count,
-      todayReviews: todayReviews.rows[0].count,
-      weekReviews: weekReviews.rows[0].count,
-      monthReviews: monthReviews.rows[0].count,
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
+app.get('/api/stats', (req, res) => getStats(req, res, pool));
 
 app.get('/api/scheduling-insights', async (req, res) => {
   try {

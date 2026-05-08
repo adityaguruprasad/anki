@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  getStats,
   getDueCardsByDeck,
   submitStudySession,
   isValidQuality,
@@ -109,6 +110,27 @@ test('GET /api/cards/:deckId returns due cards for owned deck', async () => {
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, dueCards);
   assert.equal(db.calls.length, 2);
+});
+
+test('GET /api/stats returns expected shape with a single user-scoped query', async () => {
+  const stats = {
+    totalCards: '12',
+    totalDecks: '3',
+    todayReviews: '4',
+    weekReviews: '7',
+    monthReviews: '10',
+  };
+  const db = createDb([{ rowCount: 1, rows: [stats] }]);
+  const req = { user: { userId: 'user-1' } };
+  const res = createRes();
+
+  await getStats(req, res, db);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, stats);
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, ['user-1']);
+  assert.match(db.calls[0].sql, /WHERE d\.user_id = \$1/);
 });
 
 test('POST /api/study-session returns 400 for invalid cardId and skips db query', async () => {
