@@ -1101,9 +1101,43 @@ test('GET /api/cards/:deckId returns 400 for invalid limit and skips db query', 
     await getDueCardsByDeck(req, res, db);
 
     assert.equal(res.statusCode, 400);
-    assert.deepEqual(res.body, { error: 'Invalid limit: must be a positive integer' });
+    assert.deepEqual(res.body, { error: 'Invalid limit: must be a positive integer no greater than 100' });
     assert.equal(db.calls.length, 0);
   }
+});
+
+test('GET /api/cards/:deckId returns 400 for oversized limit and skips db query', async () => {
+  for (const limit of ['101', 101]) {
+    const db = createDb([]);
+    const req = {
+      params: { deckId: '42' },
+      query: { limit },
+      user: { userId: 'user-1' },
+    };
+    const res = createRes();
+
+    await getDueCardsByDeck(req, res, db);
+
+    assert.equal(res.statusCode, 400);
+    assert.deepEqual(res.body, { error: 'Invalid limit: must be a positive integer no greater than 100' });
+    assert.equal(db.calls.length, 0);
+  }
+});
+
+test('GET /api/cards/:deckId returns 400 for duplicate limit params and skips db query', async () => {
+  const db = createDb([]);
+  const req = {
+    params: { deckId: '42' },
+    query: { limit: ['1', '2'] },
+    user: { userId: 'user-1' },
+  };
+  const res = createRes();
+
+  await getDueCardsByDeck(req, res, db);
+
+  assert.equal(res.statusCode, 400);
+  assert.deepEqual(res.body, { error: 'Invalid limit: must be a positive integer no greater than 100' });
+  assert.equal(db.calls.length, 0);
 });
 
 test('GET /api/cards/:deckId returns 404 when deck is not owned by user', async () => {
@@ -1120,7 +1154,7 @@ test('GET /api/cards/:deckId returns 404 when deck is not owned by user', async 
   assert.match(db.calls[0].sql, /WHERE d\.id = \$1 AND d\.user_id = \$2/);
 });
 
-test('GET /api/cards/:deckId returns due cards for owned deck with one ordered query', async () => {
+test('GET /api/cards/:deckId returns all due cards for owned deck when limit is omitted', async () => {
   const dueCards = [
     { id: 1, next_review: '2026-05-07T12:00:00.000Z' },
     { id: 2, next_review: '2026-05-08T12:00:00.000Z' },
@@ -1147,7 +1181,7 @@ test('GET /api/cards/:deckId returns due cards for owned deck with one ordered q
   assert.doesNotMatch(db.calls[0].sql, /\bLIMIT\b/);
 });
 
-test('GET /api/cards/:deckId caps due cards with a validated parameterized limit', async () => {
+test('GET /api/cards/:deckId accepts boundary limit with a parameterized limit', async () => {
   const dueCard = { id: 1, next_review: '2026-05-07T12:00:00.000Z' };
   const db = createDb([
     {
@@ -1157,7 +1191,7 @@ test('GET /api/cards/:deckId caps due cards with a validated parameterized limit
   ]);
   const req = {
     params: { deckId: '42' },
-    query: { limit: '1' },
+    query: { limit: '100' },
     user: { userId: 'user-1' },
   };
   const res = createRes();
@@ -1167,9 +1201,9 @@ test('GET /api/cards/:deckId caps due cards with a validated parameterized limit
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, [dueCard]);
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [42, 'user-1', 1]);
+  assert.deepEqual(db.calls[0].params, [42, 'user-1', 100]);
   assert.match(db.calls[0].sql, /ORDER BY c\.next_review ASC,\s*c\.id ASC\s+LIMIT \$3/);
-  assert.doesNotMatch(db.calls[0].sql, /LIMIT\s+1/);
+  assert.doesNotMatch(db.calls[0].sql, /LIMIT\s+100/);
 });
 
 test('GET /api/cards/:deckId returns empty array for owned deck with no due cards', async () => {

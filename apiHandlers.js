@@ -71,6 +71,22 @@ function validateBrowseCardsLimit(value) {
   return validation;
 }
 
+function validateDueCardsLimit(value) {
+  if (value === undefined) {
+    return { ok: true, value: null };
+  }
+
+  const validation = validatePositiveIntegerIdentifier(value, 'limit');
+  if (!validation.ok || validation.value > BROWSE_CARDS_MAX_LIMIT) {
+    return {
+      ok: false,
+      error: `Invalid limit: must be a positive integer no greater than ${BROWSE_CARDS_MAX_LIMIT}`,
+    };
+  }
+
+  return validation;
+}
+
 function isValidIsoTimestamp(value) {
   if (typeof value !== 'string') {
     return false;
@@ -237,10 +253,7 @@ async function getDueCardsByDeck(req, res, db) {
       return res.status(400).json({ error: deckIdValidation.error });
     }
 
-    const limitQuery = req.query?.limit;
-    const limitValidation = limitQuery === undefined
-      ? { ok: true, value: null }
-      : validatePositiveIntegerIdentifier(limitQuery, 'limit');
+    const limitValidation = validateDueCardsLimit(req.query?.limit);
     if (!limitValidation.ok) {
       return res.status(400).json({ error: limitValidation.error });
     }
