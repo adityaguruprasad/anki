@@ -4,6 +4,13 @@ const ANSWER_SHORTCUT_QUALITIES = Object.freeze({
   3: 5,
 });
 
+const REVEAL_SHORTCUT_KEYS = new Set([' ', 'Enter']);
+const STUDY_SESSION_SHORTCUT_ACTIONS = Object.freeze({
+  GRADE_ANSWER: 'grade-answer',
+  NO_OP: 'no-op',
+  REVEAL_ANSWER: 'reveal-answer',
+});
+
 const EDITABLE_TAG_NAMES = new Set(['input', 'textarea', 'select']);
 
 function getTagName(target) {
@@ -60,7 +67,7 @@ function isEditableShortcutTarget(target) {
   return false;
 }
 
-function getStudySessionAnswerShortcutQuality(event) {
+function isUnmodifiedShortcutEvent(event) {
   if (
     !event
     || event.altKey
@@ -69,6 +76,18 @@ function getStudySessionAnswerShortcutQuality(event) {
     || event.shiftKey
     || isEditableShortcutTarget(event.target)
   ) {
+    return false;
+  }
+
+  return true;
+}
+
+function isPlainShortcutEvent(event) {
+  return isUnmodifiedShortcutEvent(event) && !event.repeat;
+}
+
+function getStudySessionAnswerShortcutQuality(event) {
+  if (!isPlainShortcutEvent(event)) {
     return null;
   }
 
@@ -79,7 +98,52 @@ function getStudySessionAnswerShortcutQuality(event) {
   return ANSWER_SHORTCUT_QUALITIES[event.key];
 }
 
+function getStudySessionShortcutAction(event, state = {}) {
+  if (!isUnmodifiedShortcutEvent(event)) {
+    return null;
+  }
+
+  const hasCurrentCard = Boolean(state.currentCard);
+  const isAnswerVisible = Boolean(state.showAnswer);
+  const isLoading = Boolean(state.isLoading);
+  const isSubmitting = Boolean(state.isSubmitting);
+
+  if (event.key === ' ' && hasCurrentCard && isAnswerVisible) {
+    return { type: STUDY_SESSION_SHORTCUT_ACTIONS.NO_OP };
+  }
+
+  if (event.repeat || isSubmitting) {
+    return null;
+  }
+
+  if (
+    REVEAL_SHORTCUT_KEYS.has(event.key)
+    && hasCurrentCard
+    && !isAnswerVisible
+    && !isLoading
+  ) {
+    return { type: STUDY_SESSION_SHORTCUT_ACTIONS.REVEAL_ANSWER };
+  }
+
+  if (!hasCurrentCard || !isAnswerVisible) {
+    return null;
+  }
+
+  const quality = getStudySessionAnswerShortcutQuality(event);
+
+  if (quality === null) {
+    return null;
+  }
+
+  return {
+    type: STUDY_SESSION_SHORTCUT_ACTIONS.GRADE_ANSWER,
+    quality,
+  };
+}
+
 module.exports = {
   getStudySessionAnswerShortcutQuality,
+  getStudySessionShortcutAction,
   isEditableShortcutTarget,
+  STUDY_SESSION_SHORTCUT_ACTIONS,
 };

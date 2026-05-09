@@ -3,7 +3,10 @@ import { useHistory, useLocation } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { getStudySessionApiRequests } from './studySessionApiRequests';
-import { getStudySessionAnswerShortcutQuality } from './studySessionShortcuts';
+import {
+  getStudySessionShortcutAction,
+  STUDY_SESSION_SHORTCUT_ACTIONS,
+} from './studySessionShortcuts';
 import { getStudySessionNotice, STUDY_SESSION_NOTICE_TYPES } from './studySessionNotice';
 import { getStudySessionRequest, STUDY_SESSION_REQUESTS } from './studySessionTarget';
 
@@ -194,18 +197,29 @@ const StudySession = ({ env }) => {
 
   useEffect(() => {
     const handleAnswerShortcut = (event) => {
-      if (!showAnswer || !currentCard || isSubmittingRef.current) {
-        return;
-      }
+      const shortcutAction = getStudySessionShortcutAction(event, {
+        currentCard,
+        isLoading,
+        isSubmitting: isSubmittingRef.current,
+        showAnswer,
+      });
 
-      const quality = getStudySessionAnswerShortcutQuality(event);
-
-      if (quality === null) {
+      if (!shortcutAction) {
         return;
       }
 
       event.preventDefault();
-      handleAnswer(quality);
+
+      if (shortcutAction.type === STUDY_SESSION_SHORTCUT_ACTIONS.REVEAL_ANSWER) {
+        setShowAnswer(true);
+        return;
+      }
+
+      if (shortcutAction.type === STUDY_SESSION_SHORTCUT_ACTIONS.NO_OP) {
+        return;
+      }
+
+      handleAnswer(shortcutAction.quality);
     };
 
     window.addEventListener('keydown', handleAnswerShortcut);
@@ -213,7 +227,7 @@ const StudySession = ({ env }) => {
     return () => {
       window.removeEventListener('keydown', handleAnswerShortcut);
     };
-  }, [currentCard, handleAnswer, showAnswer]);
+  }, [currentCard, handleAnswer, isLoading, showAnswer]);
 
   const handleManageDecks = () => {
     history.push('/decks');
@@ -272,9 +286,14 @@ const StudySession = ({ env }) => {
             </div>
           )}
           {!showAnswer ? (
-            <Button onClick={() => setShowAnswer(true)} className="w-full" disabled={isSubmitting}>
-              Show Answer
-            </Button>
+            <div>
+              <p className="mb-3 text-sm text-gray-600">
+                Shortcuts: Space or Enter to show answer.
+              </p>
+              <Button onClick={() => setShowAnswer(true)} className="w-full" disabled={isSubmitting}>
+                Show Answer
+              </Button>
+            </div>
           ) : (
             <div>
               <p className="mb-3 text-sm text-gray-600">
