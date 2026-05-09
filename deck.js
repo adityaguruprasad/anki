@@ -19,6 +19,12 @@ import {
   incrementDeckCardCounts,
   mergeUniqueCards,
 } from './deckCardState';
+import {
+  beginCardRemove,
+  beginCardSave,
+  clearCardAction,
+  isCardActionInFlight,
+} from './deckCardActionInFlightState';
 import { createCardSubmission } from './deckCardCreateState';
 
 const CARD_PAGE_LIMIT = 10;
@@ -47,6 +53,7 @@ const DeckManagement = ({ env }) => {
   const [deckCards, setDeckCards] = useState({});
   const [cardEditForms, setCardEditForms] = useState({});
   const [cardActionStates, setCardActionStates] = useState({});
+  const cardActionInFlightRef = useRef({});
 
   const fetchDecks = useCallback(async () => {
     try {
@@ -647,6 +654,10 @@ const DeckManagement = ({ env }) => {
       return;
     }
 
+    if (!beginCardSave(cardActionInFlightRef.current, card.id)) {
+      return;
+    }
+
     setCardActionState(card.id, {
       saving: true,
       error: '',
@@ -696,11 +707,22 @@ const DeckManagement = ({ env }) => {
         error: 'Network error. Please try again.',
         success: '',
       });
+    } finally {
+      clearCardAction(cardActionInFlightRef.current, card.id);
     }
   };
 
   const deleteCard = async (deckId, cardId) => {
+    // Avoid prompting for removal while a save/remove request for this card is already in flight.
+    if (isCardActionInFlight(cardActionInFlightRef.current, cardId)) {
+      return;
+    }
+
     if (!window.confirm('Remove this card?')) {
+      return;
+    }
+
+    if (!beginCardRemove(cardActionInFlightRef.current, cardId)) {
       return;
     }
 
@@ -743,6 +765,8 @@ const DeckManagement = ({ env }) => {
         error: 'Network error. Please try again.',
         success: '',
       });
+    } finally {
+      clearCardAction(cardActionInFlightRef.current, cardId);
     }
   };
 
