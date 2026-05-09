@@ -3,6 +3,7 @@ const { validateDeckName } = require('./deckNameValidation');
 const BROWSE_CARDS_DEFAULT_LIMIT = 50;
 const BROWSE_CARDS_MAX_LIMIT = 100;
 const BROWSE_CARDS_MAX_SEARCH_LENGTH = 200;
+const MAX_CARD_CONTENT_LENGTH = 10000;
 
 function isValidQuality(quality) {
   return Number.isInteger(quality) && quality >= 0 && quality <= 5;
@@ -51,6 +52,10 @@ function validateCardContent(value, fieldName) {
   const trimmed = value.trim();
   if (trimmed.length === 0) {
     return { ok: false, error: `Invalid ${fieldName}: must be a non-empty string` };
+  }
+
+  if (trimmed.length > MAX_CARD_CONTENT_LENGTH) {
+    return { ok: false, error: `Invalid ${fieldName}: must be ${MAX_CARD_CONTENT_LENGTH} characters or fewer` };
   }
 
   return { ok: true, value: trimmed };

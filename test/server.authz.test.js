@@ -1486,6 +1486,32 @@ test('POST /api/cards returns 400 for blank front or back content and skips db q
   }
 });
 
+test('POST /api/cards returns 400 for oversized front or back content and skips db query', async () => {
+  const oversizedContent = ` ${'x'.repeat(10001)} `;
+  const invalidContentCases = [
+    [{ frontContent: oversizedContent, backContent: 'Back' }, 'Invalid frontContent: must be 10000 characters or fewer'],
+    [{ frontContent: 'Front', backContent: oversizedContent }, 'Invalid backContent: must be 10000 characters or fewer'],
+  ];
+
+  for (const [body, error] of invalidContentCases) {
+    const db = createDb([]);
+    const req = {
+      body: {
+        deckId: 42,
+        ...body,
+      },
+      user: { userId: 'user-1' },
+    };
+    const res = createRes();
+
+    await createCard(req, res, db);
+
+    assert.equal(res.statusCode, 400);
+    assert.deepEqual(res.body, { error });
+    assert.equal(db.calls.length, 0);
+  }
+});
+
 test('POST /api/cards returns 404 when deck is missing or not owned by user', async () => {
   const db = createDb([{ rowCount: 0, rows: [] }]);
   const req = {
@@ -1553,6 +1579,30 @@ test('PATCH /api/cards/:cardId returns 400 for blank front or back content and s
     [{ frontContent: 'Front', backContent: '' }, 'Invalid backContent: must be a non-empty string'],
     [{ frontContent: 'Front', backContent: '   ' }, 'Invalid backContent: must be a non-empty string'],
     [{ frontContent: 'Front', backContent: null }, 'Invalid backContent: must be a non-empty string'],
+  ];
+
+  for (const [body, error] of invalidContentCases) {
+    const db = createDb([]);
+    const req = {
+      params: { cardId: '77' },
+      body,
+      user: { userId: 'user-1' },
+    };
+    const res = createRes();
+
+    await updateCard(req, res, db);
+
+    assert.equal(res.statusCode, 400);
+    assert.deepEqual(res.body, { error });
+    assert.equal(db.calls.length, 0);
+  }
+});
+
+test('PATCH /api/cards/:cardId returns 400 for oversized front or back content and skips db query', async () => {
+  const oversizedContent = ` ${'x'.repeat(10001)} `;
+  const invalidContentCases = [
+    [{ frontContent: oversizedContent, backContent: 'Back' }, 'Invalid frontContent: must be 10000 characters or fewer'],
+    [{ frontContent: 'Front', backContent: oversizedContent }, 'Invalid backContent: must be 10000 characters or fewer'],
   ];
 
   for (const [body, error] of invalidContentCases) {
