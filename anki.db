@@ -39,5 +39,8 @@ CREATE TABLE cards (
 CREATE INDEX cards_deck_id_next_review_idx
   ON cards (deck_id, next_review);
 
+CREATE INDEX cards_deck_id_created_at_id_idx
+  ON cards (deck_id, created_at DESC, id DESC);
+
 CREATE INDEX cards_deck_id_last_reviewed_idx
   ON cards (deck_id, last_reviewed);

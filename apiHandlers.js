@@ -1,5 +1,8 @@
 const { validateDeckName } = require('./deckNameValidation');
 
+const BROWSE_CARDS_DEFAULT_LIMIT = 50;
+const BROWSE_CARDS_MAX_LIMIT = 100;
+
 function isValidQuality(quality) {
   return Number.isInteger(quality) && quality >= 0 && quality <= 5;
 }
@@ -50,6 +53,95 @@ function validateCardContent(value, fieldName) {
   }
 
   return { ok: true, value: trimmed };
+}
+
+function validateBrowseCardsLimit(value) {
+  if (value === undefined) {
+    return { ok: true, value: BROWSE_CARDS_DEFAULT_LIMIT };
+  }
+
+  const validation = validatePositiveIntegerIdentifier(value, 'limit');
+  if (!validation.ok || validation.value > BROWSE_CARDS_MAX_LIMIT) {
+    return {
+      ok: false,
+      error: `Invalid limit: must be a positive integer no greater than ${BROWSE_CARDS_MAX_LIMIT}`,
+    };
+  }
+
+  return validation;
+}
+
+function isValidIsoTimestamp(value) {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  const timestamp = value;
+  if (timestamp.length === 0) {
+    return false;
+  }
+
+  const match = timestamp.match(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/
+  );
+  if (match === null) {
+    return false;
+  }
+
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+
+  if (month < 1 || month > 12 || hour > 23 || minute > 59 || second > 59) {
+    return false;
+  }
+
+  const utcDay = new Date(Date.UTC(year, month - 1, day));
+  if (
+    utcDay.getUTCFullYear() !== year ||
+    utcDay.getUTCMonth() !== month - 1 ||
+    utcDay.getUTCDate() !== day
+  ) {
+    return false;
+  }
+
+  return !Number.isNaN(Date.parse(timestamp));
+}
+
+function validateBrowseCardsCursor(query = {}) {
+  const beforeCreatedAt = query.beforeCreatedAt;
+  const beforeId = query.beforeId;
+  const hasBeforeCreatedAt = beforeCreatedAt !== undefined;
+  const hasBeforeId = beforeId !== undefined;
+
+  if (!hasBeforeCreatedAt && !hasBeforeId) {
+    return { ok: true, value: null };
+  }
+
+  if (!hasBeforeCreatedAt || !hasBeforeId) {
+    return { ok: false, error: 'Invalid cursor: beforeCreatedAt and beforeId must be provided together' };
+  }
+
+  if (!isValidIsoTimestamp(beforeCreatedAt)) {
+    return { ok: false, error: 'Invalid beforeCreatedAt: must be a valid date' };
+  }
+
+  const beforeIdValidation = validatePositiveIntegerIdentifier(beforeId, 'beforeId');
+  if (!beforeIdValidation.ok) {
+    return { ok: false, error: beforeIdValidation.error };
+  }
+
+  return {
+    ok: true,
+    value: {
+      beforeCreatedAt,
+      beforeId: beforeIdValidation.value,
+    },
+  };
 }
 
 // Stats and scheduling buckets intentionally use the Node process local timezone;
@@ -139,28 +231,67 @@ async function getCardsByDeck(req, res, db) {
       return res.status(400).json({ error: deckIdValidation.error });
     }
 
+    const limitValidation = validateBrowseCardsLimit(req.query?.limit);
+    if (!limitValidation.ok) {
+      return res.status(400).json({ error: limitValidation.error });
+    }
+
+    const cursorValidation = validateBrowseCardsCursor(req.query);
+    if (!cursorValidation.ok) {
+      return res.status(400).json({ error: cursorValidation.error });
+    }
+
+    const params = [deckIdValidation.value, req.user.userId];
+    let cursorClause = '';
+    if (cursorValidation.value !== null) {
+      params.push(cursorValidation.value.beforeCreatedAt, cursorValidation.value.beforeId);
+      cursorClause = `
+        AND (
+          c.created_at < $3
+          OR (c.created_at = $3 AND c.id < $4)
+        )`;
+    }
+
+    params.push(limitValidation.value + 1);
+    const limitPlaceholder = `$${params.length}`;
+
     const { rows } = await db.query(
-      `SELECT c.*, d.id AS "__owned_deck_id"
+      `SELECT c.*,
+              to_char(c.created_at, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "__cursor_created_at",
+              d.id AS "__owned_deck_id"
        FROM decks d
        LEFT JOIN cards c
-         ON c.deck_id = d.id
+         ON c.deck_id = d.id${cursorClause}
        WHERE d.id = $1 AND d.user_id = $2
-       ORDER BY c.created_at DESC, c.id DESC`,
-      [deckIdValidation.value, req.user.userId]
+       ORDER BY c.created_at DESC, c.id DESC
+       LIMIT ${limitPlaceholder}`,
+      params
     );
 
     if (rows.length === 0) {
       return res.status(404).json({ error: 'Deck not found for user' });
     }
 
-    const cards = rows
-      .filter((row) => row.id !== null)
+    const cardRows = rows.filter((row) => row.id !== null);
+    const hasNextPage = cardRows.length > limitValidation.value;
+    const pageRows = cardRows.slice(0, limitValidation.value);
+    const cards = pageRows
       .map((row) => {
         const card = { ...row };
         delete card.__owned_deck_id;
+        delete card.__cursor_created_at;
         return card;
       });
-    return res.json(cards);
+
+    const lastPageRow = pageRows.at(-1);
+    const nextCursor = hasNextPage && lastPageRow
+      ? {
+          beforeCreatedAt: lastPageRow.__cursor_created_at,
+          beforeId: lastPageRow.id,
+        }
+      : null;
+
+    return res.json({ cards, nextCursor });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Internal server error' });

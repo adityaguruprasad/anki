@@ -606,10 +606,10 @@ test('GET /api/decks/:deckId/cards returns 404 for missing or unowned deck', asy
   assert.equal(res.statusCode, 404);
   assert.deepEqual(res.body, { error: 'Deck not found for user' });
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [42, 'user-1']);
+  assert.deepEqual(db.calls[0].params, [42, 'user-1', 51]);
 });
 
-test('GET /api/decks/:deckId/cards returns empty array for owned empty deck', async () => {
+test('GET /api/decks/:deckId/cards returns empty page for owned empty deck', async () => {
   const db = createDb([
     {
       rowCount: 1,
@@ -622,12 +622,12 @@ test('GET /api/decks/:deckId/cards returns empty array for owned empty deck', as
   await getCardsByDeck(req, res, db);
 
   assert.equal(res.statusCode, 200);
-  assert.deepEqual(res.body, []);
+  assert.deepEqual(res.body, { cards: [], nextCursor: null });
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [42, 'user-1']);
+  assert.deepEqual(db.calls[0].params, [42, 'user-1', 51]);
 });
 
-test('GET /api/decks/:deckId/cards returns all owned deck cards newest first', async () => {
+test('GET /api/decks/:deckId/cards returns default-limited owned deck cards newest first', async () => {
   const cards = [
     {
       id: 3,
@@ -649,7 +649,11 @@ test('GET /api/decks/:deckId/cards returns all owned deck cards newest first', a
   const db = createDb([
     {
       rowCount: 2,
-      rows: cards.map((card) => ({ ...card, __owned_deck_id: 42 })),
+      rows: cards.map((card) => ({
+        ...card,
+        __cursor_created_at: card.created_at.replace('.000Z', '.000000Z'),
+        __owned_deck_id: 42,
+      })),
     },
   ]);
   const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
@@ -658,12 +662,14 @@ test('GET /api/decks/:deckId/cards returns all owned deck cards newest first', a
   await getCardsByDeck(req, res, db);
 
   assert.equal(res.statusCode, 200);
-  assert.deepEqual(res.body, cards);
-  assert.equal(Object.hasOwn(res.body[0], '__owned_deck_id'), false);
+  assert.deepEqual(res.body, { cards, nextCursor: null });
+  assert.equal(Object.hasOwn(res.body.cards[0], '__owned_deck_id'), false);
+  assert.equal(Object.hasOwn(res.body.cards[0], '__cursor_created_at'), false);
   assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [42, 'user-1', 51]);
 });
 
-test('GET /api/decks/:deckId/cards uses one user-scoped ordered browse query', async () => {
+test('GET /api/decks/:deckId/cards uses one user-scoped ordered browse query with default limit', async () => {
   const db = createDb([{ rowCount: 1, rows: [{ id: null, __owned_deck_id: 42 }] }]);
   const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
   const res = createRes();
@@ -671,13 +677,253 @@ test('GET /api/decks/:deckId/cards uses one user-scoped ordered browse query', a
   await getCardsByDeck(req, res, db);
 
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [42, 'user-1']);
+  assert.deepEqual(db.calls[0].params, [42, 'user-1', 51]);
+  assert.match(db.calls[0].sql, /to_char\(c\.created_at,\s*'YYYY-MM-DD"T"HH24:MI:SS\.US"Z"'\)\s+AS\s+"__cursor_created_at"/);
   assert.match(db.calls[0].sql, /FROM decks d\s+LEFT JOIN cards c/i);
   assert.match(db.calls[0].sql, /ON c\.deck_id = d\.id/i);
   assert.match(db.calls[0].sql, /WHERE d\.id = \$1 AND d\.user_id = \$2/);
   assert.match(db.calls[0].sql, /ORDER BY c\.created_at DESC,\s*c\.id DESC/);
+  assert.match(db.calls[0].sql, /\bLIMIT \$3/);
   assert.doesNotMatch(db.calls[0].sql, /c\.next_review <= NOW\(\)/);
-  assert.doesNotMatch(db.calls[0].sql, /\bLIMIT\b/);
+  assert.doesNotMatch(db.calls[0].sql, /LIMIT\s+50/);
+});
+
+test('GET /api/decks/:deckId/cards returns next cursor only when limit plus one row exists', async () => {
+  const createdAt = new Date('2026-05-08T13:00:00.000Z');
+  const card = {
+    id: 3,
+    deck_id: 42,
+    front_content: 'Future card',
+    back_content: 'Answer',
+    created_at: createdAt,
+  };
+  const extraCard = {
+    id: 2,
+    deck_id: 42,
+    front_content: 'Extra card',
+    back_content: 'Answer',
+    created_at: new Date('2026-05-08T12:00:00.000Z'),
+  };
+  const db = createDb([
+    {
+      rowCount: 2,
+      rows: [
+        { ...card, __cursor_created_at: '2026-05-08T13:00:00.123456Z', __owned_deck_id: 42 },
+        { ...extraCard, __cursor_created_at: '2026-05-08T12:00:00.000000Z', __owned_deck_id: 42 },
+      ],
+    },
+  ]);
+  const req = {
+    params: { deckId: '42' },
+    query: { limit: '1' },
+    user: { userId: 'user-1' },
+  };
+  const res = createRes();
+
+  await getCardsByDeck(req, res, db);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, {
+    cards: [card],
+    nextCursor: {
+      beforeCreatedAt: '2026-05-08T13:00:00.123456Z',
+      beforeId: 3,
+    },
+  });
+  assert.equal(Object.hasOwn(res.body.cards[0], '__cursor_created_at'), false);
+  assert.equal(Object.hasOwn(res.body.cards[0], '__owned_deck_id'), false);
+  assert.deepEqual(db.calls[0].params, [42, 'user-1', 2]);
+  assert.match(db.calls[0].sql, /\bLIMIT \$3/);
+  assert.doesNotMatch(db.calls[0].sql, /LIMIT\s+1/);
+});
+
+test('GET /api/decks/:deckId/cards omits next cursor when only limit rows are returned', async () => {
+  const card = {
+    id: 3,
+    deck_id: 42,
+    front_content: 'Future card',
+    back_content: 'Answer',
+    created_at: new Date('2026-05-08T13:00:00.000Z'),
+  };
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [{ ...card, __cursor_created_at: '2026-05-08T13:00:00.123456Z', __owned_deck_id: 42 }],
+    },
+  ]);
+  const req = {
+    params: { deckId: '42' },
+    query: { limit: '1' },
+    user: { userId: 'user-1' },
+  };
+  const res = createRes();
+
+  await getCardsByDeck(req, res, db);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, { cards: [card], nextCursor: null });
+  assert.deepEqual(db.calls[0].params, [42, 'user-1', 2]);
+  assert.match(db.calls[0].sql, /\bLIMIT \$3/);
+  assert.doesNotMatch(db.calls[0].sql, /LIMIT\s+1/);
+});
+
+test('GET /api/decks/:deckId/cards returns 400 for invalid limit and skips db query', async () => {
+  const invalidLimits = [
+    null,
+    '',
+    'abc',
+    '1.2',
+    '0',
+    ' -5 ',
+    0,
+    -2,
+    1.3,
+    ['1'],
+    '101',
+    101,
+    '9007199254740992',
+  ];
+
+  for (const limit of invalidLimits) {
+    const db = createDb([]);
+    const req = {
+      params: { deckId: '42' },
+      query: { limit },
+      user: { userId: 'user-1' },
+    };
+    const res = createRes();
+
+    await getCardsByDeck(req, res, db);
+
+    assert.equal(res.statusCode, 400);
+    assert.deepEqual(res.body, { error: 'Invalid limit: must be a positive integer no greater than 100' });
+    assert.equal(db.calls.length, 0);
+  }
+});
+
+test('GET /api/decks/:deckId/cards returns 400 for invalid cursor and skips db query', async () => {
+  const invalidCursors = [
+    {
+      query: { beforeCreatedAt: '2026-05-08T13:00:00.000Z' },
+      error: 'Invalid cursor: beforeCreatedAt and beforeId must be provided together',
+    },
+    {
+      query: { beforeId: '3' },
+      error: 'Invalid cursor: beforeCreatedAt and beforeId must be provided together',
+    },
+    {
+      query: { beforeCreatedAt: 'not-a-date', beforeId: '3' },
+      error: 'Invalid beforeCreatedAt: must be a valid date',
+    },
+    {
+      query: { beforeCreatedAt: '', beforeId: '3' },
+      error: 'Invalid beforeCreatedAt: must be a valid date',
+    },
+    {
+      query: { beforeCreatedAt: '   ', beforeId: '3' },
+      error: 'Invalid beforeCreatedAt: must be a valid date',
+    },
+    {
+      query: { beforeCreatedAt: null, beforeId: '3' },
+      error: 'Invalid beforeCreatedAt: must be a valid date',
+    },
+    {
+      query: { beforeCreatedAt: true, beforeId: '3' },
+      error: 'Invalid beforeCreatedAt: must be a valid date',
+    },
+    {
+      query: { beforeCreatedAt: 2026, beforeId: '3' },
+      error: 'Invalid beforeCreatedAt: must be a valid date',
+    },
+    {
+      query: { beforeCreatedAt: '2026', beforeId: '3' },
+      error: 'Invalid beforeCreatedAt: must be a valid date',
+    },
+    {
+      query: { beforeCreatedAt: '2026-05-08', beforeId: '3' },
+      error: 'Invalid beforeCreatedAt: must be a valid date',
+    },
+    {
+      query: { beforeCreatedAt: '2026-05-08T13:00:00', beforeId: '3' },
+      error: 'Invalid beforeCreatedAt: must be a valid date',
+    },
+    {
+      query: { beforeCreatedAt: '2026-02-31T13:00:00.000Z', beforeId: '3' },
+      error: 'Invalid beforeCreatedAt: must be a valid date',
+    },
+    {
+      query: { beforeCreatedAt: ['2026-05-08T13:00:00.000Z'], beforeId: '3' },
+      error: 'Invalid beforeCreatedAt: must be a valid date',
+    },
+    {
+      query: { beforeCreatedAt: '2026-05-08T13:00:00.000Z', beforeId: '0' },
+      error: 'Invalid beforeId: must be a positive integer',
+    },
+    {
+      query: { beforeCreatedAt: '2026-05-08T13:00:00.000Z', beforeId: ['3'] },
+      error: 'Invalid beforeId: must be a positive integer',
+    },
+  ];
+
+  for (const { query, error } of invalidCursors) {
+    const db = createDb([]);
+    const req = {
+      params: { deckId: '42' },
+      query,
+      user: { userId: 'user-1' },
+    };
+    const res = createRes();
+
+    await getCardsByDeck(req, res, db);
+
+    assert.equal(res.statusCode, 400);
+    assert.deepEqual(res.body, { error });
+    assert.equal(db.calls.length, 0);
+  }
+});
+
+test('GET /api/decks/:deckId/cards applies keyset cursor with parameterized SQL', async () => {
+  const card = {
+    id: 2,
+    deck_id: 42,
+    front_content: 'Older card',
+    back_content: 'Answer',
+    created_at: '2026-05-08T12:00:00.000Z',
+  };
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [{ ...card, __cursor_created_at: '2026-05-08T12:00:00.000000Z', __owned_deck_id: 42 }],
+    },
+  ]);
+  const req = {
+    params: { deckId: '42' },
+    query: {
+      limit: '2',
+      beforeCreatedAt: '2026-05-08T13:00:00.000Z',
+      beforeId: '3',
+    },
+    user: { userId: 'user-1' },
+  };
+  const res = createRes();
+
+  await getCardsByDeck(req, res, db);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, { cards: [card], nextCursor: null });
+  assert.equal(db.calls.length, 1);
+  assert.equal(db.calls[0].params[0], 42);
+  assert.equal(db.calls[0].params[1], 'user-1');
+  assert.equal(db.calls[0].params[2], '2026-05-08T13:00:00.000Z');
+  assert.equal(db.calls[0].params[3], 3);
+  assert.equal(db.calls[0].params[4], 3);
+  assert.match(
+    db.calls[0].sql,
+    /LEFT JOIN cards c\s+ON c\.deck_id = d\.id\s+AND \(\s+c\.created_at < \$3\s+OR \(c\.created_at = \$3 AND c\.id < \$4\)\s+\)/i
+  );
+  assert.match(db.calls[0].sql, /ORDER BY c\.created_at DESC,\s*c\.id DESC\s+LIMIT \$5/);
+  assert.doesNotMatch(db.calls[0].sql, /2026-05-08T13:00:00\.000Z/);
+  assert.doesNotMatch(db.calls[0].sql, /beforeId/);
 });
 
 test('GET /api/cards/:deckId returns 400 for invalid limit and skips db query', async () => {
