@@ -238,24 +238,68 @@ const DeckManagement = () => {
     });
   };
 
+  const updateDeckCardSearch = (deckId, value) => {
+    setDeckCards((currentCards) => {
+      const currentDeckCards = currentCards[deckId] || {};
+      const appliedSearchQuery = currentDeckCards.appliedSearchQuery || '';
+
+      return {
+        ...currentCards,
+        [deckId]: {
+          ...currentDeckCards,
+          searchQuery: value,
+          nextCursor: value.trim() === appliedSearchQuery ? currentDeckCards.nextCursor || null : null,
+          error: '',
+        },
+      };
+    });
+  };
+
+  const searchDeckCards = (event, deckId) => {
+    event.preventDefault();
+    const currentDeckCards = deckCards[deckId] || {};
+    if (currentDeckCards.loading || currentDeckCards.loadingMore) {
+      return;
+    }
+
+    fetchDeckCards(deckId, {
+      q: currentDeckCards.searchQuery || '',
+    });
+  };
+
   const fetchDeckCards = async (deckId, options = {}) => {
     const { cursor = null, append = false } = options;
+    const hasExplicitQuery = Object.prototype.hasOwnProperty.call(options, 'q');
+    const rawSearchQuery = hasExplicitQuery
+      ? options.q
+      : (deckCards[deckId]?.appliedSearchQuery ?? deckCards[deckId]?.searchQuery ?? '');
+    const searchQuery = typeof rawSearchQuery === 'string' ? rawSearchQuery : '';
+    const trimmedSearchQuery = searchQuery.trim();
 
-    setDeckCards((currentCards) => ({
-      ...currentCards,
-      [deckId]: {
-        cards: [],
-        nextCursor: null,
-        hasLoaded: false,
-        ...(currentCards[deckId] || {}),
-        expanded: true,
-        loading: !append,
-        loadingMore: append,
-        error: '',
-      },
-    }));
+    setDeckCards((currentCards) => {
+      const currentDeckCards = currentCards[deckId] || {};
+      return {
+        ...currentCards,
+        [deckId]: {
+          ...currentDeckCards,
+          cards: append ? currentDeckCards.cards || [] : [],
+          nextCursor: append ? currentDeckCards.nextCursor || null : null,
+          hasLoaded: append ? Boolean(currentDeckCards.hasLoaded) : false,
+          expanded: true,
+          searchQuery: hasExplicitQuery ? searchQuery : currentDeckCards.searchQuery || '',
+          appliedSearchQuery: trimmedSearchQuery,
+          loading: !append,
+          loadingMore: append,
+          error: '',
+        },
+      };
+    });
 
     const searchParams = new URLSearchParams({ limit: String(CARD_PAGE_LIMIT) });
+    if (trimmedSearchQuery) {
+      searchParams.set('q', trimmedSearchQuery);
+    }
+
     if (cursor) {
       const cursorCreatedAt = cursor.cursorCreatedAt ?? cursor.beforeCreatedAt;
       const cursorId = cursor.cursorId ?? cursor.beforeId;
@@ -268,6 +312,7 @@ const DeckManagement = () => {
             nextCursor: null,
             hasLoaded: false,
             ...(currentCards[deckId] || {}),
+            appliedSearchQuery: trimmedSearchQuery,
             loading: false,
             loadingMore: false,
             error: 'Unable to load more cards.',
@@ -318,6 +363,7 @@ const DeckManagement = () => {
             hasLoaded: true,
             loading: false,
             loadingMore: false,
+            appliedSearchQuery: trimmedSearchQuery,
             error: '',
           },
         };
@@ -333,6 +379,7 @@ const DeckManagement = () => {
           ...(currentCards[deckId] || {}),
           loading: false,
           loadingMore: false,
+          appliedSearchQuery: trimmedSearchQuery,
           error: 'Network error. Please try again.',
         },
       }));
@@ -620,6 +667,7 @@ const DeckManagement = () => {
           const currentDeckCards = deckCards[deck.id] || {};
           const isExpanded = Boolean(currentDeckCards.expanded);
           const loadedCards = currentDeckCards.cards || [];
+          const hasActiveCardSearch = Boolean((currentDeckCards.appliedSearchQuery || '').trim());
 
           return (
             <Card key={deck.id}>
@@ -660,6 +708,22 @@ const DeckManagement = () => {
                 )}
                 {isExpanded && (
                   <div className="mt-4 space-y-3">
+                    <form className="flex gap-2" onSubmit={(event) => searchDeckCards(event, deck.id)}>
+                      <Input
+                        type="search"
+                        value={currentDeckCards.searchQuery || ''}
+                        onChange={(e) => updateDeckCardSearch(deck.id, e.target.value)}
+                        placeholder="Search cards"
+                        aria-label={`Search cards in ${deck.name}`}
+                        className="text-sm"
+                      />
+                      <Button
+                        type="submit"
+                        disabled={currentDeckCards.loading || currentDeckCards.loadingMore}
+                      >
+                        Search
+                      </Button>
+                    </form>
                     {currentDeckCards.loading && (
                       <p className="text-sm text-gray-500">Loading cards...</p>
                     )}
@@ -718,7 +782,9 @@ const DeckManagement = () => {
                       </div>
                     )}
                     {currentDeckCards.hasLoaded && loadedCards.length === 0 && !currentDeckCards.loading && (
-                      <p className="text-sm text-gray-500">No cards in this deck yet.</p>
+                      <p className="text-sm text-gray-500">
+                        {hasActiveCardSearch ? 'No matching cards.' : 'No cards in this deck yet.'}
+                      </p>
                     )}
                     {currentDeckCards.error && (
                       <p className="text-sm text-red-600">{currentDeckCards.error}</p>
@@ -730,6 +796,7 @@ const DeckManagement = () => {
                         onClick={() => fetchDeckCards(deck.id, {
                           cursor: currentDeckCards.nextCursor,
                           append: true,
+                          q: currentDeckCards.appliedSearchQuery || '',
                         })}
                       >
                         {currentDeckCards.loadingMore ? 'Loading...' : 'Load more'}

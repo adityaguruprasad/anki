@@ -2,6 +2,7 @@ const { validateDeckName } = require('./deckNameValidation');
 
 const BROWSE_CARDS_DEFAULT_LIMIT = 50;
 const BROWSE_CARDS_MAX_LIMIT = 100;
+const BROWSE_CARDS_MAX_SEARCH_LENGTH = 200;
 
 function isValidQuality(quality) {
   return Number.isInteger(quality) && quality >= 0 && quality <= 5;
@@ -69,6 +70,26 @@ function validateBrowseCardsLimit(value) {
   }
 
   return validation;
+}
+
+function validateBrowseCardsSearch(value) {
+  if (value === undefined) {
+    return { ok: true, value: null };
+  }
+
+  if (typeof value !== 'string') {
+    return { ok: false, error: 'Invalid q: must be a string' };
+  }
+
+  const trimmed = value.trim();
+  if (trimmed.length > BROWSE_CARDS_MAX_SEARCH_LENGTH) {
+    return {
+      ok: false,
+      error: `Invalid q: must be ${BROWSE_CARDS_MAX_SEARCH_LENGTH} characters or fewer`,
+    };
+  }
+
+  return { ok: true, value: trimmed.length > 0 ? trimmed : null };
 }
 
 function validateDueCardsLimit(value) {
@@ -311,6 +332,11 @@ async function getCardsByDeck(req, res, db) {
       return res.status(400).json({ error: cursorValidation.error });
     }
 
+    const searchValidation = validateBrowseCardsSearch(req.query?.q);
+    if (!searchValidation.ok) {
+      return res.status(400).json({ error: searchValidation.error });
+    }
+
     const params = [deckIdValidation.value, req.user.userId];
     let cursorClause = '';
     if (cursorValidation.value !== null) {
@@ -319,6 +345,17 @@ async function getCardsByDeck(req, res, db) {
         AND (
           c.created_at < $3
           OR (c.created_at = $3 AND c.id < $4)
+        )`;
+    }
+
+    let searchClause = '';
+    if (searchValidation.value !== null) {
+      params.push(searchValidation.value);
+      const searchPlaceholder = `$${params.length}`;
+      searchClause = `
+        AND (
+          POSITION(LOWER(${searchPlaceholder}) IN LOWER(c.front_content)) > 0
+          OR POSITION(LOWER(${searchPlaceholder}) IN LOWER(c.back_content)) > 0
         )`;
     }
 
@@ -331,7 +368,7 @@ async function getCardsByDeck(req, res, db) {
               d.id AS "__owned_deck_id"
        FROM decks d
        LEFT JOIN cards c
-         ON c.deck_id = d.id${cursorClause}
+         ON c.deck_id = d.id${cursorClause}${searchClause}
        WHERE d.id = $1 AND d.user_id = $2
        ORDER BY c.created_at DESC, c.id DESC
        LIMIT ${limitPlaceholder}`,

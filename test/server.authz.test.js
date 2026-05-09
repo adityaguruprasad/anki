@@ -804,6 +804,123 @@ test('GET /api/decks/:deckId/cards returns 400 for invalid limit and skips db qu
   }
 });
 
+test('GET /api/decks/:deckId/cards returns 400 for non-string q and skips db query', async () => {
+  const invalidQueries = [
+    { q: ['bio'] },
+    { q: null },
+    { q: 42 },
+    { q: true },
+  ];
+
+  for (const query of invalidQueries) {
+    const db = createDb([]);
+    const req = {
+      params: { deckId: '42' },
+      query,
+      user: { userId: 'user-1' },
+    };
+    const res = createRes();
+
+    await getCardsByDeck(req, res, db);
+
+    assert.equal(res.statusCode, 400);
+    assert.deepEqual(res.body, { error: 'Invalid q: must be a string' });
+    assert.equal(db.calls.length, 0);
+  }
+});
+
+test('GET /api/decks/:deckId/cards treats whitespace q like an omitted q', async () => {
+  const db = createDb([{ rowCount: 1, rows: [{ id: null, __owned_deck_id: 42 }] }]);
+  const req = {
+    params: { deckId: '42' },
+    query: { q: '   ' },
+    user: { userId: 'user-1' },
+  };
+  const res = createRes();
+
+  await getCardsByDeck(req, res, db);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, { cards: [], nextCursor: null });
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [42, 'user-1', 51]);
+  assert.doesNotMatch(db.calls[0].sql, /POSITION\(/i);
+  assert.match(db.calls[0].sql, /\bLIMIT \$3/);
+});
+
+test('GET /api/decks/:deckId/cards returns 400 for over-length q and skips db query', async () => {
+  const db = createDb([]);
+  const req = {
+    params: { deckId: '42' },
+    query: { q: ` ${'a'.repeat(201)} ` },
+    user: { userId: 'user-1' },
+  };
+  const res = createRes();
+
+  await getCardsByDeck(req, res, db);
+
+  assert.equal(res.statusCode, 400);
+  assert.deepEqual(res.body, { error: 'Invalid q: must be 200 characters or fewer' });
+  assert.equal(db.calls.length, 0);
+});
+
+test('GET /api/decks/:deckId/cards filters q against front and back content with parameterized SQL', async () => {
+  const card = {
+    id: 3,
+    deck_id: 42,
+    front_content: 'Cell division',
+    back_content: 'Mitosis',
+    created_at: '2026-05-08T13:00:00.000Z',
+  };
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [{ ...card, __cursor_created_at: '2026-05-08T13:00:00.000000Z', __owned_deck_id: 42 }],
+    },
+  ]);
+  const req = {
+    params: { deckId: '42' },
+    query: { q: '  Mito  ' },
+    user: { userId: 'user-1' },
+  };
+  const res = createRes();
+
+  await getCardsByDeck(req, res, db);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, { cards: [card], nextCursor: null });
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [42, 'user-1', 'Mito', 51]);
+  assert.match(
+    db.calls[0].sql,
+    /POSITION\(LOWER\(\$3\) IN LOWER\(c\.front_content\)\) > 0\s+OR POSITION\(LOWER\(\$3\) IN LOWER\(c\.back_content\)\) > 0/i
+  );
+  assert.match(db.calls[0].sql, /ORDER BY c\.created_at DESC,\s*c\.id DESC\s+LIMIT \$4/);
+  assert.doesNotMatch(db.calls[0].sql, /Mito/);
+});
+
+test('GET /api/decks/:deckId/cards returns empty page for owned deck with no q matches', async () => {
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [{ id: null, __owned_deck_id: 42 }],
+    },
+  ]);
+  const req = {
+    params: { deckId: '42' },
+    query: { q: 'absent' },
+    user: { userId: 'user-1' },
+  };
+  const res = createRes();
+
+  await getCardsByDeck(req, res, db);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, { cards: [], nextCursor: null });
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [42, 'user-1', 'absent', 51]);
+});
+
 test('GET /api/decks/:deckId/cards returns 400 for invalid cursor and skips db query', async () => {
   const invalidCursors = [
     {
@@ -1039,6 +1156,50 @@ test('GET /api/decks/:deckId/cards applies keyset cursor with parameterized SQL'
   assert.match(db.calls[0].sql, /ORDER BY c\.created_at DESC,\s*c\.id DESC\s+LIMIT \$5/);
   assert.doesNotMatch(db.calls[0].sql, /2026-05-08T13:00:00\.000Z/);
   assert.doesNotMatch(db.calls[0].sql, /beforeId/);
+});
+
+test('GET /api/decks/:deckId/cards applies q and cursor with round-trippable cursor params', async () => {
+  const card = {
+    id: 2,
+    deck_id: 42,
+    front_content: 'Older card',
+    back_content: 'Mito answer',
+    created_at: '2026-05-08T12:00:00.000Z',
+  };
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [{ ...card, __cursor_created_at: '2026-05-08T12:00:00.000000Z', __owned_deck_id: 42 }],
+    },
+  ]);
+  const req = {
+    params: { deckId: '42' },
+    query: {
+      limit: '2',
+      q: 'mito',
+      cursorCreatedAt: '2026-05-08T13:00:00.000Z',
+      cursorId: '3',
+    },
+    user: { userId: 'user-1' },
+  };
+  const res = createRes();
+
+  await getCardsByDeck(req, res, db);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, { cards: [card], nextCursor: null });
+  assert.deepEqual(db.calls[0].params, [
+    42,
+    'user-1',
+    '2026-05-08T13:00:00.000Z',
+    3,
+    'mito',
+    3,
+  ]);
+  assert.match(db.calls[0].sql, /c\.created_at < \$3\s+OR \(c\.created_at = \$3 AND c\.id < \$4\)/);
+  assert.match(db.calls[0].sql, /POSITION\(LOWER\(\$5\) IN LOWER\(c\.front_content\)\) > 0/i);
+  assert.match(db.calls[0].sql, /ORDER BY c\.created_at DESC,\s*c\.id DESC\s+LIMIT \$6/);
+  assert.doesNotMatch(db.calls[0].sql, /mito/);
 });
 
 test('GET /api/decks/:deckId/cards accepts cursorCreatedAt and cursorId aliases', async () => {
