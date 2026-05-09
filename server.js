@@ -3,7 +3,7 @@ const cors = require('cors');
 const { Pool } = require('pg');
 const { createAuthHandlers } = require('./auth');
 const { calculateNextReview } = require('./spacedRepetition');
-const { createCard, createDeck, deleteCard, deleteDeck, getDecks, getDueCardsByDeck, getStats, getSchedulingInsights, renameDeck, submitStudySession } = require('./apiHandlers');
+const { createCard, createDeck, deleteCard, deleteDeck, getCardsByDeck, getDecks, getDueCardsByDeck, getStats, getSchedulingInsights, renameDeck, submitStudySession } = require('./apiHandlers');
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -31,6 +31,7 @@ app.post('/api/decks', async (req, res) => {
 
 app.patch('/api/decks/:deckId', (req, res) => renameDeck(req, res, pool));
 app.delete('/api/decks/:deckId', (req, res) => deleteDeck(req, res, pool));
+app.get('/api/decks/:deckId/cards', (req, res) => getCardsByDeck(req, res, pool));
 
 app.post('/api/cards', (req, res) => createCard(req, res, pool));
 app.get('/api/cards/:deckId', (req, res) => getDueCardsByDeck(req, res, pool));

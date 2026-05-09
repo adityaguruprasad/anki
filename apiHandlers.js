@@ -132,6 +132,41 @@ async function getDueCardsByDeck(req, res, db) {
   }
 }
 
+async function getCardsByDeck(req, res, db) {
+  try {
+    const deckIdValidation = validatePositiveIntegerIdentifier(req.params?.deckId, 'deckId');
+    if (!deckIdValidation.ok) {
+      return res.status(400).json({ error: deckIdValidation.error });
+    }
+
+    const { rows } = await db.query(
+      `SELECT c.*, d.id AS "__owned_deck_id"
+       FROM decks d
+       LEFT JOIN cards c
+         ON c.deck_id = d.id
+       WHERE d.id = $1 AND d.user_id = $2
+       ORDER BY c.created_at DESC, c.id DESC`,
+      [deckIdValidation.value, req.user.userId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Deck not found for user' });
+    }
+
+    const cards = rows
+      .filter((row) => row.id !== null)
+      .map((row) => {
+        const card = { ...row };
+        delete card.__owned_deck_id;
+        return card;
+      });
+    return res.json(cards);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
 async function createCard(req, res, db) {
   try {
     const deckIdValidation = validatePositiveIntegerIdentifier(req.body?.deckId, 'deckId');
@@ -556,6 +591,7 @@ async function getSchedulingInsights(req, res, db, now = new Date()) {
 }
 
 module.exports = {
+  getCardsByDeck,
   createCard,
   createDeck,
   deleteCard,
