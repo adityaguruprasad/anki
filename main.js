@@ -159,7 +159,7 @@ const App = () => {
             {isLoggedIn ? <StudySession env={apiEnv} /> : <Redirect to="/login" />}
           </Route>
           <Route path="/decks">
-            {isLoggedIn ? <DeckManagement /> : <Redirect to="/login" />}
+            {isLoggedIn ? <DeckManagement env={apiEnv} /> : <Redirect to="/login" />}
           </Route>
         </Switch>
       </div>

@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useHistory } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { getDeckManagementApiRequests } from './deckManagementApiRequests';
 import {
   addCreatedCardToLoadedDeckCards,
   incrementDeckCardCounts,
@@ -11,8 +12,9 @@ import {
 
 const CARD_PAGE_LIMIT = 10;
 
-const DeckManagement = () => {
+const DeckManagement = ({ env }) => {
   const history = useHistory();
+  const apiRequests = useMemo(() => getDeckManagementApiRequests(env), [env]);
   const [decks, setDecks] = useState([]);
   const [newDeckName, setNewDeckName] = useState('');
   const [cardForms, setCardForms] = useState({});
@@ -25,13 +27,9 @@ const DeckManagement = () => {
   const [cardEditForms, setCardEditForms] = useState({});
   const [cardActionStates, setCardActionStates] = useState({});
 
-  useEffect(() => {
-    fetchDecks();
-  }, []);
-
-  const fetchDecks = async () => {
+  const fetchDecks = useCallback(async () => {
     try {
-      const response = await fetch('http://localhost:3001/api/decks', {
+      const response = await fetch(apiRequests.deckListUrl, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -41,11 +39,15 @@ const DeckManagement = () => {
     } catch (error) {
       console.error('Error fetching decks:', error);
     }
-  };
+  }, [apiRequests]);
+
+  useEffect(() => {
+    fetchDecks();
+  }, [fetchDecks]);
 
   const createDeck = async () => {
     try {
-      const response = await fetch('http://localhost:3001/api/decks', {
+      const response = await fetch(apiRequests.createDeckUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -88,7 +90,7 @@ const DeckManagement = () => {
     }));
 
     try {
-      const response = await fetch(`http://localhost:3001/api/decks/${deckId}`, {
+      const response = await fetch(apiRequests.renameDeckUrl(deckId), {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -325,7 +327,7 @@ const DeckManagement = () => {
     }
 
     try {
-      const response = await fetch(`http://localhost:3001/api/decks/${deckId}/cards?${searchParams}`, {
+      const response = await fetch(apiRequests.browseDeckCardsUrl(deckId, searchParams), {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -429,7 +431,7 @@ const DeckManagement = () => {
     }
 
     try {
-      const response = await fetch('http://localhost:3001/api/cards', {
+      const response = await fetch(apiRequests.createCardUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -494,7 +496,7 @@ const DeckManagement = () => {
     });
 
     try {
-      const response = await fetch(`http://localhost:3001/api/cards/${card.id}`, {
+      const response = await fetch(apiRequests.updateCardUrl(card.id), {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -551,7 +553,7 @@ const DeckManagement = () => {
     });
 
     try {
-      const response = await fetch(`http://localhost:3001/api/cards/${cardId}`, {
+      const response = await fetch(apiRequests.removeCardUrl(cardId), {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -601,7 +603,7 @@ const DeckManagement = () => {
     }));
 
     try {
-      const response = await fetch(`http://localhost:3001/api/decks/${deckId}`, {
+      const response = await fetch(apiRequests.removeDeckUrl(deckId), {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
