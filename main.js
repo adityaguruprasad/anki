@@ -7,7 +7,11 @@ import StudySession from './studySession';
 import DeckManagement from './deck';
 import { AUTH_MODES, createAuthSubmission, getNextAuthMode } from './authFormState';
 
-const Login = ({ setIsLoggedIn }) => {
+const apiEnv = Object.freeze({
+  REACT_APP_API_BASE_URL: process.env.REACT_APP_API_BASE_URL,
+});
+
+const Login = ({ setIsLoggedIn, env }) => {
   const [mode, setMode] = useState(AUTH_MODES.LOGIN);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -35,7 +39,7 @@ const Login = ({ setIsLoggedIn }) => {
       email,
       password,
       isSubmitting: isSubmittingRef.current,
-      env: { REACT_APP_API_BASE_URL: process.env.REACT_APP_API_BASE_URL },
+      env,
     });
 
     if (submission.blocked) {
@@ -146,13 +150,13 @@ const App = () => {
         )}
         <Switch>
           <Route exact path="/login">
-            {isLoggedIn ? <Redirect to="/" /> : <Login setIsLoggedIn={setIsLoggedIn} />}
+            {isLoggedIn ? <Redirect to="/" /> : <Login setIsLoggedIn={setIsLoggedIn} env={apiEnv} />}
           </Route>
           <Route exact path="/">
             {isLoggedIn ? <Dashboard /> : <Redirect to="/login" />}
           </Route>
           <Route path="/study">
-            {isLoggedIn ? <StudySession /> : <Redirect to="/login" />}
+            {isLoggedIn ? <StudySession env={apiEnv} /> : <Redirect to="/login" />}
           </Route>
           <Route path="/decks">
             {isLoggedIn ? <DeckManagement /> : <Redirect to="/login" />}

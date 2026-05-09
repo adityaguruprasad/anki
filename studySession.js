@@ -1,7 +1,8 @@
-import React, { useCallback, useRef, useState, useEffect } from 'react';
+import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react';
 import { useHistory, useLocation } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { getStudySessionApiRequests } from './studySessionApiRequests';
 import { getStudySessionRequest, STUDY_SESSION_REQUESTS } from './studySessionTarget';
 
 const noDueCardsNotice = {
@@ -10,9 +11,10 @@ const noDueCardsNotice = {
   canRetry: false,
 };
 
-const StudySession = () => {
+const StudySession = ({ env }) => {
   const location = useLocation();
   const history = useHistory();
+  const apiRequests = useMemo(() => getStudySessionApiRequests(env), [env]);
   const [currentCard, setCurrentCard] = useState(null);
   const [showAnswer, setShowAnswer] = useState(false);
   const [error, setError] = useState('');
@@ -46,7 +48,7 @@ const StudySession = () => {
       setIsLoading(true);
       setError('');
       setSessionNotice(null);
-      const response = await fetch(`http://localhost:3001/api/cards/${requestDeckId}?limit=1`, {
+      const response = await fetch(apiRequests.dueCardUrl(requestDeckId), {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
         },
@@ -86,7 +88,7 @@ const StudySession = () => {
       setSubmitInFlight(false);
       setIsLoading(false);
     }
-  }, [setSubmitInFlight]);
+  }, [apiRequests, setSubmitInFlight]);
 
   const loadStudySession = useCallback(async () => {
     const requestSearch = location.search;
@@ -115,7 +117,7 @@ const StudySession = () => {
       setSubmitError('');
       setSubmitInFlight(false);
 
-      const response = await fetch('http://localhost:3001/api/decks', {
+      const response = await fetch(apiRequests.deckListUrl, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
         },
@@ -161,7 +163,7 @@ const StudySession = () => {
       });
       setIsLoading(false);
     }
-  }, [fetchNextCard, location.search, setSubmitInFlight]);
+  }, [apiRequests, fetchNextCard, location.search, setSubmitInFlight]);
 
   useEffect(() => {
     loadStudySession();
@@ -176,7 +178,7 @@ const StudySession = () => {
     try {
       setSubmitInFlight(true);
       setSubmitError('');
-      const response = await fetch('http://localhost:3001/api/study-session', {
+      const response = await fetch(apiRequests.submitUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
