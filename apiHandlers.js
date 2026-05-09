@@ -113,33 +113,90 @@ function isValidIsoTimestamp(value) {
 }
 
 function validateBrowseCardsCursor(query = {}) {
-  const beforeCreatedAt = query.beforeCreatedAt;
-  const beforeId = query.beforeId;
-  const hasBeforeCreatedAt = beforeCreatedAt !== undefined;
-  const hasBeforeId = beforeId !== undefined;
+  const hasBeforeCreatedAtParam = Object.hasOwn(query, 'beforeCreatedAt');
+  const hasBeforeIdParam = Object.hasOwn(query, 'beforeId');
+  const hasCursorCreatedAtParam = Object.hasOwn(query, 'cursorCreatedAt');
+  const hasCursorIdParam = Object.hasOwn(query, 'cursorId');
+  const hasBeforeFamily = hasBeforeCreatedAtParam || hasBeforeIdParam;
+  const hasCursorFamily = hasCursorCreatedAtParam || hasCursorIdParam;
+  const hasCompleteBeforeFamily = hasBeforeCreatedAtParam && hasBeforeIdParam;
+  const hasCompleteCursorFamily = hasCursorCreatedAtParam && hasCursorIdParam;
 
-  if (!hasBeforeCreatedAt && !hasBeforeId) {
+  if (!hasBeforeFamily && !hasCursorFamily) {
     return { ok: true, value: null };
   }
 
-  if (!hasBeforeCreatedAt || !hasBeforeId) {
-    return { ok: false, error: 'Invalid cursor: beforeCreatedAt and beforeId must be provided together' };
+  if (hasBeforeFamily && hasCursorFamily) {
+    if (!hasCompleteBeforeFamily || !hasCompleteCursorFamily) {
+      return {
+        ok: false,
+        error: 'Invalid cursor: use either beforeCreatedAt/beforeId or cursorCreatedAt/cursorId, not both',
+      };
+    }
+
+    const beforeCreatedAt = query.beforeCreatedAt;
+    const cursorCreatedAt = query.cursorCreatedAt;
+
+    if (!isValidIsoTimestamp(beforeCreatedAt)) {
+      return { ok: false, error: 'Invalid beforeCreatedAt: must be a valid date' };
+    }
+
+    if (!isValidIsoTimestamp(cursorCreatedAt)) {
+      return { ok: false, error: 'Invalid cursorCreatedAt: must be a valid date' };
+    }
+
+    const beforeIdValidation = validatePositiveIntegerIdentifier(query.beforeId, 'beforeId');
+    if (!beforeIdValidation.ok) {
+      return { ok: false, error: beforeIdValidation.error };
+    }
+
+    const cursorIdValidation = validatePositiveIntegerIdentifier(query.cursorId, 'cursorId');
+    if (!cursorIdValidation.ok) {
+      return { ok: false, error: cursorIdValidation.error };
+    }
+
+    if (beforeCreatedAt !== cursorCreatedAt || beforeIdValidation.value !== cursorIdValidation.value) {
+      return {
+        ok: false,
+        error: 'Invalid cursor: beforeCreatedAt/beforeId and cursorCreatedAt/cursorId must match when both are provided',
+      };
+    }
+
+    return {
+      ok: true,
+      value: {
+        cursorCreatedAt,
+        cursorId: cursorIdValidation.value,
+      },
+    };
   }
 
-  if (!isValidIsoTimestamp(beforeCreatedAt)) {
-    return { ok: false, error: 'Invalid beforeCreatedAt: must be a valid date' };
+  const createdAtField = hasCursorFamily ? 'cursorCreatedAt' : 'beforeCreatedAt';
+  const idField = hasCursorFamily ? 'cursorId' : 'beforeId';
+  const hasCreatedAt = hasCursorFamily ? hasCursorCreatedAtParam : hasBeforeCreatedAtParam;
+  const hasId = hasCursorFamily ? hasCursorIdParam : hasBeforeIdParam;
+
+  if (!hasCreatedAt || !hasId) {
+    return { ok: false, error: 'Invalid cursor: created-at and id values must be provided together' };
   }
 
-  const beforeIdValidation = validatePositiveIntegerIdentifier(beforeId, 'beforeId');
-  if (!beforeIdValidation.ok) {
-    return { ok: false, error: beforeIdValidation.error };
+  const createdAt = query[createdAtField];
+  const id = query[idField];
+
+  if (!isValidIsoTimestamp(createdAt)) {
+    return { ok: false, error: `Invalid ${createdAtField}: must be a valid date` };
+  }
+
+  const idValidation = validatePositiveIntegerIdentifier(id, idField);
+  if (!idValidation.ok) {
+    return { ok: false, error: idValidation.error };
   }
 
   return {
     ok: true,
     value: {
-      beforeCreatedAt,
-      beforeId: beforeIdValidation.value,
+      cursorCreatedAt: createdAt,
+      cursorId: idValidation.value,
     },
   };
 }
@@ -244,7 +301,7 @@ async function getCardsByDeck(req, res, db) {
     const params = [deckIdValidation.value, req.user.userId];
     let cursorClause = '';
     if (cursorValidation.value !== null) {
-      params.push(cursorValidation.value.beforeCreatedAt, cursorValidation.value.beforeId);
+      params.push(cursorValidation.value.cursorCreatedAt, cursorValidation.value.cursorId);
       cursorClause = `
         AND (
           c.created_at < $3
@@ -286,6 +343,8 @@ async function getCardsByDeck(req, res, db) {
     const lastPageRow = pageRows.at(-1);
     const nextCursor = hasNextPage && lastPageRow
       ? {
+          cursorCreatedAt: lastPageRow.__cursor_created_at,
+          cursorId: lastPageRow.id,
           beforeCreatedAt: lastPageRow.__cursor_created_at,
           beforeId: lastPageRow.id,
         }

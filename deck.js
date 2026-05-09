@@ -4,6 +4,14 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
+const CARD_PAGE_LIMIT = 10;
+
+const mergeUniqueCards = (existingCards, nextCards) => {
+  const existingIds = new Set(existingCards.map((card) => card.id));
+  const uniqueNextCards = nextCards.filter((card) => !existingIds.has(card.id));
+  return [...existingCards, ...uniqueNextCards];
+};
+
 const DeckManagement = () => {
   const history = useHistory();
   const [decks, setDecks] = useState([]);
@@ -14,6 +22,7 @@ const DeckManagement = () => {
   const [renamingDecks, setRenamingDecks] = useState({});
   const [deleteErrors, setDeleteErrors] = useState({});
   const [deletingDecks, setDeletingDecks] = useState({});
+  const [deckCards, setDeckCards] = useState({});
 
   useEffect(() => {
     fetchDecks();
@@ -150,6 +159,135 @@ const DeckManagement = () => {
     }));
   };
 
+  const fetchDeckCards = async (deckId, options = {}) => {
+    const { cursor = null, append = false } = options;
+
+    setDeckCards((currentCards) => ({
+      ...currentCards,
+      [deckId]: {
+        cards: [],
+        nextCursor: null,
+        hasLoaded: false,
+        ...(currentCards[deckId] || {}),
+        expanded: true,
+        loading: !append,
+        loadingMore: append,
+        error: '',
+      },
+    }));
+
+    const searchParams = new URLSearchParams({ limit: String(CARD_PAGE_LIMIT) });
+    if (cursor) {
+      const cursorCreatedAt = cursor.cursorCreatedAt ?? cursor.beforeCreatedAt;
+      const cursorId = cursor.cursorId ?? cursor.beforeId;
+
+      if (!cursorCreatedAt || !cursorId) {
+        setDeckCards((currentCards) => ({
+          ...currentCards,
+          [deckId]: {
+            cards: [],
+            nextCursor: null,
+            hasLoaded: false,
+            ...(currentCards[deckId] || {}),
+            loading: false,
+            loadingMore: false,
+            error: 'Unable to load more cards.',
+          },
+        }));
+        return;
+      }
+
+      searchParams.set('cursorCreatedAt', cursorCreatedAt);
+      searchParams.set('cursorId', cursorId);
+    }
+
+    try {
+      const response = await fetch(`http://localhost:3001/api/decks/${deckId}/cards?${searchParams}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        setDeckCards((currentCards) => ({
+          ...currentCards,
+          [deckId]: {
+            cards: [],
+            nextCursor: null,
+            hasLoaded: false,
+            ...(currentCards[deckId] || {}),
+            loading: false,
+            loadingMore: false,
+            error: data.error || 'Unable to load cards.',
+          },
+        }));
+        return;
+      }
+
+      const fetchedCards = Array.isArray(data.cards) ? data.cards : [];
+      setDeckCards((currentCards) => {
+        const currentDeckCards = currentCards[deckId] || {};
+        const currentRows = currentDeckCards.cards || [];
+        return {
+          ...currentCards,
+          [deckId]: {
+            ...currentDeckCards,
+            expanded: currentDeckCards.expanded !== false,
+            cards: append ? mergeUniqueCards(currentRows, fetchedCards) : fetchedCards,
+            nextCursor: data.nextCursor || null,
+            hasLoaded: true,
+            loading: false,
+            loadingMore: false,
+            error: '',
+          },
+        };
+      });
+    } catch (error) {
+      console.error('Error fetching deck cards:', error);
+      setDeckCards((currentCards) => ({
+        ...currentCards,
+        [deckId]: {
+          cards: [],
+          nextCursor: null,
+          hasLoaded: false,
+          ...(currentCards[deckId] || {}),
+          loading: false,
+          loadingMore: false,
+          error: 'Network error. Please try again.',
+        },
+      }));
+    }
+  };
+
+  const toggleDeckCards = (deckId) => {
+    const currentDeckCards = deckCards[deckId];
+
+    if (currentDeckCards?.expanded) {
+      setDeckCards((currentCards) => ({
+        ...currentCards,
+        [deckId]: {
+          ...currentCards[deckId],
+          expanded: false,
+        },
+      }));
+      return;
+    }
+
+    if (currentDeckCards?.hasLoaded) {
+      setDeckCards((currentCards) => ({
+        ...currentCards,
+        [deckId]: {
+          ...currentCards[deckId],
+          expanded: true,
+        },
+      }));
+      return;
+    }
+
+    fetchDeckCards(deckId);
+  };
+
   const addCard = async (event, deckId) => {
     event.preventDefault();
 
@@ -198,6 +336,9 @@ const DeckManagement = () => {
         },
       }));
       fetchDecks();
+      if (deckCards[deckId]?.expanded) {
+        fetchDeckCards(deckId);
+      }
     } catch (error) {
       console.error('Error creating card:', error);
       setCardFormStatus(deckId, {
@@ -282,6 +423,9 @@ const DeckManagement = () => {
           const isRenamingDeck = Boolean(renamingDecks[deck.id]);
           const deleteError = deleteErrors[deck.id];
           const isDeletingDeck = Boolean(deletingDecks[deck.id]);
+          const currentDeckCards = deckCards[deck.id] || {};
+          const isExpanded = Boolean(currentDeckCards.expanded);
+          const loadedCards = currentDeckCards.cards || [];
 
           return (
             <Card key={deck.id}>
@@ -314,8 +458,48 @@ const DeckManagement = () => {
                 >
                   {isDeletingDeck ? 'Deleting...' : 'Delete'}
                 </Button>
+                <Button className="mt-2 ml-2" onClick={() => toggleDeckCards(deck.id)}>
+                  {isExpanded ? 'Hide cards' : 'View cards'}
+                </Button>
                 {deleteError && (
                   <p className="mt-2 text-sm text-red-600">{deleteError}</p>
+                )}
+                {isExpanded && (
+                  <div className="mt-4 space-y-3">
+                    {currentDeckCards.loading && (
+                      <p className="text-sm text-gray-500">Loading cards...</p>
+                    )}
+                    {loadedCards.length > 0 && (
+                      <div className="space-y-2">
+                        {loadedCards.map((card) => (
+                          <div key={card.id} className="rounded border border-gray-200 p-3">
+                            <p className="text-sm font-medium text-gray-700">Front</p>
+                            <p className="whitespace-pre-wrap text-sm">{card.front_content}</p>
+                            <p className="mt-2 text-sm font-medium text-gray-700">Back</p>
+                            <p className="whitespace-pre-wrap text-sm">{card.back_content}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {currentDeckCards.hasLoaded && loadedCards.length === 0 && !currentDeckCards.loading && (
+                      <p className="text-sm text-gray-500">No cards in this deck yet.</p>
+                    )}
+                    {currentDeckCards.error && (
+                      <p className="text-sm text-red-600">{currentDeckCards.error}</p>
+                    )}
+                    {currentDeckCards.nextCursor && (
+                      <Button
+                        type="button"
+                        disabled={currentDeckCards.loadingMore}
+                        onClick={() => fetchDeckCards(deck.id, {
+                          cursor: currentDeckCards.nextCursor,
+                          append: true,
+                        })}
+                      >
+                        {currentDeckCards.loadingMore ? 'Loading...' : 'Load more'}
+                      </Button>
+                    )}
+                  </div>
                 )}
                 <form className="mt-4 space-y-2" onSubmit={(event) => addCard(event, deck.id)}>
                   <Input
