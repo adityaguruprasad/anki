@@ -8,6 +8,11 @@ import {
   createDeckSubmission,
   getCreateDeckFailureMessage,
 } from './deckCreateState';
+import {
+  RENAME_DECK_MESSAGES,
+  getRenameDeckFailureMessage,
+  renameDeckSubmission,
+} from './deckRenameState';
 import { getDeckManagementApiRequests } from './deckManagementApiRequests';
 import {
   addCreatedCardToLoadedDeckCards,
@@ -36,6 +41,7 @@ const DeckManagement = ({ env }) => {
   const [renameForms, setRenameForms] = useState({});
   const [renameErrors, setRenameErrors] = useState({});
   const [renamingDecks, setRenamingDecks] = useState({});
+  const renameDeckInFlightRef = useRef({});
   const [deleteErrors, setDeleteErrors] = useState({});
   const [deletingDecks, setDeletingDecks] = useState({});
   const [deckCards, setDeckCards] = useState({});
@@ -177,11 +183,47 @@ const DeckManagement = ({ env }) => {
     }));
   };
 
+  const clearRenameDeckState = (deckId) => {
+    setRenameForms((currentForms) => {
+      const nextForms = { ...currentForms };
+      delete nextForms[deckId];
+      return nextForms;
+    });
+    setRenameErrors((currentErrors) => {
+      const nextErrors = { ...currentErrors };
+      delete nextErrors[deckId];
+      return nextErrors;
+    });
+  };
+
   const renameDeck = async (event, deckId, currentName) => {
     event.preventDefault();
 
     const nextName = renameForms[deckId] ?? currentName;
+    const submission = renameDeckSubmission({
+      name: nextName,
+      currentName,
+      isSubmitting: Boolean(renameDeckInFlightRef.current[deckId]),
+    });
 
+    if (submission.blocked) {
+      return;
+    }
+
+    if (submission.unchanged) {
+      clearRenameDeckState(deckId);
+      return;
+    }
+
+    if (!submission.ok) {
+      setRenameErrors((currentErrors) => ({
+        ...currentErrors,
+        [deckId]: submission.error,
+      }));
+      return;
+    }
+
+    renameDeckInFlightRef.current[deckId] = true;
     setRenameErrors((currentErrors) => ({
       ...currentErrors,
       [deckId]: '',
@@ -198,36 +240,28 @@ const DeckManagement = ({ env }) => {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify({ name: nextName })
+        body: JSON.stringify({ name: submission.name })
       });
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
         setRenameErrors((currentErrors) => ({
           ...currentErrors,
-          [deckId]: data.error || 'Unable to rename deck.',
+          [deckId]: getRenameDeckFailureMessage(data),
         }));
         return;
       }
 
-      setRenameForms((currentForms) => {
-        const nextForms = { ...currentForms };
-        delete nextForms[deckId];
-        return nextForms;
-      });
-      setRenameErrors((currentErrors) => {
-        const nextErrors = { ...currentErrors };
-        delete nextErrors[deckId];
-        return nextErrors;
-      });
-      fetchDecks();
+      clearRenameDeckState(deckId);
+      await fetchDecks();
     } catch (error) {
       console.error('Error renaming deck:', error);
       setRenameErrors((currentErrors) => ({
         ...currentErrors,
-        [deckId]: 'Network error. Please try again.',
+        [deckId]: RENAME_DECK_MESSAGES.networkFailed,
       }));
     } finally {
+      delete renameDeckInFlightRef.current[deckId];
       setRenamingDecks((currentDecks) => {
         const nextDecks = { ...currentDecks };
         delete nextDecks[deckId];
@@ -807,6 +841,7 @@ const DeckManagement = ({ env }) => {
           const isCreatingCard = Boolean(cardForm.creating);
           const renameValue = renameForms[deck.id] ?? deck.name;
           const renameError = renameErrors[deck.id];
+          const renameErrorId = renameError ? `rename-deck-${deck.id}-error` : undefined;
           const isRenamingDeck = Boolean(renamingDecks[deck.id]);
           const deleteError = deleteErrors[deck.id];
           const isDeletingDeck = Boolean(deletingDecks[deck.id]);
@@ -827,6 +862,8 @@ const DeckManagement = ({ env }) => {
                     value={renameValue}
                     onChange={(e) => updateRenameForm(deck.id, e.target.value)}
                     aria-label={`Rename ${deck.name}`}
+                    aria-invalid={Boolean(renameError)}
+                    aria-describedby={renameErrorId}
                     disabled={isRenamingDeck}
                   />
                   <Button type="submit" disabled={isRenamingDeck}>
@@ -834,7 +871,9 @@ const DeckManagement = ({ env }) => {
                   </Button>
                 </form>
                 {renameError && (
-                  <p className="mt-2 text-sm text-red-600">{renameError}</p>
+                  <p id={renameErrorId} role="alert" className="mt-2 text-sm text-red-600">
+                    {renameError}
+                  </p>
                 )}
                 <Button className="mt-2" onClick={() => history.push(`/study?${new URLSearchParams({ deckId: deck.id })}`)}>
                   Study
