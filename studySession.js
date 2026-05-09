@@ -3,6 +3,7 @@ import { useHistory, useLocation } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { getStudySessionApiRequests } from './studySessionApiRequests';
+import { getStudySessionAnswerShortcutQuality } from './studySessionShortcuts';
 import { getStudySessionRequest, STUDY_SESSION_REQUESTS } from './studySessionTarget';
 
 const noDueCardsNotice = {
@@ -169,7 +170,7 @@ const StudySession = ({ env }) => {
     loadStudySession();
   }, [loadStudySession]);
 
-  const handleAnswer = async (quality) => {
+  const handleAnswer = useCallback(async (quality) => {
     if (!currentCard || isSubmittingRef.current) return;
 
     const requestDeckId = activeDeckIdRef.current;
@@ -201,7 +202,30 @@ const StudySession = ({ env }) => {
       setSubmitError('Unable to submit your answer. Please try again.');
       setSubmitInFlight(false);
     }
-  };
+  }, [apiRequests, currentCard, fetchNextCard, setSubmitInFlight]);
+
+  useEffect(() => {
+    const handleAnswerShortcut = (event) => {
+      if (!showAnswer || !currentCard || isSubmittingRef.current) {
+        return;
+      }
+
+      const quality = getStudySessionAnswerShortcutQuality(event);
+
+      if (quality === null) {
+        return;
+      }
+
+      event.preventDefault();
+      handleAnswer(quality);
+    };
+
+    window.addEventListener('keydown', handleAnswerShortcut);
+
+    return () => {
+      window.removeEventListener('keydown', handleAnswerShortcut);
+    };
+  }, [currentCard, handleAnswer, showAnswer]);
 
   const handleManageDecks = () => {
     history.push('/decks');
@@ -266,28 +290,33 @@ const StudySession = ({ env }) => {
               Show Answer
             </Button>
           ) : (
-            <div className="flex justify-between">
-              <Button
-                onClick={() => handleAnswer(1)}
-                className="bg-red-500 hover:bg-red-600"
-                disabled={isSubmitting}
-              >
-                Hard
-              </Button>
-              <Button
-                onClick={() => handleAnswer(3)}
-                className="bg-yellow-500 hover:bg-yellow-600"
-                disabled={isSubmitting}
-              >
-                Good
-              </Button>
-              <Button
-                onClick={() => handleAnswer(5)}
-                className="bg-green-500 hover:bg-green-600"
-                disabled={isSubmitting}
-              >
-                Easy
-              </Button>
+            <div>
+              <p className="mb-3 text-sm text-gray-600">
+                Shortcuts: 1 Hard, 2 Good, 3 Easy.
+              </p>
+              <div className="flex justify-between">
+                <Button
+                  onClick={() => handleAnswer(1)}
+                  className="bg-red-500 hover:bg-red-600"
+                  disabled={isSubmitting}
+                >
+                  Hard
+                </Button>
+                <Button
+                  onClick={() => handleAnswer(3)}
+                  className="bg-yellow-500 hover:bg-yellow-600"
+                  disabled={isSubmitting}
+                >
+                  Good
+                </Button>
+                <Button
+                  onClick={() => handleAnswer(5)}
+                  className="bg-green-500 hover:bg-green-600"
+                  disabled={isSubmitting}
+                >
+                  Easy
+                </Button>
+              </div>
             </div>
           )}
         </CardContent>

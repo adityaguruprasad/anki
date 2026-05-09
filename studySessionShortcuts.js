@@ -1,0 +1,85 @@
+const ANSWER_SHORTCUT_QUALITIES = Object.freeze({
+  1: 1,
+  2: 3,
+  3: 5,
+});
+
+const EDITABLE_TAG_NAMES = new Set(['input', 'textarea', 'select']);
+
+function getTagName(target) {
+  if (typeof target?.tagName === 'string') {
+    return target.tagName.toLowerCase();
+  }
+
+  if (typeof target?.nodeName === 'string') {
+    return target.nodeName.toLowerCase();
+  }
+
+  return '';
+}
+
+function hasEditableAttribute(target) {
+  if (typeof target?.getAttribute !== 'function') {
+    return false;
+  }
+
+  const contentEditable = target.getAttribute('contenteditable');
+
+  return typeof contentEditable === 'string' && contentEditable.toLowerCase() !== 'false';
+}
+
+function hasEditableProperty(target) {
+  if (target?.isContentEditable) {
+    return true;
+  }
+
+  if (typeof target?.contentEditable !== 'string') {
+    return false;
+  }
+
+  const contentEditable = target.contentEditable.toLowerCase();
+
+  return contentEditable !== '' && contentEditable !== 'false' && contentEditable !== 'inherit';
+}
+
+function isEditableShortcutTarget(target) {
+  let currentTarget = target;
+
+  while (currentTarget) {
+    if (EDITABLE_TAG_NAMES.has(getTagName(currentTarget))) {
+      return true;
+    }
+
+    if (hasEditableProperty(currentTarget) || hasEditableAttribute(currentTarget)) {
+      return true;
+    }
+
+    currentTarget = currentTarget.parentElement || null;
+  }
+
+  return false;
+}
+
+function getStudySessionAnswerShortcutQuality(event) {
+  if (
+    !event
+    || event.altKey
+    || event.ctrlKey
+    || event.metaKey
+    || event.shiftKey
+    || isEditableShortcutTarget(event.target)
+  ) {
+    return null;
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(ANSWER_SHORTCUT_QUALITIES, event.key)) {
+    return null;
+  }
+
+  return ANSWER_SHORTCUT_QUALITIES[event.key];
+}
+
+module.exports = {
+  getStudySessionAnswerShortcutQuality,
+  isEditableShortcutTarget,
+};
