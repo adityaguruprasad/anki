@@ -580,14 +580,20 @@ async function submitStudySession(req, res, db, calculateNextReview) {
            FROM decks d
            WHERE d.id = cards.deck_id
              AND d.user_id = $5
-         )`,
+         )
+       RETURNING id,
+                 next_review,
+                 interval,
+                 ease_factor,
+                 review_count,
+                 last_reviewed`,
       [next_review, interval, ease_factor, validCardId, req.user.userId]
     );
     if (updateResult.rowCount === 0) {
       return res.status(404).json({ error: 'Card not found' });
     }
 
-    return res.json({ success: true });
+    return res.json({ success: true, card: updateResult.rows[0] });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Internal server error' });

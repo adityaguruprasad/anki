@@ -2052,11 +2052,19 @@ test('POST /api/study-session returns 404 when card is not in user decks', async
   assert.equal(db.calls.length, 1);
 });
 
-test('POST /api/study-session keeps successful response shape', async () => {
+test('POST /api/study-session returns updated scheduling metadata for successful review', async () => {
   const nextReview = new Date().toISOString();
+  const updatedCard = {
+    id: 7,
+    next_review: nextReview,
+    interval: 3,
+    ease_factor: 2.6,
+    review_count: 3,
+    last_reviewed: '2026-05-08T12:05:00.000Z',
+  };
   const db = createDb([
     { rowCount: 1, rows: [{ id: 7, deck_id: 1, ease_factor: 2.5, interval: 2, review_count: 2 }] },
-    { rowCount: 1, rows: [] },
+    { rowCount: 1, rows: [updatedCard] },
   ]);
   const req = { body: { cardId: 7, quality: 4 }, user: { userId: 'user-1' } };
   const res = createRes();
@@ -2068,13 +2076,18 @@ test('POST /api/study-session keeps successful response shape', async () => {
   }));
 
   assert.equal(res.statusCode, 200);
-  assert.deepEqual(res.body, { success: true });
+  assert.deepEqual(res.body, { success: true, card: updatedCard });
   assert.equal(db.calls.length, 2);
   assert.match(db.calls[1].sql, /UPDATE\s+cards/i);
   assert.match(db.calls[1].sql, /WHERE\s+id\s+=\s+\$4/i);
   assert.match(db.calls[1].sql, /EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+decks\s+d/i);
   assert.match(db.calls[1].sql, /d\.id\s+=\s+cards\.deck_id/i);
   assert.match(db.calls[1].sql, /d\.user_id\s+=\s+\$5/i);
+  const returningClause = db.calls[1].sql.match(/\bRETURNING\b([\s\S]*)/i)?.[1];
+  assert.ok(returningClause, 'expected UPDATE to include a RETURNING clause');
+  for (const column of ['id', 'next_review', 'interval', 'ease_factor', 'review_count', 'last_reviewed']) {
+    assert.match(returningClause, new RegExp(`\\b${column}\\b`, 'i'));
+  }
   assert.deepEqual(db.calls[1].params, [nextReview, 3, 2.6, 7, 'user-1']);
 });
 
