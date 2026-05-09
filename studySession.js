@@ -13,6 +13,7 @@ import {
 } from './studySessionFeedback';
 import { getStudySessionNotice, STUDY_SESSION_NOTICE_TYPES } from './studySessionNotice';
 import { getStudySessionRequest, STUDY_SESSION_REQUESTS } from './studySessionTarget';
+import { buildAuthHeaders } from './authHeaders';
 
 const StudySession = ({ env }) => {
   const location = useLocation();
@@ -51,9 +52,7 @@ const StudySession = ({ env }) => {
       setIsLoading(true);
       setSessionNotice(null);
       const response = await fetch(apiRequests.dueCardUrl(requestDeckId), {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
+        headers: buildAuthHeaders(localStorage),
       });
 
       if (!isCurrentRequest()) return;
@@ -121,9 +120,7 @@ const StudySession = ({ env }) => {
       setSubmitInFlight(false);
 
       const response = await fetch(apiRequests.deckListUrl, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
+        headers: buildAuthHeaders(localStorage),
       });
 
       if (!isCurrentRequest()) return;
@@ -187,7 +184,7 @@ const StudySession = ({ env }) => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          ...buildAuthHeaders(localStorage),
         },
         body: JSON.stringify({ cardId: currentCard.id, quality }),
       });

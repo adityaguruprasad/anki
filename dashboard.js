@@ -6,6 +6,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import { getDashboardApiRequests } from './dashboardApiRequests';
 import { getStudyDeckTargetPath, hasDueCards, selectStudyDeckTarget } from './dashboardDeckTarget';
 import { buildSchedulingInsightsSummary } from './schedulingInsightsSummary';
+import { buildAuthHeaders } from './authHeaders';
 
 const Dashboard = ({ env }) => {
   const history = useHistory();
@@ -24,9 +25,7 @@ const Dashboard = ({ env }) => {
     const fetchStats = async () => {
       try {
         const response = await fetch(apiRequests.statsUrl, {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-          }
+          headers: buildAuthHeaders(localStorage)
         });
         if (!response.ok) {
           throw new Error('Unable to fetch stats');
@@ -49,9 +48,7 @@ const Dashboard = ({ env }) => {
         setIsLoadingDecks(true);
         setDeckLoadFailed(false);
         const response = await fetch(apiRequests.deckListUrl, {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-          }
+          headers: buildAuthHeaders(localStorage)
         });
         if (!response.ok) {
           throw new Error('Unable to fetch decks');
@@ -80,9 +77,7 @@ const Dashboard = ({ env }) => {
         setIsLoadingSchedulingInsights(true);
         setSchedulingInsightsLoadFailed(false);
         const response = await fetch(apiRequests.schedulingInsightsUrl, {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-          }
+          headers: buildAuthHeaders(localStorage)
         });
         if (!response.ok) {
           throw new Error('Unable to fetch scheduling insights');

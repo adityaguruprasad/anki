@@ -26,6 +26,7 @@ import {
   isCardActionInFlight,
 } from './deckCardActionInFlightState';
 import { createCardSubmission } from './deckCardCreateState';
+import { buildAuthHeaders } from './authHeaders';
 
 const CARD_PAGE_LIMIT = 10;
 const CREATE_DECK_SUCCESS_VISIBLE_MS = 2500;
@@ -58,9 +59,7 @@ const DeckManagement = ({ env }) => {
   const fetchDecks = useCallback(async () => {
     try {
       const response = await fetch(apiRequests.deckListUrl, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
+        headers: buildAuthHeaders(localStorage)
       });
       const data = await response.json();
       setDecks(data);
@@ -149,7 +148,7 @@ const DeckManagement = ({ env }) => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          ...buildAuthHeaders(localStorage)
         },
         body: JSON.stringify({ name: submission.name })
       });
@@ -245,7 +244,7 @@ const DeckManagement = ({ env }) => {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          ...buildAuthHeaders(localStorage)
         },
         body: JSON.stringify({ name: submission.name })
       });
@@ -472,9 +471,7 @@ const DeckManagement = ({ env }) => {
 
     try {
       const response = await fetch(apiRequests.browseDeckCardsUrl(deckId, searchParams), {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
+        headers: buildAuthHeaders(localStorage)
       });
       const data = await response.json().catch(() => ({}));
 
@@ -594,7 +591,7 @@ const DeckManagement = ({ env }) => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          ...buildAuthHeaders(localStorage)
         },
         body: JSON.stringify({
           deckId,
@@ -669,7 +666,7 @@ const DeckManagement = ({ env }) => {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          ...buildAuthHeaders(localStorage)
         },
         body: JSON.stringify({
           frontContent,
@@ -735,9 +732,7 @@ const DeckManagement = ({ env }) => {
     try {
       const response = await fetch(apiRequests.removeCardUrl(cardId), {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
+        headers: buildAuthHeaders(localStorage)
       });
       const data = await response.json().catch(() => ({}));
 
@@ -787,9 +782,7 @@ const DeckManagement = ({ env }) => {
     try {
       const response = await fetch(apiRequests.removeDeckUrl(deckId), {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
+        headers: buildAuthHeaders(localStorage)
       });
       const data = await response.json().catch(() => ({}));
 
