@@ -7,6 +7,10 @@ import {
   getStudySessionShortcutAction,
   STUDY_SESSION_SHORTCUT_ACTIONS,
 } from './studySessionShortcuts';
+import {
+  getStudySessionSubmissionFeedback,
+  parseStudySessionSubmissionResponse,
+} from './studySessionFeedback';
 import { getStudySessionNotice, STUDY_SESSION_NOTICE_TYPES } from './studySessionNotice';
 import { getStudySessionRequest, STUDY_SESSION_REQUESTS } from './studySessionTarget';
 
@@ -17,6 +21,7 @@ const StudySession = ({ env }) => {
   const [currentCard, setCurrentCard] = useState(null);
   const [showAnswer, setShowAnswer] = useState(false);
   const [sessionNotice, setSessionNotice] = useState(null);
+  const [submissionFeedback, setSubmissionFeedback] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -81,6 +86,7 @@ const StudySession = ({ env }) => {
 
       console.error('Error fetching card:', error);
       setCurrentCard(null);
+      setSubmissionFeedback(null);
       setSessionNotice(getStudySessionNotice(STUDY_SESSION_NOTICE_TYPES.DUE_CARD_FETCH_ERROR));
       setSubmitInFlight(false);
       setIsLoading(false);
@@ -90,6 +96,7 @@ const StudySession = ({ env }) => {
   const loadStudySession = useCallback(async () => {
     const requestSearch = location.search;
     const initialRequest = getStudySessionRequest(requestSearch);
+    setSubmissionFeedback(null);
 
     if (initialRequest.type === STUDY_SESSION_REQUESTS.LOAD_CARDS) {
       await fetchNextCard(initialRequest.deckId, requestSearch, {
@@ -161,6 +168,11 @@ const StudySession = ({ env }) => {
     loadStudySession();
   }, [loadStudySession]);
 
+  const revealAnswer = useCallback(() => {
+    setSubmissionFeedback(null);
+    setShowAnswer(true);
+  }, []);
+
   const handleAnswer = useCallback(async (quality) => {
     if (!currentCard || isSubmittingRef.current) return;
 
@@ -169,6 +181,7 @@ const StudySession = ({ env }) => {
 
     try {
       setSubmitInFlight(true);
+      setSubmissionFeedback(null);
       setSubmitError('');
       const response = await fetch(apiRequests.submitUrl, {
         method: 'POST',
@@ -183,10 +196,22 @@ const StudySession = ({ env }) => {
         throw new Error('Unable to submit answer');
       }
 
+      let responseText = '';
+      try {
+        responseText = await response.text();
+      } catch {
+        responseText = '';
+      }
+
       if (locationSearchRef.current !== requestSearch) {
         return;
       }
 
+      const submissionResponse = parseStudySessionSubmissionResponse(responseText);
+      setSubmissionFeedback(getStudySessionSubmissionFeedback({
+        quality,
+        response: submissionResponse,
+      }));
       await fetchNextCard(requestDeckId, requestSearch);
     } catch (error) {
       console.error('Error submitting answer:', error);
@@ -211,7 +236,7 @@ const StudySession = ({ env }) => {
       event.preventDefault();
 
       if (shortcutAction.type === STUDY_SESSION_SHORTCUT_ACTIONS.REVEAL_ANSWER) {
-        setShowAnswer(true);
+        revealAnswer();
         return;
       }
 
@@ -227,11 +252,20 @@ const StudySession = ({ env }) => {
     return () => {
       window.removeEventListener('keydown', handleAnswerShortcut);
     };
-  }, [currentCard, handleAnswer, isLoading, showAnswer]);
+  }, [currentCard, handleAnswer, isLoading, revealAnswer, showAnswer]);
 
   const handleManageDecks = () => {
     history.push('/decks');
   };
+
+  const submissionFeedbackStatus = submissionFeedback && (
+    <div
+      className="mb-3 rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800"
+      role="status"
+    >
+      {submissionFeedback.message}
+    </div>
+  );
 
   if (sessionNotice) {
     return (
@@ -263,11 +297,17 @@ const StudySession = ({ env }) => {
   }
 
   if (!currentCard) {
-    return <div>No more cards to study!</div>;
+    return (
+      <div className="max-w-md mx-auto mt-10">
+        {submissionFeedbackStatus}
+        <div>No more cards to study!</div>
+      </div>
+    );
   }
 
   return (
     <div className="max-w-md mx-auto mt-10">
+      {submissionFeedbackStatus}
       <Card>
         <CardContent className="p-6">
           <div className="mb-4">
@@ -290,7 +330,7 @@ const StudySession = ({ env }) => {
               <p className="mb-3 text-sm text-gray-600">
                 Shortcuts: Space or Enter to show answer.
               </p>
-              <Button onClick={() => setShowAnswer(true)} className="w-full" disabled={isSubmitting}>
+              <Button onClick={revealAnswer} className="w-full" disabled={isSubmitting}>
                 Show Answer
               </Button>
             </div>
