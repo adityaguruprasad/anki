@@ -279,6 +279,69 @@ async function createDeck(req, res, db) {
   }
 }
 
+async function renameDeck(req, res, db) {
+  try {
+    const deckIdValidation = validatePositiveIntegerIdentifier(req.params?.deckId, 'deckId');
+    if (!deckIdValidation.ok) {
+      return res.status(400).json({ error: deckIdValidation.error });
+    }
+
+    const validationResult = validateDeckName(req.body?.name);
+    if (!validationResult.ok) {
+      return res.status(400).json({ error: validationResult.error });
+    }
+
+    const deckId = deckIdValidation.value;
+    const deckName = validationResult.value;
+    const { rows } = await db.query(
+      `WITH target AS (
+         SELECT id
+         FROM decks
+         WHERE id = $1 AND user_id = $2
+       ),
+       duplicate AS (
+         SELECT id
+         FROM decks
+         WHERE user_id = $2
+           AND id <> $1
+           AND LOWER(TRIM(name)) = LOWER(TRIM($3))
+         LIMIT 1
+       ),
+       updated AS (
+         UPDATE decks d
+         SET name = $3
+         FROM target
+         WHERE d.id = target.id
+           AND NOT EXISTS (SELECT 1 FROM duplicate)
+         RETURNING d.*
+       )
+       SELECT
+         EXISTS (SELECT 1 FROM target) AS "deckExists",
+         EXISTS (SELECT 1 FROM duplicate) AS "duplicateExists",
+         (SELECT row_to_json(updated) FROM updated) AS deck`,
+      [deckId, req.user.userId, deckName]
+    );
+
+    const result = rows[0] ?? {};
+    if (!result.deckExists) {
+      return res.status(404).json({ error: 'Deck not found' });
+    }
+
+    if (result.duplicateExists) {
+      return res.status(409).json({ error: 'Deck name already exists for this user' });
+    }
+
+    return res.json(result.deck);
+  } catch (err) {
+    if (err?.code === '23505') {
+      return res.status(409).json({ error: 'Deck name already exists for this user' });
+    }
+
+    console.error(err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
 async function getDecks(req, res, db) {
   try {
     const { rows } = await db.query(
@@ -487,6 +550,7 @@ module.exports = {
   getStats,
   getSchedulingInsights,
   getDueCardsByDeck,
+  renameDeck,
   submitStudySession,
   isValidQuality,
   validatePositiveIntegerIdentifier,

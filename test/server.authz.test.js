@@ -12,6 +12,7 @@ const {
   getStats,
   getSchedulingInsights,
   getDueCardsByDeck,
+  renameDeck,
   submitStudySession,
   isValidQuality,
   validatePositiveIntegerIdentifier,
@@ -125,6 +126,121 @@ test('POST /api/decks uses atomic conflict handling for duplicate deck names', a
   assert.match(db.calls[0].sql, /ON\s+CONFLICT\s*\(\s*user_id\s*,\s*\(\s*LOWER\(TRIM\(name\)\)\s*\)\s*\)\s+DO\s+NOTHING/i);
   assert.match(db.calls[0].sql, /RETURNING\s+\*/i);
   assert.doesNotMatch(db.calls[0].sql, /NOT\s+EXISTS/i);
+});
+
+test('PATCH /api/decks/:deckId returns 400 for invalid deckId and skips db query', async () => {
+  const invalidDeckIds = [
+    undefined,
+    null,
+    '',
+    'abc',
+    '1.2',
+    '0',
+    ' -5 ',
+    0,
+    -2,
+    1.3,
+    '9007199254740992',
+  ];
+
+  for (const deckId of invalidDeckIds) {
+    const db = createDb([]);
+    const req = { params: { deckId }, body: { name: 'Renamed' }, user: { userId: 'user-1' } };
+    const res = createRes();
+
+    await renameDeck(req, res, db);
+
+    assert.equal(res.statusCode, 400);
+    assert.deepEqual(res.body, { error: 'Invalid deckId: must be a positive integer' });
+    assert.equal(db.calls.length, 0);
+  }
+});
+
+test('PATCH /api/decks/:deckId returns 400 for invalid deck name and skips db query', async () => {
+  const invalidCases = [
+    [undefined, 'Invalid deck name: must be a string'],
+    [null, 'Invalid deck name: must be a string'],
+    [42, 'Invalid deck name: must be a string'],
+    ['', 'Invalid deck name: cannot be blank'],
+    ['   ', 'Invalid deck name: cannot be blank'],
+  ];
+
+  for (const [name, error] of invalidCases) {
+    const db = createDb([]);
+    const req = { params: { deckId: '42' }, body: { name }, user: { userId: 'user-1' } };
+    const res = createRes();
+
+    await renameDeck(req, res, db);
+
+    assert.equal(res.statusCode, 400);
+    assert.deepEqual(res.body, { error });
+    assert.equal(db.calls.length, 0);
+  }
+});
+
+test('PATCH /api/decks/:deckId renames an owned deck with one atomic query', async () => {
+  const deck = { id: 42, user_id: 'user-1', name: 'Organic Chemistry' };
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [{ deckExists: true, duplicateExists: false, deck }],
+    },
+  ]);
+  const req = { params: { deckId: '42' }, body: { name: ' Organic Chemistry ' }, user: { userId: 'user-1' } };
+  const res = createRes();
+
+  await renameDeck(req, res, db);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, deck);
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [42, 'user-1', 'Organic Chemistry']);
+  assert.match(db.calls[0].sql, /WITH\s+target\s+AS/i);
+  assert.match(db.calls[0].sql, /UPDATE\s+decks\s+d/i);
+  assert.match(db.calls[0].sql, /SET\s+name\s+=\s+\$3/i);
+  assert.match(db.calls[0].sql, /WHERE\s+id\s+=\s+\$1\s+AND\s+user_id\s+=\s+\$2/i);
+  assert.match(db.calls[0].sql, /LOWER\(TRIM\(name\)\)\s+=\s+LOWER\(TRIM\(\$3\)\)/i);
+  assert.match(db.calls[0].sql, /NOT\s+EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+duplicate\s*\)/i);
+  assert.match(db.calls[0].sql, /RETURNING\s+d\.\*/i);
+});
+
+test('PATCH /api/decks/:deckId returns 404 for missing or unowned deck', async () => {
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [{ deckExists: false, duplicateExists: true, deck: null }],
+    },
+  ]);
+  const req = { params: { deckId: '42' }, body: { name: 'Biology' }, user: { userId: 'user-1' } };
+  const res = createRes();
+
+  await renameDeck(req, res, db);
+
+  assert.equal(res.statusCode, 404);
+  assert.deepEqual(res.body, { error: 'Deck not found' });
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [42, 'user-1', 'Biology']);
+});
+
+test('PATCH /api/decks/:deckId returns 409 for duplicate normalized deck name', async () => {
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [{ deckExists: true, duplicateExists: true, deck: null }],
+    },
+  ]);
+  const req = { params: { deckId: '42' }, body: { name: ' biology ' }, user: { userId: 'user-1' } };
+  const res = createRes();
+
+  await renameDeck(req, res, db);
+
+  assert.equal(res.statusCode, 409);
+  assert.deepEqual(res.body, { error: 'Deck name already exists for this user' });
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [42, 'user-1', 'biology']);
+  assert.match(db.calls[0].sql, /user_id\s+=\s+\$2/i);
+  assert.match(db.calls[0].sql, /id\s+<>\s+\$1/i);
+  assert.match(db.calls[0].sql, /LOWER\(TRIM\(name\)\)\s+=\s+LOWER\(TRIM\(\$3\)\)/i);
 });
 
 test('anki.db enforces unique normalized deck names per user', () => {

@@ -9,6 +9,9 @@ const DeckManagement = () => {
   const [decks, setDecks] = useState([]);
   const [newDeckName, setNewDeckName] = useState('');
   const [cardForms, setCardForms] = useState({});
+  const [renameForms, setRenameForms] = useState({});
+  const [renameErrors, setRenameErrors] = useState({});
+  const [renamingDecks, setRenamingDecks] = useState({});
   const [deleteErrors, setDeleteErrors] = useState({});
   const [deletingDecks, setDeletingDecks] = useState({});
 
@@ -46,6 +49,76 @@ const DeckManagement = () => {
       }
     } catch (error) {
       console.error('Error creating deck:', error);
+    }
+  };
+
+  const updateRenameForm = (deckId, value) => {
+    setRenameForms((currentForms) => ({
+      ...currentForms,
+      [deckId]: value,
+    }));
+    setRenameErrors((currentErrors) => ({
+      ...currentErrors,
+      [deckId]: '',
+    }));
+  };
+
+  const renameDeck = async (event, deckId, currentName) => {
+    event.preventDefault();
+
+    const nextName = renameForms[deckId] ?? currentName;
+
+    setRenameErrors((currentErrors) => ({
+      ...currentErrors,
+      [deckId]: '',
+    }));
+    setRenamingDecks((currentDecks) => ({
+      ...currentDecks,
+      [deckId]: true,
+    }));
+
+    try {
+      const response = await fetch(`http://localhost:3001/api/decks/${deckId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ name: nextName })
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        setRenameErrors((currentErrors) => ({
+          ...currentErrors,
+          [deckId]: data.error || 'Unable to rename deck.',
+        }));
+        return;
+      }
+
+      setRenameForms((currentForms) => {
+        const nextForms = { ...currentForms };
+        delete nextForms[deckId];
+        return nextForms;
+      });
+      setRenameErrors((currentErrors) => {
+        const nextErrors = { ...currentErrors };
+        delete nextErrors[deckId];
+        return nextErrors;
+      });
+      fetchDecks();
+    } catch (error) {
+      console.error('Error renaming deck:', error);
+      setRenameErrors((currentErrors) => ({
+        ...currentErrors,
+        [deckId]: 'Network error. Please try again.',
+      }));
+    } finally {
+      setRenamingDecks((currentDecks) => {
+        const nextDecks = { ...currentDecks };
+        delete nextDecks[deckId];
+        return nextDecks;
+      });
     }
   };
 
@@ -204,6 +277,9 @@ const DeckManagement = () => {
           const totalCards = deck.totalCards ?? 0;
           const dueCards = deck.dueCards ?? 0;
           const cardForm = cardForms[deck.id] || {};
+          const renameValue = renameForms[deck.id] ?? deck.name;
+          const renameError = renameErrors[deck.id];
+          const isRenamingDeck = Boolean(renamingDecks[deck.id]);
           const deleteError = deleteErrors[deck.id];
           const isDeletingDeck = Boolean(deletingDecks[deck.id]);
 
@@ -213,6 +289,21 @@ const DeckManagement = () => {
                 <h3 className="text-lg font-semibold">{deck.name}</h3>
                 <p className="text-sm text-gray-500">Cards: {totalCards}</p>
                 <p className="text-sm text-gray-500">Due: {dueCards}</p>
+                <form className="mt-3 flex gap-2" onSubmit={(event) => renameDeck(event, deck.id, deck.name)}>
+                  <Input
+                    type="text"
+                    value={renameValue}
+                    onChange={(e) => updateRenameForm(deck.id, e.target.value)}
+                    aria-label={`Rename ${deck.name}`}
+                    disabled={isRenamingDeck}
+                  />
+                  <Button type="submit" disabled={isRenamingDeck}>
+                    {isRenamingDeck ? 'Saving...' : 'Rename'}
+                  </Button>
+                </form>
+                {renameError && (
+                  <p className="mt-2 text-sm text-red-600">{renameError}</p>
+                )}
                 <Button className="mt-2" onClick={() => history.push(`/study?${new URLSearchParams({ deckId: deck.id })}`)}>
                   Study
                 </Button>
