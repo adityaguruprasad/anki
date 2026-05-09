@@ -88,7 +88,21 @@ async function getDueCardsByDeck(req, res, db) {
       return res.status(400).json({ error: deckIdValidation.error });
     }
 
+    const limitQuery = req.query?.limit;
+    const limitValidation = limitQuery === undefined
+      ? { ok: true, value: null }
+      : validatePositiveIntegerIdentifier(limitQuery, 'limit');
+    if (!limitValidation.ok) {
+      return res.status(400).json({ error: limitValidation.error });
+    }
+
     const deckId = deckIdValidation.value;
+    const params = [deckId, req.user.userId];
+    const limitClause = limitValidation.value === null ? '' : '\n       LIMIT $3';
+    if (limitValidation.value !== null) {
+      params.push(limitValidation.value);
+    }
+
     const { rows } = await db.query(
       `SELECT c.*, d.id AS "__owned_deck_id"
        FROM decks d
@@ -96,8 +110,8 @@ async function getDueCardsByDeck(req, res, db) {
          ON c.deck_id = d.id
         AND c.next_review <= NOW()
        WHERE d.id = $1 AND d.user_id = $2
-       ORDER BY c.next_review ASC, c.id ASC`,
-      [deckId, req.user.userId]
+       ORDER BY c.next_review ASC, c.id ASC${limitClause}`,
+      params
     );
 
     if (rows.length === 0) {

@@ -567,6 +567,38 @@ test('GET /api/cards/:deckId returns 400 for invalid deckId and skips db query',
   }
 });
 
+test('GET /api/cards/:deckId returns 400 for invalid limit and skips db query', async () => {
+  const invalidLimits = [
+    null,
+    '',
+    'abc',
+    '1.2',
+    '0',
+    ' -5 ',
+    0,
+    -2,
+    1.3,
+    ['1'],
+    '9007199254740992',
+  ];
+
+  for (const limit of invalidLimits) {
+    const db = createDb([]);
+    const req = {
+      params: { deckId: '42' },
+      query: { limit },
+      user: { userId: 'user-1' },
+    };
+    const res = createRes();
+
+    await getDueCardsByDeck(req, res, db);
+
+    assert.equal(res.statusCode, 400);
+    assert.deepEqual(res.body, { error: 'Invalid limit: must be a positive integer' });
+    assert.equal(db.calls.length, 0);
+  }
+});
+
 test('GET /api/cards/:deckId returns 404 when deck is not owned by user', async () => {
   const db = createDb([{ rowCount: 0, rows: [] }]);
   const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
@@ -605,6 +637,32 @@ test('GET /api/cards/:deckId returns due cards for owned deck with one ordered q
   assert.match(db.calls[0].sql, /LEFT JOIN cards c/);
   assert.match(db.calls[0].sql, /WHERE d\.id = \$1 AND d\.user_id = \$2/);
   assert.match(db.calls[0].sql, /ORDER BY c\.next_review ASC,\s*c\.id ASC/);
+  assert.doesNotMatch(db.calls[0].sql, /\bLIMIT\b/);
+});
+
+test('GET /api/cards/:deckId caps due cards with a validated parameterized limit', async () => {
+  const dueCard = { id: 1, next_review: '2026-05-07T12:00:00.000Z' };
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [{ ...dueCard, __owned_deck_id: 42 }],
+    },
+  ]);
+  const req = {
+    params: { deckId: '42' },
+    query: { limit: '1' },
+    user: { userId: 'user-1' },
+  };
+  const res = createRes();
+
+  await getDueCardsByDeck(req, res, db);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, [dueCard]);
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [42, 'user-1', 1]);
+  assert.match(db.calls[0].sql, /ORDER BY c\.next_review ASC,\s*c\.id ASC\s+LIMIT \$3/);
+  assert.doesNotMatch(db.calls[0].sql, /LIMIT\s+1/);
 });
 
 test('GET /api/cards/:deckId returns empty array for owned deck with no due cards', async () => {

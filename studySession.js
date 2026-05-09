@@ -30,7 +30,7 @@ const StudySession = () => {
 
     try {
       setError('');
-      const response = await fetch(`http://localhost:3001/api/cards/${deckId}`, {
+      const response = await fetch(`http://localhost:3001/api/cards/${deckId}?limit=1`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
         },
@@ -43,7 +43,7 @@ const StudySession = () => {
       const cards = await response.json();
 
       if (Array.isArray(cards) && cards.length > 0) {
-        setCurrentCard(cards[0]); // For simplicity, just get the first card
+        setCurrentCard(cards[0]);
         setShowAnswer(false);
         setSubmitError('');
       } else {
