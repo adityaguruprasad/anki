@@ -348,6 +348,54 @@ async function createCard(req, res, db) {
   }
 }
 
+async function updateCard(req, res, db) {
+  try {
+    const cardIdValidation = validatePositiveIntegerIdentifier(req.params?.cardId, 'cardId');
+    if (!cardIdValidation.ok) {
+      return res.status(400).json({ error: cardIdValidation.error });
+    }
+
+    const frontContentValidation = validateCardContent(req.body?.frontContent, 'frontContent');
+    if (!frontContentValidation.ok) {
+      return res.status(400).json({ error: frontContentValidation.error });
+    }
+
+    const backContentValidation = validateCardContent(req.body?.backContent, 'backContent');
+    if (!backContentValidation.ok) {
+      return res.status(400).json({ error: backContentValidation.error });
+    }
+
+    const { rows } = await db.query(
+      `UPDATE cards
+       SET front_content = $3,
+           back_content = $4
+       WHERE id = $1
+         AND EXISTS (
+           SELECT 1
+           FROM decks d
+           WHERE d.id = cards.deck_id
+             AND d.user_id = $2
+         )
+       RETURNING *`,
+      [
+        cardIdValidation.value,
+        req.user.userId,
+        frontContentValidation.value,
+        backContentValidation.value,
+      ]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Card not found' });
+    }
+
+    return res.json(rows[0]);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
 async function deleteCard(req, res, db) {
   try {
     const cardIdValidation = validatePositiveIntegerIdentifier(req.params?.cardId, 'cardId');
@@ -724,6 +772,7 @@ async function getSchedulingInsights(req, res, db, now = new Date()) {
 module.exports = {
   getCardsByDeck,
   createCard,
+  updateCard,
   createDeck,
   deleteCard,
   deleteDeck,

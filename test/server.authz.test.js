@@ -17,6 +17,7 @@ const {
   submitStudySession,
   isValidQuality,
   validatePositiveIntegerIdentifier,
+  updateCard,
 } = require('../apiHandlers');
 
 function createRes() {
@@ -1164,6 +1165,130 @@ test('POST /api/cards returns 404 when deck is missing or not owned by user', as
   assert.match(db.calls[0].sql, /INSERT\s+INTO\s+cards/i);
   assert.match(db.calls[0].sql, /FROM\s+decks\s+d/i);
   assert.match(db.calls[0].sql, /WHERE\s+d\.id\s+=\s+\$1\s+AND\s+d\.user_id\s+=\s+\$2/i);
+});
+
+test('PATCH /api/cards/:cardId returns 400 for invalid cardId and skips db query', async () => {
+  const invalidCardIds = [
+    undefined,
+    null,
+    '',
+    'abc',
+    '1.2',
+    '0',
+    ' -7 ',
+    0,
+    -1,
+    2.4,
+    '9007199254740992',
+    Number.MAX_SAFE_INTEGER + 1,
+  ];
+
+  for (const cardId of invalidCardIds) {
+    const db = createDb([]);
+    const req = {
+      params: { cardId },
+      body: {
+        frontContent: 'Front',
+        backContent: 'Back',
+      },
+      user: { userId: 'user-1' },
+    };
+    const res = createRes();
+
+    await updateCard(req, res, db);
+
+    assert.equal(res.statusCode, 400);
+    assert.deepEqual(res.body, { error: 'Invalid cardId: must be a positive integer' });
+    assert.equal(db.calls.length, 0);
+  }
+});
+
+test('PATCH /api/cards/:cardId returns 400 for blank front or back content and skips db query', async () => {
+  const invalidContentCases = [
+    [{ frontContent: '', backContent: 'Back' }, 'Invalid frontContent: must be a non-empty string'],
+    [{ frontContent: '   ', backContent: 'Back' }, 'Invalid frontContent: must be a non-empty string'],
+    [{ frontContent: 123, backContent: 'Back' }, 'Invalid frontContent: must be a non-empty string'],
+    [{ frontContent: 'Front', backContent: '' }, 'Invalid backContent: must be a non-empty string'],
+    [{ frontContent: 'Front', backContent: '   ' }, 'Invalid backContent: must be a non-empty string'],
+    [{ frontContent: 'Front', backContent: null }, 'Invalid backContent: must be a non-empty string'],
+  ];
+
+  for (const [body, error] of invalidContentCases) {
+    const db = createDb([]);
+    const req = {
+      params: { cardId: '77' },
+      body,
+      user: { userId: 'user-1' },
+    };
+    const res = createRes();
+
+    await updateCard(req, res, db);
+
+    assert.equal(res.statusCode, 400);
+    assert.deepEqual(res.body, { error });
+    assert.equal(db.calls.length, 0);
+  }
+});
+
+test('PATCH /api/cards/:cardId updates an owned card with one user-scoped query', async () => {
+  const updatedCard = {
+    id: 77,
+    deck_id: 42,
+    front_content: 'Updated front',
+    back_content: 'Updated back',
+    next_review: '2026-05-08T12:00:00.000Z',
+    interval: 1,
+    ease_factor: 2.5,
+    review_count: 0,
+  };
+  const db = createDb([{ rowCount: 1, rows: [updatedCard] }]);
+  const req = {
+    params: { cardId: '77' },
+    body: {
+      frontContent: '  Updated front  ',
+      backContent: '  Updated back  ',
+    },
+    user: { userId: 'user-1' },
+  };
+  const res = createRes();
+
+  await updateCard(req, res, db);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, updatedCard);
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [77, 'user-1', 'Updated front', 'Updated back']);
+  assert.match(db.calls[0].sql, /UPDATE\s+cards/i);
+  assert.match(db.calls[0].sql, /SET\s+front_content\s+=\s+\$3,\s+back_content\s+=\s+\$4/i);
+  assert.match(db.calls[0].sql, /WHERE\s+id\s+=\s+\$1/i);
+  assert.match(db.calls[0].sql, /EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+decks\s+d/i);
+  assert.match(db.calls[0].sql, /d\.id\s+=\s+cards\.deck_id/i);
+  assert.match(db.calls[0].sql, /d\.user_id\s+=\s+\$2/i);
+  assert.match(db.calls[0].sql, /RETURNING\s+\*/i);
+  assert.doesNotMatch(db.calls[0].sql, /SELECT[\s\S]+FROM\s+cards/i);
+});
+
+test('PATCH /api/cards/:cardId returns 404 for missing or unowned card with one user-scoped query', async () => {
+  const db = createDb([{ rowCount: 0, rows: [] }]);
+  const req = {
+    params: { cardId: '77' },
+    body: {
+      frontContent: 'Front',
+      backContent: 'Back',
+    },
+    user: { userId: 'user-1' },
+  };
+  const res = createRes();
+
+  await updateCard(req, res, db);
+
+  assert.equal(res.statusCode, 404);
+  assert.deepEqual(res.body, { error: 'Card not found' });
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [77, 'user-1', 'Front', 'Back']);
+  assert.match(db.calls[0].sql, /UPDATE\s+cards/i);
+  assert.match(db.calls[0].sql, /EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+decks\s+d/i);
+  assert.match(db.calls[0].sql, /d\.user_id\s+=\s+\$2/i);
 });
 
 test('DELETE /api/cards/:cardId deletes an owned card with one user-scoped query', async () => {
