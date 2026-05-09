@@ -2,7 +2,11 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { createDeck } = require('../apiHandlers');
-const { MAX_DECK_NAME_LENGTH, validateDeckName } = require('../deckNameValidation');
+const {
+  DECK_NAME_VALIDATION_ERROR_CODES,
+  MAX_DECK_NAME_LENGTH,
+  validateDeckName,
+} = require('../deckNameValidation');
 
 function createRes() {
   return {
@@ -35,19 +39,36 @@ function createDb(results) {
 }
 
 test('validateDeckName rejects invalid name types', () => {
-  assert.deepEqual(validateDeckName(123), { ok: false, error: 'Invalid deck name: must be a string' });
-  assert.deepEqual(validateDeckName(null), { ok: false, error: 'Invalid deck name: must be a string' });
-  assert.deepEqual(validateDeckName({}), { ok: false, error: 'Invalid deck name: must be a string' });
+  assert.deepEqual(validateDeckName(123), {
+    ok: false,
+    code: DECK_NAME_VALIDATION_ERROR_CODES.NON_STRING,
+    error: 'Invalid deck name: must be a string',
+  });
+  assert.deepEqual(validateDeckName(null), {
+    ok: false,
+    code: DECK_NAME_VALIDATION_ERROR_CODES.NON_STRING,
+    error: 'Invalid deck name: must be a string',
+  });
+  assert.deepEqual(validateDeckName({}), {
+    ok: false,
+    code: DECK_NAME_VALIDATION_ERROR_CODES.NON_STRING,
+    error: 'Invalid deck name: must be a string',
+  });
 });
 
 test('validateDeckName rejects blank names after trim', () => {
-  assert.deepEqual(validateDeckName('   '), { ok: false, error: 'Invalid deck name: cannot be blank' });
+  assert.deepEqual(validateDeckName('   '), {
+    ok: false,
+    code: DECK_NAME_VALIDATION_ERROR_CODES.BLANK,
+    error: 'Invalid deck name: cannot be blank',
+  });
 });
 
 test('validateDeckName rejects over-length names', () => {
   const longName = 'a'.repeat(MAX_DECK_NAME_LENGTH + 1);
   assert.deepEqual(validateDeckName(longName), {
     ok: false,
+    code: DECK_NAME_VALIDATION_ERROR_CODES.TOO_LONG,
     error: `Invalid deck name: must be at most ${MAX_DECK_NAME_LENGTH} characters`,
   });
 });

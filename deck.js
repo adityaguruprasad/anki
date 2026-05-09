@@ -1,8 +1,13 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useHistory } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import {
+  CREATE_DECK_MESSAGES,
+  createDeckSubmission,
+  getCreateDeckFailureMessage,
+} from './deckCreateState';
 import { getDeckManagementApiRequests } from './deckManagementApiRequests';
 import {
   addCreatedCardToLoadedDeckCards,
@@ -11,12 +16,20 @@ import {
 } from './deckCardState';
 
 const CARD_PAGE_LIMIT = 10;
+const CREATE_DECK_SUCCESS_VISIBLE_MS = 2500;
 
 const DeckManagement = ({ env }) => {
   const history = useHistory();
   const apiRequests = useMemo(() => getDeckManagementApiRequests(env), [env]);
   const [decks, setDecks] = useState([]);
   const [newDeckName, setNewDeckName] = useState('');
+  const [createDeckStatus, setCreateDeckStatus] = useState({
+    creating: false,
+    error: '',
+    success: '',
+  });
+  const createDeckInFlightRef = useRef(false);
+  const createDeckSuccessTimerRef = useRef(null);
   const [cardForms, setCardForms] = useState({});
   const [renameForms, setRenameForms] = useState({});
   const [renameErrors, setRenameErrors] = useState({});
@@ -45,7 +58,77 @@ const DeckManagement = ({ env }) => {
     fetchDecks();
   }, [fetchDecks]);
 
-  const createDeck = async () => {
+  useEffect(() => () => {
+    if (createDeckSuccessTimerRef.current) {
+      clearTimeout(createDeckSuccessTimerRef.current);
+    }
+  }, []);
+
+  const clearCreateDeckSuccessTimer = () => {
+    if (createDeckSuccessTimerRef.current) {
+      clearTimeout(createDeckSuccessTimerRef.current);
+      createDeckSuccessTimerRef.current = null;
+    }
+  };
+
+  const showCreateDeckSuccess = () => {
+    clearCreateDeckSuccessTimer();
+    setCreateDeckStatus({
+      creating: false,
+      error: '',
+      success: CREATE_DECK_MESSAGES.success,
+    });
+    createDeckSuccessTimerRef.current = setTimeout(() => {
+      createDeckSuccessTimerRef.current = null;
+      setCreateDeckStatus((currentStatus) => ({
+        ...currentStatus,
+        success: '',
+      }));
+    }, CREATE_DECK_SUCCESS_VISIBLE_MS);
+  };
+
+  const updateCreateDeckName = (value) => {
+    setNewDeckName(value);
+    if (createDeckStatus.error || createDeckStatus.success) {
+      clearCreateDeckSuccessTimer();
+      setCreateDeckStatus((currentStatus) => ({
+        ...currentStatus,
+        error: '',
+        success: '',
+      }));
+    }
+  };
+
+  const createDeck = async (event) => {
+    event.preventDefault();
+
+    const submission = createDeckSubmission({
+      name: newDeckName,
+      isSubmitting: createDeckInFlightRef.current,
+    });
+
+    if (submission.blocked) {
+      return;
+    }
+
+    if (!submission.ok) {
+      clearCreateDeckSuccessTimer();
+      setCreateDeckStatus({
+        creating: false,
+        error: submission.error,
+        success: '',
+      });
+      return;
+    }
+
+    createDeckInFlightRef.current = true;
+    clearCreateDeckSuccessTimer();
+    setCreateDeckStatus({
+      creating: true,
+      error: '',
+      success: '',
+    });
+
     try {
       const response = await fetch(apiRequests.createDeckUrl, {
         method: 'POST',
@@ -53,14 +136,31 @@ const DeckManagement = ({ env }) => {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify({ name: newDeckName })
+        body: JSON.stringify({ name: submission.name })
       });
-      if (response.ok) {
-        setNewDeckName('');
-        fetchDecks();
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        setCreateDeckStatus({
+          creating: false,
+          error: getCreateDeckFailureMessage(data),
+          success: '',
+        });
+        return;
       }
+
+      setNewDeckName('');
+      await fetchDecks();
+      showCreateDeckSuccess();
     } catch (error) {
       console.error('Error creating deck:', error);
+      setCreateDeckStatus({
+        creating: false,
+        error: CREATE_DECK_MESSAGES.networkFailed,
+        success: '',
+      });
+    } finally {
+      createDeckInFlightRef.current = false;
     }
   };
 
@@ -640,19 +740,41 @@ const DeckManagement = ({ env }) => {
     }
   };
 
+  const isCreatingDeck = Boolean(createDeckStatus.creating);
+  const createDeckStatusId = createDeckStatus.error || createDeckStatus.success
+    ? 'create-deck-status'
+    : undefined;
+
   return (
     <div className="max-w-2xl mx-auto mt-10">
       <h2 className="text-2xl font-bold mb-4">Manage Decks</h2>
-      <div className="mb-4 flex">
-        <Input
-          type="text"
-          value={newDeckName}
-          onChange={(e) => setNewDeckName(e.target.value)}
-          placeholder="New deck name"
-          className="mr-2"
-        />
-        <Button onClick={createDeck}>Create Deck</Button>
-      </div>
+      <form className="mb-4" onSubmit={createDeck}>
+        <div className="flex">
+          <Input
+            type="text"
+            value={newDeckName}
+            onChange={(e) => updateCreateDeckName(e.target.value)}
+            placeholder="New deck name"
+            className="mr-2"
+            disabled={isCreatingDeck}
+            aria-invalid={Boolean(createDeckStatus.error)}
+            aria-describedby={createDeckStatusId}
+          />
+          <Button type="submit" disabled={isCreatingDeck}>
+            {isCreatingDeck ? 'Creating...' : 'Create Deck'}
+          </Button>
+        </div>
+        {createDeckStatus.error && (
+          <p id="create-deck-status" role="alert" className="mt-2 text-sm text-red-600">
+            {createDeckStatus.error}
+          </p>
+        )}
+        {createDeckStatus.success && (
+          <p id="create-deck-status" aria-live="polite" className="mt-2 text-sm text-green-600">
+            {createDeckStatus.success}
+          </p>
+        )}
+      </form>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {decks.map(deck => {
           const totalCards = deck.totalCards ?? 0;
