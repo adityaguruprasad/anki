@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { BrowserRouter as Router, Route, Switch, Redirect } from 'react-router-dom';
+import { BrowserRouter as Router, Route, Switch, Redirect, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import Dashboard from './dashboard';
@@ -141,9 +141,9 @@ const App = () => {
         {isLoggedIn && (
           <nav className="mb-4">
             <ul className="flex space-x-4">
-              <li><a href="/" className="text-blue-500 hover:underline">Dashboard</a></li>
-              <li><a href="/study" className="text-blue-500 hover:underline">Study</a></li>
-              <li><a href="/decks" className="text-blue-500 hover:underline">Manage Decks</a></li>
+              <li><Link to="/" className="text-blue-500 hover:underline">Dashboard</Link></li>
+              <li><Link to="/study" className="text-blue-500 hover:underline">Study</Link></li>
+              <li><Link to="/decks" className="text-blue-500 hover:underline">Manage Decks</Link></li>
               <li><Button onClick={handleLogout}>Logout</Button></li>
             </ul>
           </nav>
