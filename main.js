@@ -153,7 +153,7 @@ const App = () => {
             {isLoggedIn ? <Redirect to="/" /> : <Login setIsLoggedIn={setIsLoggedIn} env={apiEnv} />}
           </Route>
           <Route exact path="/">
-            {isLoggedIn ? <Dashboard /> : <Redirect to="/login" />}
+            {isLoggedIn ? <Dashboard env={apiEnv} /> : <Redirect to="/login" />}
           </Route>
           <Route path="/study">
             {isLoggedIn ? <StudySession env={apiEnv} /> : <Redirect to="/login" />}

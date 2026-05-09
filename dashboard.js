@@ -1,12 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useHistory } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { getDashboardApiRequests } from './dashboardApiRequests';
 import { getStudyDeckTargetPath, hasDueCards, selectStudyDeckTarget } from './dashboardDeckTarget';
 
-const Dashboard = () => {
+const Dashboard = ({ env }) => {
   const history = useHistory();
+  const apiRequests = useMemo(() => getDashboardApiRequests(env), [env]);
   const [stats, setStats] = useState(null);
   const [studyDeckTarget, setStudyDeckTarget] = useState(null);
   const [isLoadingDecks, setIsLoadingDecks] = useState(true);
@@ -15,67 +17,67 @@ const Dashboard = () => {
   useEffect(() => {
     let ignore = false;
 
-    fetchStats(() => ignore);
-    fetchDecks(() => ignore);
+    const fetchStats = async () => {
+      try {
+        const response = await fetch(apiRequests.statsUrl, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          }
+        });
+        if (!response.ok) {
+          throw new Error('Unable to fetch stats');
+        }
+        const data = await response.json();
+        if (ignore) {
+          return;
+        }
+        setStats(data);
+      } catch (error) {
+        if (ignore) {
+          return;
+        }
+        console.error('Error fetching stats:', error);
+      }
+    };
+
+    const fetchDecks = async () => {
+      try {
+        setIsLoadingDecks(true);
+        setDeckLoadFailed(false);
+        const response = await fetch(apiRequests.deckListUrl, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          }
+        });
+        if (!response.ok) {
+          throw new Error('Unable to fetch decks');
+        }
+        const data = await response.json();
+        if (ignore) {
+          return;
+        }
+        setStudyDeckTarget(selectStudyDeckTarget(data));
+      } catch (error) {
+        if (ignore) {
+          return;
+        }
+        console.error('Error fetching decks:', error);
+        setStudyDeckTarget(null);
+        setDeckLoadFailed(true);
+      } finally {
+        if (!ignore) {
+          setIsLoadingDecks(false);
+        }
+      }
+    };
+
+    fetchStats();
+    fetchDecks();
 
     return () => {
       ignore = true;
     };
-  }, []);
-
-  const fetchStats = async (shouldIgnore = () => false) => {
-    try {
-      const response = await fetch('http://localhost:3001/api/stats', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
-      if (!response.ok) {
-        throw new Error('Unable to fetch stats');
-      }
-      const data = await response.json();
-      if (shouldIgnore()) {
-        return;
-      }
-      setStats(data);
-    } catch (error) {
-      if (shouldIgnore()) {
-        return;
-      }
-      console.error('Error fetching stats:', error);
-    }
-  };
-
-  const fetchDecks = async (shouldIgnore = () => false) => {
-    try {
-      setIsLoadingDecks(true);
-      setDeckLoadFailed(false);
-      const response = await fetch('http://localhost:3001/api/decks', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
-      if (!response.ok) {
-        throw new Error('Unable to fetch decks');
-      }
-      const data = await response.json();
-      if (shouldIgnore()) {
-        return;
-      }
-      setStudyDeckTarget(selectStudyDeckTarget(data));
-    } catch (error) {
-      if (shouldIgnore()) {
-        return;
-      }
-      console.error('Error fetching decks:', error);
-      setStudyDeckTarget(null);
-      setDeckLoadFailed(true);
-    } finally {
-      if (!shouldIgnore()) {
-        setIsLoadingDecks(false);
-      }
-    }
-  };
+  }, [apiRequests]);
 
   const handleStartStudying = () => {
     if (isLoadingDecks) {
