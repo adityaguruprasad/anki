@@ -4,13 +4,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { getStudySessionApiRequests } from './studySessionApiRequests';
 import { getStudySessionAnswerShortcutQuality } from './studySessionShortcuts';
+import { getStudySessionNotice, STUDY_SESSION_NOTICE_TYPES } from './studySessionNotice';
 import { getStudySessionRequest, STUDY_SESSION_REQUESTS } from './studySessionTarget';
-
-const noDueCardsNotice = {
-  title: 'No due cards right now',
-  message: 'There are no cards due for review. Browse or manage your decks to add cards or choose what to study next.',
-  canRetry: false,
-};
 
 const StudySession = ({ env }) => {
   const location = useLocation();
@@ -18,7 +13,6 @@ const StudySession = ({ env }) => {
   const apiRequests = useMemo(() => getStudySessionApiRequests(env), [env]);
   const [currentCard, setCurrentCard] = useState(null);
   const [showAnswer, setShowAnswer] = useState(false);
-  const [error, setError] = useState('');
   const [sessionNotice, setSessionNotice] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [submitError, setSubmitError] = useState('');
@@ -47,7 +41,6 @@ const StudySession = ({ env }) => {
 
     try {
       setIsLoading(true);
-      setError('');
       setSessionNotice(null);
       const response = await fetch(apiRequests.dueCardUrl(requestDeckId), {
         headers: {
@@ -75,7 +68,7 @@ const StudySession = ({ env }) => {
       } else {
         setCurrentCard(null);
         if (options.showNoDueNotice) {
-          setSessionNotice(noDueCardsNotice);
+          setSessionNotice(getStudySessionNotice(STUDY_SESSION_NOTICE_TYPES.NO_DUE_CARDS));
         }
         setSubmitInFlight(false);
         setIsLoading(false);
@@ -85,7 +78,7 @@ const StudySession = ({ env }) => {
 
       console.error('Error fetching card:', error);
       setCurrentCard(null);
-      setError('Unable to load cards for this deck.');
+      setSessionNotice(getStudySessionNotice(STUDY_SESSION_NOTICE_TYPES.DUE_CARD_FETCH_ERROR));
       setSubmitInFlight(false);
       setIsLoading(false);
     }
@@ -111,7 +104,6 @@ const StudySession = ({ env }) => {
     try {
       activeDeckIdRef.current = null;
       setIsLoading(true);
-      setError('');
       setSessionNotice(null);
       setCurrentCard(null);
       setShowAnswer(false);
@@ -146,7 +138,7 @@ const StudySession = ({ env }) => {
       setShowAnswer(false);
       setSubmitError('');
       setSubmitInFlight(false);
-      setSessionNotice(noDueCardsNotice);
+      setSessionNotice(getStudySessionNotice(STUDY_SESSION_NOTICE_TYPES.NO_DUE_CARDS));
       setIsLoading(false);
     } catch (error) {
       if (!isCurrentRequest()) return;
@@ -157,11 +149,7 @@ const StudySession = ({ env }) => {
       setShowAnswer(false);
       setSubmitError('');
       setSubmitInFlight(false);
-      setSessionNotice({
-        title: 'Unable to check deck availability',
-        message: 'Try again or manage your decks to review and add cards.',
-        canRetry: true,
-      });
+      setSessionNotice(getStudySessionNotice(STUDY_SESSION_NOTICE_TYPES.DECK_AVAILABILITY_ERROR));
       setIsLoading(false);
     }
   }, [apiRequests, fetchNextCard, location.search, setSubmitInFlight]);
@@ -244,18 +232,16 @@ const StudySession = ({ env }) => {
                   Try Again
                 </Button>
               )}
-              <Button onClick={handleManageDecks}>
-                Manage Decks
-              </Button>
+              {sessionNotice.canManageDecks && (
+                <Button onClick={handleManageDecks}>
+                  Manage Decks
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>
       </div>
     );
-  }
-
-  if (error) {
-    return <div>{error}</div>;
   }
 
   if (!currentCard && isLoading) {
