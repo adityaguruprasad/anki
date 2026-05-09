@@ -3,14 +3,13 @@ import { useHistory } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import {
+  addCreatedCardToLoadedDeckCards,
+  incrementDeckCardCounts,
+  mergeUniqueCards,
+} from './deckCardState';
 
 const CARD_PAGE_LIMIT = 10;
-
-const mergeUniqueCards = (existingCards, nextCards) => {
-  const existingIds = new Set(existingCards.map((card) => card.id));
-  const uniqueNextCards = nextCards.filter((card) => !existingIds.has(card.id));
-  return [...existingCards, ...uniqueNextCards];
-};
 
 const DeckManagement = () => {
   const history = useHistory();
@@ -461,10 +460,8 @@ const DeckManagement = () => {
           success: 'Card added.',
         },
       }));
-      fetchDecks();
-      if (deckCards[deckId]?.expanded) {
-        fetchDeckCards(deckId);
-      }
+      setDecks((currentDecks) => incrementDeckCardCounts(currentDecks, deckId, data));
+      setDeckCards((currentCards) => addCreatedCardToLoadedDeckCards(currentCards, deckId, data));
     } catch (error) {
       console.error('Error creating card:', error);
       setCardFormStatus(deckId, {
