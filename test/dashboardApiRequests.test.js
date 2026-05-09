@@ -8,6 +8,7 @@ test('getDashboardApiRequests falls back to the local development API base URL',
 
   assert.equal(requests.statsUrl, 'http://localhost:3001/api/stats');
   assert.equal(requests.deckListUrl, 'http://localhost:3001/api/decks');
+  assert.equal(requests.schedulingInsightsUrl, 'http://localhost:3001/api/scheduling-insights');
 });
 
 test('getDashboardApiRequests trims and strips configured API base URL trailing slashes', () => {
@@ -17,4 +18,5 @@ test('getDashboardApiRequests trims and strips configured API base URL trailing 
 
   assert.equal(requests.statsUrl, 'https://api.example.test/api/stats');
   assert.equal(requests.deckListUrl, 'https://api.example.test/api/decks');
+  assert.equal(requests.schedulingInsightsUrl, 'https://api.example.test/api/scheduling-insights');
 });

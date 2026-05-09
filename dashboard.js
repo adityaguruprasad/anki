@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { getDashboardApiRequests } from './dashboardApiRequests';
 import { getStudyDeckTargetPath, hasDueCards, selectStudyDeckTarget } from './dashboardDeckTarget';
+import { buildSchedulingInsightsSummary } from './schedulingInsightsSummary';
 
 const Dashboard = ({ env }) => {
   const history = useHistory();
@@ -13,6 +14,9 @@ const Dashboard = ({ env }) => {
   const [studyDeckTarget, setStudyDeckTarget] = useState(null);
   const [isLoadingDecks, setIsLoadingDecks] = useState(true);
   const [deckLoadFailed, setDeckLoadFailed] = useState(false);
+  const [schedulingInsights, setSchedulingInsights] = useState(null);
+  const [isLoadingSchedulingInsights, setIsLoadingSchedulingInsights] = useState(true);
+  const [schedulingInsightsLoadFailed, setSchedulingInsightsLoadFailed] = useState(false);
 
   useEffect(() => {
     let ignore = false;
@@ -71,8 +75,40 @@ const Dashboard = ({ env }) => {
       }
     };
 
+    const fetchSchedulingInsights = async () => {
+      try {
+        setIsLoadingSchedulingInsights(true);
+        setSchedulingInsightsLoadFailed(false);
+        const response = await fetch(apiRequests.schedulingInsightsUrl, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          }
+        });
+        if (!response.ok) {
+          throw new Error('Unable to fetch scheduling insights');
+        }
+        const data = await response.json();
+        if (ignore) {
+          return;
+        }
+        setSchedulingInsights(data);
+      } catch (error) {
+        if (ignore) {
+          return;
+        }
+        console.error('Error fetching scheduling insights:', error);
+        setSchedulingInsights(null);
+        setSchedulingInsightsLoadFailed(true);
+      } finally {
+        if (!ignore) {
+          setIsLoadingSchedulingInsights(false);
+        }
+      }
+    };
+
     fetchStats();
     fetchDecks();
+    fetchSchedulingInsights();
 
     return () => {
       ignore = true;
@@ -93,6 +129,7 @@ const Dashboard = ({ env }) => {
     { name: 'This Month', cards: stats?.monthReviews || 0 },
   ];
   const hasDueStudyTarget = hasDueCards(studyDeckTarget);
+  const schedulingSummary = buildSchedulingInsightsSummary(schedulingInsights);
 
   const studyPrompt = isLoadingDecks
     ? 'Checking deck availability...'
@@ -143,6 +180,50 @@ const Dashboard = ({ env }) => {
               <Bar dataKey="cards" fill="#8884d8" />
             </BarChart>
           </ResponsiveContainer>
+        </CardContent>
+      </Card>
+      <Card className="mb-8">
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold">Scheduling Insights</h3>
+            {isLoadingSchedulingInsights && (
+              <span className="text-sm text-gray-500">Loading...</span>
+            )}
+          </div>
+          {schedulingInsightsLoadFailed ? (
+            <p className="text-sm text-gray-600">Scheduling insights could not be loaded.</p>
+          ) : isLoadingSchedulingInsights && !schedulingInsights ? (
+            <p className="text-sm text-gray-600">Loading scheduling insights...</p>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                <div>
+                  <p className="text-sm text-gray-500">Due today</p>
+                  <p className="text-2xl font-bold">{schedulingSummary.dueToday}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Overdue</p>
+                  <p className="text-2xl font-bold">{schedulingSummary.overdue}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Daily target</p>
+                  <p className="text-2xl font-bold">{schedulingSummary.recommendedDailyReviewTarget}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Avg ease</p>
+                  <p className="text-2xl font-bold">{schedulingSummary.averageEaseFactorLabel}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {schedulingSummary.upcomingBuckets.map((bucket) => (
+                  <div key={bucket.key} className="flex items-center justify-between rounded border border-gray-200 px-3 py-2">
+                    <span className="text-sm text-gray-600">{bucket.label}</span>
+                    <span className="text-sm font-semibold">{bucket.value}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
       <div>

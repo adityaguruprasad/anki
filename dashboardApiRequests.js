@@ -6,6 +6,7 @@ function getDashboardApiRequests(env) {
   return {
     statsUrl: `${baseUrl}/api/stats`,
     deckListUrl: `${baseUrl}/api/decks`,
+    schedulingInsightsUrl: `${baseUrl}/api/scheduling-insights`,
   };
 }
 
