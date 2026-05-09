@@ -14,6 +14,7 @@ import {
   incrementDeckCardCounts,
   mergeUniqueCards,
 } from './deckCardState';
+import { createCardSubmission } from './deckCardCreateState';
 
 const CARD_PAGE_LIMIT = 10;
 const CREATE_DECK_SUCCESS_VISIBLE_MS = 2500;
@@ -31,6 +32,7 @@ const DeckManagement = ({ env }) => {
   const createDeckInFlightRef = useRef(false);
   const createDeckSuccessTimerRef = useRef(null);
   const [cardForms, setCardForms] = useState({});
+  const cardCreateInFlightRef = useRef({});
   const [renameForms, setRenameForms] = useState({});
   const [renameErrors, setRenameErrors] = useState({});
   const [renamingDecks, setRenamingDecks] = useState({});
@@ -254,6 +256,7 @@ const DeckManagement = ({ env }) => {
       [deckId]: {
         frontContent: '',
         backContent: '',
+        creating: false,
         error: '',
         success: '',
         ...(currentForms[deckId] || {}),
@@ -519,16 +522,31 @@ const DeckManagement = ({ env }) => {
     event.preventDefault();
 
     const currentForm = cardForms[deckId] || {};
-    const frontContent = currentForm.frontContent || '';
-    const backContent = currentForm.backContent || '';
+    const submission = createCardSubmission({
+      frontContent: currentForm.frontContent || '',
+      backContent: currentForm.backContent || '',
+      isSubmitting: Boolean(cardCreateInFlightRef.current[deckId]),
+    });
 
-    if (!frontContent.trim() || !backContent.trim()) {
+    if (submission.blocked) {
+      return;
+    }
+
+    if (!submission.ok) {
       setCardFormStatus(deckId, {
-        error: 'Front and back content are required.',
+        creating: false,
+        error: submission.error,
         success: '',
       });
       return;
     }
+
+    cardCreateInFlightRef.current[deckId] = true;
+    setCardFormStatus(deckId, {
+      creating: true,
+      error: '',
+      success: '',
+    });
 
     try {
       const response = await fetch(apiRequests.createCardUrl, {
@@ -539,8 +557,8 @@ const DeckManagement = ({ env }) => {
         },
         body: JSON.stringify({
           deckId,
-          frontContent,
-          backContent,
+          frontContent: submission.frontContent,
+          backContent: submission.backContent,
         })
       });
       const data = await response.json().catch(() => ({}));
@@ -558,6 +576,7 @@ const DeckManagement = ({ env }) => {
         [deckId]: {
           frontContent: '',
           backContent: '',
+          creating: false,
           error: '',
           success: 'Card added.',
         },
@@ -569,6 +588,11 @@ const DeckManagement = ({ env }) => {
       setCardFormStatus(deckId, {
         error: 'Network error. Please try again.',
         success: '',
+      });
+    } finally {
+      delete cardCreateInFlightRef.current[deckId];
+      setCardFormStatus(deckId, {
+        creating: false,
       });
     }
   };
@@ -780,6 +804,7 @@ const DeckManagement = ({ env }) => {
           const totalCards = deck.totalCards ?? 0;
           const dueCards = deck.dueCards ?? 0;
           const cardForm = cardForms[deck.id] || {};
+          const isCreatingCard = Boolean(cardForm.creating);
           const renameValue = renameForms[deck.id] ?? deck.name;
           const renameError = renameErrors[deck.id];
           const isRenamingDeck = Boolean(renamingDecks[deck.id]);
@@ -931,12 +956,14 @@ const DeckManagement = ({ env }) => {
                     value={cardForm.frontContent || ''}
                     onChange={(e) => updateCardForm(deck.id, 'frontContent', e.target.value)}
                     placeholder="Front"
+                    disabled={isCreatingCard}
                   />
                   <Input
                     type="text"
                     value={cardForm.backContent || ''}
                     onChange={(e) => updateCardForm(deck.id, 'backContent', e.target.value)}
                     placeholder="Back"
+                    disabled={isCreatingCard}
                   />
                   {cardForm.error && (
                     <p className="text-sm text-red-600">{cardForm.error}</p>
@@ -944,7 +971,9 @@ const DeckManagement = ({ env }) => {
                   {cardForm.success && (
                     <p className="text-sm text-green-600">{cardForm.success}</p>
                   )}
-                  <Button type="submit" className="mt-1">Add Card</Button>
+                  <Button type="submit" className="mt-1" disabled={isCreatingCard}>
+                    {isCreatingCard ? 'Adding card...' : 'Add Card'}
+                  </Button>
                 </form>
               </CardContent>
             </Card>
