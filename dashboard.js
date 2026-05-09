@@ -1,27 +1,88 @@
 import React, { useState, useEffect } from 'react';
+import { useHistory } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { getStudyDeckTargetPath, hasDueCards, selectStudyDeckTarget } from './dashboardDeckTarget';
 
 const Dashboard = () => {
+  const history = useHistory();
   const [stats, setStats] = useState(null);
+  const [studyDeckTarget, setStudyDeckTarget] = useState(null);
+  const [isLoadingDecks, setIsLoadingDecks] = useState(true);
+  const [deckLoadFailed, setDeckLoadFailed] = useState(false);
 
   useEffect(() => {
-    fetchStats();
+    let ignore = false;
+
+    fetchStats(() => ignore);
+    fetchDecks(() => ignore);
+
+    return () => {
+      ignore = true;
+    };
   }, []);
 
-  const fetchStats = async () => {
+  const fetchStats = async (shouldIgnore = () => false) => {
     try {
       const response = await fetch('http://localhost:3001/api/stats', {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
       });
+      if (!response.ok) {
+        throw new Error('Unable to fetch stats');
+      }
       const data = await response.json();
+      if (shouldIgnore()) {
+        return;
+      }
       setStats(data);
     } catch (error) {
+      if (shouldIgnore()) {
+        return;
+      }
       console.error('Error fetching stats:', error);
     }
+  };
+
+  const fetchDecks = async (shouldIgnore = () => false) => {
+    try {
+      setIsLoadingDecks(true);
+      setDeckLoadFailed(false);
+      const response = await fetch('http://localhost:3001/api/decks', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      if (!response.ok) {
+        throw new Error('Unable to fetch decks');
+      }
+      const data = await response.json();
+      if (shouldIgnore()) {
+        return;
+      }
+      setStudyDeckTarget(selectStudyDeckTarget(data));
+    } catch (error) {
+      if (shouldIgnore()) {
+        return;
+      }
+      console.error('Error fetching decks:', error);
+      setStudyDeckTarget(null);
+      setDeckLoadFailed(true);
+    } finally {
+      if (!shouldIgnore()) {
+        setIsLoadingDecks(false);
+      }
+    }
+  };
+
+  const handleStartStudying = () => {
+    if (isLoadingDecks) {
+      return;
+    }
+
+    history.push(getStudyDeckTargetPath(studyDeckTarget));
   };
 
   const chartData = [
@@ -29,6 +90,26 @@ const Dashboard = () => {
     { name: 'This Week', cards: stats?.weekReviews || 0 },
     { name: 'This Month', cards: stats?.monthReviews || 0 },
   ];
+  const hasDueStudyTarget = hasDueCards(studyDeckTarget);
+
+  const studyPrompt = isLoadingDecks
+    ? 'Checking deck availability...'
+    : studyDeckTarget
+      ? hasDueStudyTarget
+        ? 'Resume with the next deck that has cards ready.'
+        : 'No cards are due right now. Browse or manage your decks instead.'
+      : deckLoadFailed
+        ? 'Deck status could not be loaded. Manage your decks to add cards or try again.'
+        : 'Add cards or create a deck before starting a study session.';
+  const startButtonLabel = isLoadingDecks
+    ? 'Checking Decks...'
+    : studyDeckTarget
+      ? hasDueStudyTarget
+        ? 'Start Studying'
+        : 'Browse Decks'
+      : deckLoadFailed
+        ? 'Manage Decks'
+        : 'Add Cards or Decks';
 
   return (
     <div className="max-w-4xl mx-auto mt-10">
@@ -62,7 +143,12 @@ const Dashboard = () => {
           </ResponsiveContainer>
         </CardContent>
       </Card>
-      <Button>Start Studying</Button>
+      <div>
+        <p className="text-sm text-gray-600 mb-3">{studyPrompt}</p>
+        <Button onClick={handleStartStudying} disabled={isLoadingDecks}>
+          {startButtonLabel}
+        </Button>
+      </div>
     </div>
   );
 };
