@@ -23,6 +23,8 @@ const DeckManagement = () => {
   const [deleteErrors, setDeleteErrors] = useState({});
   const [deletingDecks, setDeletingDecks] = useState({});
   const [deckCards, setDeckCards] = useState({});
+  const [cardEditForms, setCardEditForms] = useState({});
+  const [cardActionStates, setCardActionStates] = useState({});
 
   useEffect(() => {
     fetchDecks();
@@ -157,6 +159,83 @@ const DeckManagement = () => {
         ...status,
       },
     }));
+  };
+
+  const updateCardEditForm = (card, field, value) => {
+    setCardEditForms((currentForms) => ({
+      ...currentForms,
+      [card.id]: {
+        frontContent: card.front_content || '',
+        backContent: card.back_content || '',
+        ...(currentForms[card.id] || {}),
+        [field]: value,
+      },
+    }));
+    setCardActionStates((currentStates) => ({
+      ...currentStates,
+      [card.id]: {
+        ...(currentStates[card.id] || {}),
+        error: '',
+        success: '',
+      },
+    }));
+  };
+
+  const setCardActionState = (cardId, status) => {
+    setCardActionStates((currentStates) => ({
+      ...currentStates,
+      [cardId]: {
+        saving: false,
+        deleting: false,
+        error: '',
+        success: '',
+        ...status,
+      },
+    }));
+  };
+
+  const clearCardActionState = (cardId) => {
+    setCardActionStates((currentStates) => {
+      const nextStates = { ...currentStates };
+      delete nextStates[cardId];
+      return nextStates;
+    });
+  };
+
+  const updateLoadedCard = (deckId, cardId, nextCard) => {
+    setDeckCards((currentCards) => {
+      const currentDeckCards = currentCards[deckId];
+      if (!currentDeckCards) {
+        return currentCards;
+      }
+
+      return {
+        ...currentCards,
+        [deckId]: {
+          ...currentDeckCards,
+          cards: (currentDeckCards.cards || []).map((card) => (
+            card.id === cardId ? { ...card, ...nextCard } : card
+          )),
+        },
+      };
+    });
+  };
+
+  const removeLoadedCard = (deckId, cardId) => {
+    setDeckCards((currentCards) => {
+      const currentDeckCards = currentCards[deckId];
+      if (!currentDeckCards) {
+        return currentCards;
+      }
+
+      return {
+        ...currentCards,
+        [deckId]: {
+          ...currentDeckCards,
+          cards: (currentDeckCards.cards || []).filter((card) => card.id !== cardId),
+        },
+      };
+    });
   };
 
   const fetchDeckCards = async (deckId, options = {}) => {
@@ -348,6 +427,121 @@ const DeckManagement = () => {
     }
   };
 
+  const saveCard = async (event, deckId, card) => {
+    event.preventDefault();
+
+    const currentForm = cardEditForms[card.id] || {};
+    const frontContent = currentForm.frontContent ?? card.front_content ?? '';
+    const backContent = currentForm.backContent ?? card.back_content ?? '';
+
+    if (!frontContent.trim() || !backContent.trim()) {
+      setCardActionState(card.id, {
+        saving: false,
+        error: 'Front and back content are required.',
+        success: '',
+      });
+      return;
+    }
+
+    setCardActionState(card.id, {
+      saving: true,
+      error: '',
+      success: '',
+    });
+
+    try {
+      const response = await fetch(`http://localhost:3001/api/cards/${card.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          frontContent,
+          backContent,
+        })
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        setCardActionState(card.id, {
+          saving: false,
+          error: data.error || 'Unable to save card.',
+          success: '',
+        });
+        return;
+      }
+
+      updateLoadedCard(deckId, card.id, data);
+      setCardEditForms((currentForms) => ({
+        ...currentForms,
+        [card.id]: {
+          frontContent: data.front_content ?? frontContent,
+          backContent: data.back_content ?? backContent,
+        },
+      }));
+      setCardActionState(card.id, {
+        saving: false,
+        error: '',
+        success: 'Card saved.',
+      });
+    } catch (error) {
+      console.error('Error updating card:', error);
+      setCardActionState(card.id, {
+        saving: false,
+        error: 'Network error. Please try again.',
+        success: '',
+      });
+    }
+  };
+
+  const deleteCard = async (deckId, cardId) => {
+    if (!window.confirm('Remove this card?')) {
+      return;
+    }
+
+    setCardActionState(cardId, {
+      deleting: true,
+      error: '',
+      success: '',
+    });
+
+    try {
+      const response = await fetch(`http://localhost:3001/api/cards/${cardId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        setCardActionState(cardId, {
+          deleting: false,
+          error: data.error || 'Unable to remove card.',
+          success: '',
+        });
+        return;
+      }
+
+      removeLoadedCard(deckId, cardId);
+      setCardEditForms((currentForms) => {
+        const nextForms = { ...currentForms };
+        delete nextForms[cardId];
+        return nextForms;
+      });
+      clearCardActionState(cardId);
+      fetchDecks();
+    } catch (error) {
+      console.error('Error deleting card:', error);
+      setCardActionState(cardId, {
+        deleting: false,
+        error: 'Network error. Please try again.',
+        success: '',
+      });
+    }
+  };
+
   const deleteDeck = async (deckId) => {
     if (!window.confirm('Delete this deck and all of its cards?')) {
       return;
@@ -471,14 +665,56 @@ const DeckManagement = () => {
                     )}
                     {loadedCards.length > 0 && (
                       <div className="space-y-2">
-                        {loadedCards.map((card) => (
-                          <div key={card.id} className="rounded border border-gray-200 p-3">
-                            <p className="text-sm font-medium text-gray-700">Front</p>
-                            <p className="whitespace-pre-wrap text-sm">{card.front_content}</p>
-                            <p className="mt-2 text-sm font-medium text-gray-700">Back</p>
-                            <p className="whitespace-pre-wrap text-sm">{card.back_content}</p>
-                          </div>
-                        ))}
+                        {loadedCards.map((card) => {
+                          const cardEditForm = cardEditForms[card.id] || {};
+                          const cardActionState = cardActionStates[card.id] || {};
+                          const isSavingCard = Boolean(cardActionState.saving);
+                          const isDeletingCard = Boolean(cardActionState.deleting);
+
+                          return (
+                            <form
+                              key={card.id}
+                              className="space-y-2 rounded border border-gray-200 p-3"
+                              onSubmit={(event) => saveCard(event, deck.id, card)}
+                            >
+                              <p className="text-sm font-medium text-gray-700">Front</p>
+                              <textarea
+                                className="min-h-[80px] w-full rounded-md border border-gray-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                                value={cardEditForm.frontContent ?? card.front_content ?? ''}
+                                onChange={(e) => updateCardEditForm(card, 'frontContent', e.target.value)}
+                                aria-label="Card front"
+                                disabled={isSavingCard || isDeletingCard}
+                              />
+                              <p className="text-sm font-medium text-gray-700">Back</p>
+                              <textarea
+                                className="min-h-[80px] w-full rounded-md border border-gray-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                                value={cardEditForm.backContent ?? card.back_content ?? ''}
+                                onChange={(e) => updateCardEditForm(card, 'backContent', e.target.value)}
+                                aria-label="Card back"
+                                disabled={isSavingCard || isDeletingCard}
+                              />
+                              {cardActionState.error && (
+                                <p className="text-sm text-red-600">{cardActionState.error}</p>
+                              )}
+                              {cardActionState.success && (
+                                <p className="text-sm text-green-600">{cardActionState.success}</p>
+                              )}
+                              <div className="flex gap-2">
+                                <Button type="submit" disabled={isSavingCard || isDeletingCard}>
+                                  {isSavingCard ? 'Saving...' : 'Save'}
+                                </Button>
+                                <Button
+                                  type="button"
+                                  className="bg-red-600 hover:bg-red-700"
+                                  disabled={isSavingCard || isDeletingCard}
+                                  onClick={() => deleteCard(deck.id, card.id)}
+                                >
+                                  {isDeletingCard ? 'Removing...' : 'Remove'}
+                                </Button>
+                              </div>
+                            </form>
+                          );
+                        })}
                       </div>
                     )}
                     {currentDeckCards.hasLoaded && loadedCards.length === 0 && !currentDeckCards.loading && (
