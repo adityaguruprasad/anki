@@ -1,0 +1,158 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+
+const {
+  MALFORMED_DECK_CARD_BROWSE_PAYLOAD_ERROR,
+  hasDeckCardBrowseRowPayload,
+  parseDeckCardBrowseResponsePayload,
+} = require('../deckCardBrowseResponse');
+
+function assertMalformed(payload) {
+  assert.throws(
+    () => parseDeckCardBrowseResponsePayload(payload),
+    new RegExp(MALFORMED_DECK_CARD_BROWSE_PAYLOAD_ERROR),
+  );
+}
+
+test('parseDeckCardBrowseResponsePayload accepts an empty page without a cursor', () => {
+  const payload = { cards: [] };
+
+  assert.deepEqual(parseDeckCardBrowseResponsePayload(payload), {
+    cards: payload.cards,
+    nextCursor: null,
+  });
+});
+
+test('parseDeckCardBrowseResponsePayload preserves valid card rows and extra fields', () => {
+  const cardWithStringId = {
+    id: 'card-1',
+    front_content: 'Front',
+    back_content: 'Back',
+    created_at: '2026-05-08T12:00:00.000Z',
+    next_review: '2026-05-10T12:00:00.000Z',
+    ease_factor: 2.5,
+    interval_days: 3,
+    repetitions: 4,
+  };
+  const cardWithNumberId = {
+    id: 2,
+    front_content: 'Front 2',
+    back_content: 'Back 2',
+  };
+  const payload = { cards: [cardWithStringId, cardWithNumberId], nextCursor: null };
+  const parsed = parseDeckCardBrowseResponsePayload(payload);
+
+  assert.equal(parsed.cards, payload.cards);
+  assert.equal(parsed.cards[0], cardWithStringId);
+  assert.deepEqual(parsed.cards[0], cardWithStringId);
+  assert.equal(parsed.nextCursor, null);
+});
+
+test('parseDeckCardBrowseResponsePayload preserves valid cursor objects', () => {
+  [
+    { cursorCreatedAt: '2026-05-08T13:00:00.000Z', cursorId: 3 },
+    { beforeCreatedAt: '2026-05-08T13:00:00.000Z', beforeId: '3' },
+    {
+      cursorCreatedAt: '2026-05-08T13:00:00.000Z',
+      cursorId: 3,
+      beforeCreatedAt: '2026-05-08T13:00:00.000Z',
+      beforeId: '3',
+    },
+  ].forEach((nextCursor) => {
+    const payload = {
+      cards: [{ id: 1, front_content: 'Front', back_content: 'Back' }],
+      nextCursor,
+    };
+
+    assert.equal(parseDeckCardBrowseResponsePayload(payload).nextCursor, nextCursor);
+  });
+});
+
+test('parseDeckCardBrowseResponsePayload rejects malformed top-level payloads', () => {
+  [
+    undefined,
+    null,
+    [],
+    {},
+    { cards: null },
+    { cards: {} },
+    { cards: 'not cards' },
+  ].forEach(assertMalformed);
+});
+
+test('parseDeckCardBrowseResponsePayload rejects invalid card rows', () => {
+  [
+    null,
+    [],
+    {},
+    { id: null, front_content: 'Front', back_content: 'Back' },
+    { id: '', front_content: 'Front', back_content: 'Back' },
+    { id: '  ', front_content: 'Front', back_content: 'Back' },
+    { id: Number.NaN, front_content: 'Front', back_content: 'Back' },
+    { id: {}, front_content: 'Front', back_content: 'Back' },
+    { id: 1, front_content: '', back_content: 'Back' },
+    { id: 1, front_content: '  ', back_content: 'Back' },
+    { id: 1, back_content: 'Back' },
+    { id: 1, front_content: 'Front', back_content: '' },
+    { id: 1, front_content: 'Front', back_content: '  ' },
+    { id: 1, front_content: 'Front' },
+    { id: 1, front_content: 7, back_content: 'Back' },
+    { id: 1, front_content: 'Front', back_content: 7 },
+  ].forEach((card) => {
+    assertMalformed({ cards: [card] });
+  });
+});
+
+test('hasDeckCardBrowseRowPayload accepts only card-browser row objects', () => {
+  assert.equal(
+    hasDeckCardBrowseRowPayload({ id: '1', front_content: 'Front', back_content: 'Back' }),
+    true,
+  );
+  assert.equal(
+    hasDeckCardBrowseRowPayload({ id: 1, front_content: 'Front', back_content: 'Back' }),
+    true,
+  );
+  assert.equal(hasDeckCardBrowseRowPayload(null), false);
+  assert.equal(hasDeckCardBrowseRowPayload([]), false);
+  assert.equal(
+    hasDeckCardBrowseRowPayload({ id: '', front_content: 'Front', back_content: 'Back' }),
+    false,
+  );
+});
+
+test('parseDeckCardBrowseResponsePayload rejects partial or blank cursor payloads', () => {
+  [
+    { nextCursor: undefined },
+    { nextCursor: '' },
+    { nextCursor: [] },
+    { nextCursor: {} },
+    { nextCursor: { cursorCreatedAt: '2026-05-08T13:00:00.000Z' } },
+    { nextCursor: { cursorId: 3 } },
+    { nextCursor: { cursorCreatedAt: '', cursorId: 3 } },
+    { nextCursor: { cursorCreatedAt: '  ', cursorId: 3 } },
+    { nextCursor: { cursorCreatedAt: '2026-05-08T13:00:00.000Z', cursorId: '' } },
+    { nextCursor: { beforeCreatedAt: '2026-05-08T13:00:00.000Z' } },
+    { nextCursor: { beforeId: '3' } },
+    { nextCursor: { beforeCreatedAt: '2026-05-08T13:00:00.000Z', beforeId: '  ' } },
+    {
+      nextCursor: {
+        cursorCreatedAt: '2026-05-08T13:00:00.000Z',
+        cursorId: 3,
+        beforeCreatedAt: '2026-05-08T13:00:00.000Z',
+      },
+    },
+    {
+      nextCursor: {
+        cursorCreatedAt: '2026-05-08T13:00:00.000Z',
+        cursorId: 3,
+        beforeCreatedAt: '2026-05-08T13:00:01.000Z',
+        beforeId: 3,
+      },
+    },
+  ].forEach((payload) => {
+    assertMalformed({
+      cards: [{ id: 1, front_content: 'Front', back_content: 'Back' }],
+      ...payload,
+    });
+  });
+});

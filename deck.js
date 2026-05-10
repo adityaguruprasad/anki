@@ -9,6 +9,7 @@ const deckRenameState = require('./deckRenameState');
 const deckManagementApiRequests = require('./deckManagementApiRequests');
 const deckCollectionState = require('./deckCollectionState');
 const deckCardState = require('./deckCardState');
+const deckCardBrowseResponse = require('./deckCardBrowseResponse');
 const deckCardBrowserRequestState = require('./deckCardBrowserRequestState');
 const deckCardBrowserDisplayState = require('./deckCardBrowserDisplayState');
 const deckCardActionInFlightState = require('./deckCardActionInFlightState');
@@ -47,6 +48,7 @@ const {
   incrementDeckCardCounts,
   mergeUniqueCards,
 } = deckCardState;
+const { parseDeckCardBrowseResponsePayload } = deckCardBrowseResponse;
 const {
   beginDeckCardBrowserReplaceRequest,
   canStartDeckCardBrowserAppendRequest,
@@ -727,8 +729,16 @@ const DeckManagement = ({ env, onAuthExpired }) => {
         return;
       }
 
-      const fetchedCards = Array.isArray(data.cards) ? data.cards : [];
       if (!isCurrentDeckCardBrowserResponse()) {
+        return;
+      }
+
+      let browseResponse;
+      try {
+        browseResponse = parseDeckCardBrowseResponsePayload(data);
+      } catch (error) {
+        clearCurrentAppendRequest();
+        setDeckCardBrowserFailure(append ? 'Unable to load more cards.' : 'Unable to load cards.');
         return;
       }
 
@@ -741,8 +751,8 @@ const DeckManagement = ({ env, onAuthExpired }) => {
           [deckId]: {
             ...currentDeckCards,
             expanded: currentDeckCards.expanded !== false,
-            cards: append ? mergeUniqueCards(currentRows, fetchedCards) : fetchedCards,
-            nextCursor: data.nextCursor || null,
+            cards: append ? mergeUniqueCards(currentRows, browseResponse.cards) : browseResponse.cards,
+            nextCursor: browseResponse.nextCursor,
             hasLoaded: true,
             loading: false,
             loadingMore: false,

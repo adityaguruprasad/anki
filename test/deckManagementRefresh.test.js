@@ -3,6 +3,10 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
+const {
+  FRONTEND_MODULES,
+} = require('../scripts/sync-cra-src');
+
 const deckSource = fs.readFileSync(path.join(__dirname, '..', 'deck.js'), 'utf8');
 
 function extractConstFunctionBody(name) {
@@ -121,6 +125,57 @@ test('silent fetch terminal failures clear loading without showing prominent loa
     (body.match(/if \(silent\) \{\s*finishSilentDeckListFailure\(\);\s*\}/g) || []).length,
     3,
     'Expected non-2xx, invalid payload, and network silent failures to clear loading'
+  );
+});
+
+test('fetchDeckCards validates successful browse payloads before storing them', () => {
+  const body = extractConstFunctionBody('fetchDeckCards');
+  const authExpiredIndex = body.indexOf('if (handleAuthExpiredResponse(response, onAuthExpired))');
+  const jsonIndex = body.indexOf('const data = await response.json().catch(() => ({}));');
+  const responseOkIndex = body.indexOf('if (!response.ok) {');
+  const validationIndex = body.indexOf('browseResponse = parseDeckCardBrowseResponsePayload(data);');
+  const staleGuardIndex = body.lastIndexOf('if (!isCurrentDeckCardBrowserResponse()) {', validationIndex);
+  const setCardsIndex = body.indexOf(
+    'cards: append ? mergeUniqueCards(currentRows, browseResponse.cards) : browseResponse.cards,',
+  );
+  const setCursorIndex = body.indexOf('nextCursor: browseResponse.nextCursor,');
+
+  assert.match(
+    deckSource,
+    /require\(['"]\.\/deckCardBrowseResponse['"]\)/,
+    'Expected deck.js to import the card-browser response validator',
+  );
+  assert.match(
+    deckSource,
+    /const \{ parseDeckCardBrowseResponsePayload \} = deckCardBrowseResponse;/,
+    'Expected deck.js to destructure the card-browser response parser',
+  );
+  assert.notEqual(authExpiredIndex, -1, 'Expected auth-expired handling to remain in fetchDeckCards');
+  assert.notEqual(jsonIndex, -1, 'Expected fetchDeckCards to parse response JSON');
+  assert.notEqual(responseOkIndex, -1, 'Expected fetchDeckCards to keep non-2xx handling');
+  assert.notEqual(staleGuardIndex, -1, 'Expected fetchDeckCards to keep stale response protection');
+  assert.notEqual(validationIndex, -1, 'Expected fetchDeckCards to validate successful payloads');
+  assert.notEqual(setCardsIndex, -1, 'Expected fetchDeckCards to store parsed cards');
+  assert.notEqual(setCursorIndex, -1, 'Expected fetchDeckCards to store the parsed cursor');
+  assert.ok(authExpiredIndex < jsonIndex, 'Expected auth expiration handling before JSON parsing');
+  assert.ok(jsonIndex < responseOkIndex, 'Expected non-2xx handling after JSON parsing');
+  assert.ok(responseOkIndex < staleGuardIndex, 'Expected success stale guard after non-2xx handling');
+  assert.ok(staleGuardIndex < validationIndex, 'Expected validation after the stale response guard');
+  assert.ok(validationIndex < setCardsIndex, 'Expected validation before storing cards');
+  assert.ok(validationIndex < setCursorIndex, 'Expected validation before storing the cursor');
+  assert.match(
+    body.slice(validationIndex, setCardsIndex),
+    /setDeckCardBrowserFailure\(append \? 'Unable to load more cards\.' : 'Unable to load cards\.'\);/,
+    'Expected malformed successful payloads to use the retryable browser failure path',
+  );
+  assert.doesNotMatch(body, /Array\.isArray\(data\.cards\) \? data\.cards : \[\]/);
+  assert.doesNotMatch(body, /nextCursor: data\.nextCursor \|\| null/);
+});
+
+test('CRA source sync mirrors the card-browser response validator', () => {
+  assert.ok(
+    FRONTEND_MODULES.includes('deckCardBrowseResponse.js'),
+    'Expected deckCardBrowseResponse.js to be mirrored into CRA src',
   );
 });
 
