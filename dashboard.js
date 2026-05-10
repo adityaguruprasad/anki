@@ -15,7 +15,7 @@ const authExpiration = require('./authExpiration');
 const { getDashboardApiRequests } = dashboardApiRequests;
 const { getStudyDeckTargetPath, selectStudyDeckTarget } = dashboardDeckTarget;
 const { buildDashboardReviewActivityDisplayState } = dashboardReviewActivityDisplayState;
-const { buildDashboardStatsDisplayState } = dashboardStatsDisplayState;
+const { buildDashboardStatsDisplayState, hasStatsPayload } = dashboardStatsDisplayState;
 const {
   buildDeckAvailabilityDisplayState,
   buildSchedulingInsightsDisplayState,
@@ -94,6 +94,9 @@ const Dashboard = ({ env, onAuthExpired }) => {
       const data = await response.json();
       if (shouldSkipUpdate()) {
         return;
+      }
+      if (!hasStatsPayload(data)) {
+        throw new Error('Malformed stats payload');
       }
       setStats(data);
       setStatsLoadFailed(false);

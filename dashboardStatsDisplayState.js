@@ -8,8 +8,31 @@ const DASHBOARD_STATS_COPY = Object.freeze({
   errorWithoutStats: 'Totals are unavailable. Retry to load stats.',
 });
 
+const DASHBOARD_STATS_COUNT_KEYS = Object.freeze(['totalCards', 'totalDecks']);
+
+function isStatsCount(value) {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) && Number.isInteger(value) && value >= 0;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return /^[0-9]+$/.test(trimmed);
+  }
+
+  return false;
+}
+
 function hasStatsPayload(stats) {
-  return Boolean(stats) && typeof stats === 'object' && !Array.isArray(stats);
+  return (
+    Boolean(stats)
+    && typeof stats === 'object'
+    && !Array.isArray(stats)
+    && DASHBOARD_STATS_COUNT_KEYS.every((key) => (
+      Object.prototype.hasOwnProperty.call(stats, key)
+      && isStatsCount(stats[key])
+    ))
+  );
 }
 
 function toDisplayCount(value) {

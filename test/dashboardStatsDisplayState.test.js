@@ -8,11 +8,50 @@ const {
   toDisplayCount,
 } = require('../dashboardStatsDisplayState');
 
-test('hasStatsPayload only accepts object stats payloads', () => {
-  assert.equal(hasStatsPayload({ totalCards: 1 }), true);
-  assert.equal(hasStatsPayload(null), false);
-  assert.equal(hasStatsPayload(undefined), false);
-  assert.equal(hasStatsPayload([]), false);
+test('hasStatsPayload requires valid dashboard total count fields', () => {
+  [
+    { totalCards: 0, totalDecks: 0 },
+    { totalCards: 12, totalDecks: 3 },
+    { totalCards: '12', totalDecks: '3' },
+    { totalCards: ' 12 ', totalDecks: ' 0 ' },
+  ].forEach((stats) => {
+    assert.equal(hasStatsPayload(stats), true);
+  });
+
+  [
+    null,
+    undefined,
+    [],
+    { totalCards: 1 },
+    { totalDecks: 1 },
+    { totalCards: '', totalDecks: 1 },
+    { totalCards: ' ', totalDecks: 1 },
+    { totalCards: null, totalDecks: 1 },
+    { totalCards: [], totalDecks: 1 },
+    { totalCards: Number.NaN, totalDecks: 1 },
+    { totalCards: Number.POSITIVE_INFINITY, totalDecks: 1 },
+    { totalCards: -1, totalDecks: 1 },
+    { totalCards: 1.5, totalDecks: 1 },
+    { totalCards: '3.0', totalDecks: 1 },
+    { totalCards: '1.5', totalDecks: 1 },
+    { totalCards: '1e3', totalDecks: 1 },
+    { totalCards: '+1', totalDecks: 1 },
+    { totalCards: '-1', totalDecks: 1 },
+    { totalCards: 'NaN', totalDecks: 1 },
+    { totalCards: 'Infinity', totalDecks: 1 },
+    { totalCards: 'cards', totalDecks: 1 },
+    { totalCards: 1, totalDecks: Number.NEGATIVE_INFINITY },
+    { totalCards: 1, totalDecks: -1 },
+    { totalCards: 1, totalDecks: '3.0' },
+    { totalCards: 1, totalDecks: '1.5' },
+    { totalCards: 1, totalDecks: '1e3' },
+    { totalCards: 1, totalDecks: '+1' },
+    { totalCards: 1, totalDecks: '-1' },
+    { totalCards: 1, totalDecks: 'NaN' },
+    { totalCards: 1, totalDecks: 'Infinity' },
+  ].forEach((stats) => {
+    assert.equal(hasStatsPayload(stats), false);
+  });
 });
 
 test('toDisplayCount formats finite non-negative whole-number totals', () => {
@@ -82,4 +121,19 @@ test('buildDashboardStatsDisplayState shows the failure alert copy without repla
   assert.equal(state.totalCards.kind, 'value');
   assert.equal(state.totalCards.text, '8');
   assert.equal(state.totalDecks.text, '2');
+});
+
+test('buildDashboardStatsDisplayState does not display malformed object-shaped stats as zeroes', () => {
+  const state = buildDashboardStatsDisplayState({
+    stats: { totalCards: null, totalDecks: 2 },
+    isLoadingStats: false,
+    statsLoadFailed: true,
+  });
+
+  assert.equal(state.hasStats, false);
+  assert.equal(state.errorMessage, DASHBOARD_STATS_COPY.errorWithoutStats);
+  assert.equal(state.totalCards.kind, 'unavailable');
+  assert.equal(state.totalCards.text, DASHBOARD_STATS_COPY.unavailable);
+  assert.equal(state.totalDecks.kind, 'unavailable');
+  assert.equal(state.totalDecks.text, DASHBOARD_STATS_COPY.unavailable);
 });

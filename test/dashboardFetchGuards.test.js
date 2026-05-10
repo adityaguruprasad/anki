@@ -105,3 +105,29 @@ test('fetchSchedulingInsights rejects malformed successful payloads before stori
     'Expected malformed insights to flow through retryable load failure handling'
   );
 });
+
+test('fetchStats rejects malformed successful payloads after stale guards before storing them', () => {
+  const body = extractConstFunctionBody('fetchStats');
+  const jsonIndex = body.indexOf('const data = await response.json();');
+  const staleGuardAfterJsonIndex = body.indexOf('if (shouldSkipUpdate()) {', jsonIndex);
+  const validationIndex = body.indexOf('if (!hasStatsPayload(data)) {');
+  const setStatsIndex = body.indexOf('setStats(data);');
+
+  assert.match(
+    dashboardSource,
+    /const \{ buildDashboardStatsDisplayState, hasStatsPayload \} = dashboardStatsDisplayState;/,
+    'Expected dashboard to import the stats payload validator'
+  );
+  assert.notEqual(jsonIndex, -1, 'Expected fetchStats to parse response JSON');
+  assert.notEqual(staleGuardAfterJsonIndex, -1, 'Expected fetchStats to keep stale guard after parsing JSON');
+  assert.notEqual(validationIndex, -1, 'Expected fetchStats to validate parsed stats');
+  assert.notEqual(setStatsIndex, -1, 'Expected fetchStats to store valid stats');
+  assert.ok(jsonIndex < staleGuardAfterJsonIndex, 'Expected stale guard after parsing JSON');
+  assert.ok(staleGuardAfterJsonIndex < validationIndex, 'Expected validation after the stale guard');
+  assert.ok(validationIndex < setStatsIndex, 'Expected validation before storing stats');
+  assert.match(
+    body.slice(validationIndex, setStatsIndex),
+    /throw new Error\('Malformed stats payload'\);/,
+    'Expected malformed stats to flow through retryable load failure handling'
+  );
+});
