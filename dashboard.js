@@ -1,22 +1,29 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useHistory } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 const dashboardApiRequests = require('./dashboardApiRequests');
 const dashboardDeckTarget = require('./dashboardDeckTarget');
+const dashboardStatsDisplayState = require('./dashboardStatsDisplayState');
 const schedulingInsightsSummary = require('./schedulingInsightsSummary');
 const authHeaders = require('./authHeaders');
 
 const { getDashboardApiRequests } = dashboardApiRequests;
 const { getStudyDeckTargetPath, hasDueCards, selectStudyDeckTarget } = dashboardDeckTarget;
+const { buildDashboardStatsDisplayState } = dashboardStatsDisplayState;
 const { buildSchedulingInsightsSummary } = schedulingInsightsSummary;
 const { buildAuthHeaders } = authHeaders;
 
 const Dashboard = ({ env }) => {
   const history = useHistory();
   const apiRequests = useMemo(() => getDashboardApiRequests(env), [env]);
+  const isMountedRef = useRef(true);
+  const latestStatsUrlRef = useRef(apiRequests.statsUrl);
+  const statsRequestSequenceRef = useRef(0);
   const [stats, setStats] = useState(null);
+  const [isLoadingStats, setIsLoadingStats] = useState(true);
+  const [statsLoadFailed, setStatsLoadFailed] = useState(false);
   const [studyDeckTarget, setStudyDeckTarget] = useState(null);
   const [isLoadingDecks, setIsLoadingDecks] = useState(true);
   const [deckLoadFailed, setDeckLoadFailed] = useState(false);
@@ -24,29 +31,61 @@ const Dashboard = ({ env }) => {
   const [isLoadingSchedulingInsights, setIsLoadingSchedulingInsights] = useState(true);
   const [schedulingInsightsLoadFailed, setSchedulingInsightsLoadFailed] = useState(false);
 
+  latestStatsUrlRef.current = apiRequests.statsUrl;
+
+  useEffect(() => {
+    isMountedRef.current = true;
+
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  const fetchStats = useCallback(async ({ shouldIgnore = () => false } = {}) => {
+    const requestSequence = statsRequestSequenceRef.current + 1;
+    statsRequestSequenceRef.current = requestSequence;
+    const statsUrl = apiRequests.statsUrl;
+    const shouldSkipUpdate = () => (
+      !isMountedRef.current
+      || shouldIgnore()
+      || requestSequence !== statsRequestSequenceRef.current
+      || statsUrl !== latestStatsUrlRef.current
+    );
+
+    if (shouldSkipUpdate()) {
+      return;
+    }
+
+    setIsLoadingStats(true);
+
+    try {
+      const response = await fetch(statsUrl, {
+        headers: buildAuthHeaders(localStorage)
+      });
+      if (!response.ok) {
+        throw new Error('Unable to fetch stats');
+      }
+      const data = await response.json();
+      if (shouldSkipUpdate()) {
+        return;
+      }
+      setStats(data);
+      setStatsLoadFailed(false);
+    } catch (error) {
+      if (shouldSkipUpdate()) {
+        return;
+      }
+      console.error('Error fetching stats:', error);
+      setStatsLoadFailed(true);
+    } finally {
+      if (!shouldSkipUpdate()) {
+        setIsLoadingStats(false);
+      }
+    }
+  }, [apiRequests.statsUrl]);
+
   useEffect(() => {
     let ignore = false;
-
-    const fetchStats = async () => {
-      try {
-        const response = await fetch(apiRequests.statsUrl, {
-          headers: buildAuthHeaders(localStorage)
-        });
-        if (!response.ok) {
-          throw new Error('Unable to fetch stats');
-        }
-        const data = await response.json();
-        if (ignore) {
-          return;
-        }
-        setStats(data);
-      } catch (error) {
-        if (ignore) {
-          return;
-        }
-        console.error('Error fetching stats:', error);
-      }
-    };
 
     const fetchDecks = async () => {
       try {
@@ -106,14 +145,14 @@ const Dashboard = ({ env }) => {
       }
     };
 
-    fetchStats();
+    fetchStats({ shouldIgnore: () => ignore });
     fetchDecks();
     fetchSchedulingInsights();
 
     return () => {
       ignore = true;
     };
-  }, [apiRequests]);
+  }, [apiRequests, fetchStats]);
 
   const handleStartStudying = () => {
     if (isLoadingDecks) {
@@ -123,6 +162,10 @@ const Dashboard = ({ env }) => {
     history.push(getStudyDeckTargetPath(studyDeckTarget));
   };
 
+  const handleRetryStats = () => {
+    fetchStats();
+  };
+
   const chartData = [
     { name: 'Today', cards: stats?.todayReviews || 0 },
     { name: 'This Week', cards: stats?.weekReviews || 0 },
@@ -130,6 +173,11 @@ const Dashboard = ({ env }) => {
   ];
   const hasDueStudyTarget = hasDueCards(studyDeckTarget);
   const schedulingSummary = buildSchedulingInsightsSummary(schedulingInsights);
+  const statsDisplay = buildDashboardStatsDisplayState({
+    stats,
+    isLoadingStats,
+    statsLoadFailed,
+  });
 
   const studyPrompt = isLoadingDecks
     ? 'Checking deck availability...'
@@ -153,17 +201,56 @@ const Dashboard = ({ env }) => {
   return (
     <div className="max-w-4xl mx-auto mt-10">
       <h2 className="text-2xl font-bold mb-4">Dashboard</h2>
+      {statsDisplay.showError && (
+        <div
+          className="mb-4 rounded border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+          role="alert"
+          aria-labelledby="dashboard-stats-error-title"
+        >
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p id="dashboard-stats-error-title" className="font-semibold">
+                {statsDisplay.errorTitle}
+              </p>
+              <p>{statsDisplay.errorMessage}</p>
+            </div>
+            <Button
+              type="button"
+              onClick={handleRetryStats}
+              disabled={statsDisplay.retryDisabled}
+            >
+              {statsDisplay.retryButtonLabel}
+            </Button>
+          </div>
+        </div>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
         <Card>
           <CardContent className="p-4">
             <h3 className="text-lg font-semibold mb-2">Total Cards</h3>
-            <p className="text-3xl font-bold">{stats?.totalCards || 0}</p>
+            <p
+              className={statsDisplay.totalCards.isValue
+                ? 'text-3xl font-bold'
+                : 'text-sm font-medium text-gray-600'}
+              role={statsDisplay.totalCards.isLoading ? 'status' : undefined}
+              aria-live={statsDisplay.totalCards.isLoading ? 'polite' : undefined}
+            >
+              {statsDisplay.totalCards.text}
+            </p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
             <h3 className="text-lg font-semibold mb-2">Total Decks</h3>
-            <p className="text-3xl font-bold">{stats?.totalDecks || 0}</p>
+            <p
+              className={statsDisplay.totalDecks.isValue
+                ? 'text-3xl font-bold'
+                : 'text-sm font-medium text-gray-600'}
+              role={statsDisplay.totalDecks.isLoading ? 'status' : undefined}
+              aria-live={statsDisplay.totalDecks.isLoading ? 'polite' : undefined}
+            >
+              {statsDisplay.totalDecks.text}
+            </p>
           </CardContent>
         </Card>
       </div>
