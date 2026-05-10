@@ -25,6 +25,11 @@ import {
   clearCardAction,
   isCardActionInFlight,
 } from './deckCardActionInFlightState';
+import {
+  beginDeckRemoval,
+  clearDeckRemoval,
+  isDeckRemovalInFlight,
+} from './deckRemovalInFlightState';
 import { createCardSubmission } from './deckCardCreateState';
 import { buildAuthHeaders } from './authHeaders';
 
@@ -51,6 +56,7 @@ const DeckManagement = ({ env }) => {
   const renameDeckInFlightRef = useRef({});
   const [deleteErrors, setDeleteErrors] = useState({});
   const [deletingDecks, setDeletingDecks] = useState({});
+  const deckRemovalInFlightRef = useRef({});
   const [deckCards, setDeckCards] = useState({});
   const [cardEditForms, setCardEditForms] = useState({});
   const [cardActionStates, setCardActionStates] = useState({});
@@ -766,7 +772,17 @@ const DeckManagement = ({ env }) => {
   };
 
   const deleteDeck = async (deckId) => {
+    // Precheck before confirm so duplicate clicks do not show repeated dialogs
+    // while the first removal request is already in flight.
+    if (isDeckRemovalInFlight(deckRemovalInFlightRef.current, deckId)) {
+      return;
+    }
+
     if (!window.confirm('Delete this deck and all of its cards?')) {
+      return;
+    }
+
+    if (!beginDeckRemoval(deckRemovalInFlightRef.current, deckId)) {
       return;
     }
 
@@ -812,6 +828,7 @@ const DeckManagement = ({ env }) => {
         delete nextDecks[deckId];
         return nextDecks;
       });
+      clearDeckRemoval(deckRemovalInFlightRef.current, deckId);
     }
   };
 
