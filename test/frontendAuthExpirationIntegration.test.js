@@ -17,16 +17,45 @@ function countAuthExpirationCalls(source) {
   return (source.match(/handleAuthExpiredResponse\(response,\s*onAuthExpired\)/g) || []).length;
 }
 
-test('App passes the stable logout callback into protected route components', () => {
+test('App passes the stable auth-expired callback into protected route components', () => {
   const mainSource = readRepoFile('main.js');
 
   assert.match(mainSource, /import React,\s*\{[^}]*\buseCallback\b[^}]*\}/);
-  assert.match(mainSource, /const handleLogout = useCallback\(\(\) => \{/);
+  assert.match(mainSource, /require\(['"]\.\/authBoundaryState['"]\)/);
+  assert.match(mainSource, /const \[authNotice,\s*setAuthNotice\] = useState\(null\);/);
+  assert.match(mainSource, /const clearAuthStorageAndLogout = useCallback\(\(\) => \{/);
   assert.match(mainSource, /localStorage\.removeItem\(AUTH_TOKEN_STORAGE_KEY\);/);
   assert.match(mainSource, /setIsLoggedIn\(false\);/);
-  assert.match(mainSource, /<Dashboard\s+env=\{apiEnv\}\s+onAuthExpired=\{handleLogout\}\s*\/>/);
-  assert.match(mainSource, /<StudySession\s+env=\{apiEnv\}\s+onAuthExpired=\{handleLogout\}\s*\/>/);
-  assert.match(mainSource, /<DeckManagement\s+env=\{apiEnv\}\s+onAuthExpired=\{handleLogout\}\s*\/>/);
+  assert.match(
+    mainSource,
+    /const handleLogout = useCallback\(\(\) => \{[\s\S]*getAuthNoticeAfterLogout\(AUTH_LOGOUT_REASONS\.MANUAL\)/
+  );
+  assert.match(
+    mainSource,
+    /const handleAuthExpired = useCallback\(\(\) => \{[\s\S]*getAuthNoticeAfterLogout\(AUTH_LOGOUT_REASONS\.AUTH_EXPIRED\)/
+  );
+  assert.match(mainSource, /<Dashboard\s+env=\{apiEnv\}\s+onAuthExpired=\{handleAuthExpired\}\s*\/>/);
+  assert.match(mainSource, /<StudySession\s+env=\{apiEnv\}\s+onAuthExpired=\{handleAuthExpired\}\s*\/>/);
+  assert.match(mainSource, /<DeckManagement\s+env=\{apiEnv\}\s+onAuthExpired=\{handleAuthExpired\}\s*\/>/);
+});
+
+test('App wires auth-expiration notice state into Login', () => {
+  const mainSource = readRepoFile('main.js');
+
+  assert.match(mainSource, /const Login = \(\{ setIsLoggedIn,\s*env,\s*authNotice,\s*onAuthNoticeChange \}\) => \{/);
+  assert.match(mainSource, /const noticeMessage = getAuthNoticeMessage\(authNotice\);/);
+  assert.match(mainSource, /role="status"/);
+  assert.match(mainSource, /aria-live="polite"/);
+  assert.match(
+    mainSource,
+    /onAuthNoticeChange\(getAuthNoticeAfterModeToggle\(\)\);/
+  );
+  assert.match(
+    mainSource,
+    /onAuthNoticeChange\(getAuthNoticeAfterSubmissionStart\(\)\);/
+  );
+  assert.match(mainSource, /authNotice=\{authNotice\}/);
+  assert.match(mainSource, /onAuthNoticeChange=\{setAuthNotice\}/);
 });
 
 test('protected components check auth-expired responses before generic failures', () => {
@@ -52,5 +81,9 @@ test('CRA source sync mirrors the auth-expiration helper', () => {
   assert.ok(
     FRONTEND_MODULES.includes('authExpiration.js'),
     'Expected authExpiration.js to be mirrored into CRA src'
+  );
+  assert.ok(
+    FRONTEND_MODULES.includes('authBoundaryState.js'),
+    'Expected authBoundaryState.js to be mirrored into CRA src'
   );
 });

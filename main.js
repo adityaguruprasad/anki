@@ -5,7 +5,16 @@ import { Input } from '@/components/ui/input';
 import Dashboard from './dashboard';
 import StudySession from './studySession';
 import DeckManagement from './deck';
+const authBoundaryState = require('./authBoundaryState');
 const authFormState = require('./authFormState');
+
+const {
+  AUTH_LOGOUT_REASONS,
+  getAuthNoticeAfterLogout,
+  getAuthNoticeAfterModeToggle,
+  getAuthNoticeAfterSubmissionStart,
+  getAuthNoticeMessage,
+} = authBoundaryState;
 
 const {
   AUTH_MODES,
@@ -21,7 +30,7 @@ const apiEnv = Object.freeze({
   REACT_APP_API_BASE_URL: process.env.REACT_APP_API_BASE_URL,
 });
 
-const Login = ({ setIsLoggedIn, env }) => {
+const Login = ({ setIsLoggedIn, env, authNotice, onAuthNoticeChange }) => {
   const [mode, setMode] = useState(AUTH_MODES.LOGIN);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -30,6 +39,7 @@ const Login = ({ setIsLoggedIn, env }) => {
   const isSubmittingRef = useRef(false);
 
   const isRegistering = mode === AUTH_MODES.REGISTER;
+  const noticeMessage = getAuthNoticeMessage(authNotice);
   const title = isRegistering ? 'Create account' : 'Login';
   const submitLabel = isSubmitting
     ? (isRegistering ? 'Creating account...' : 'Logging in...')
@@ -39,6 +49,7 @@ const Login = ({ setIsLoggedIn, env }) => {
   const handleModeToggle = () => {
     setMode((currentMode) => getNextAuthMode(currentMode));
     setError('');
+    onAuthNoticeChange(getAuthNoticeAfterModeToggle());
   };
 
   const handleSubmit = async (e) => {
@@ -64,6 +75,7 @@ const Login = ({ setIsLoggedIn, env }) => {
     isSubmittingRef.current = true;
     setIsSubmitting(true);
     setError('');
+    onAuthNoticeChange(getAuthNoticeAfterSubmissionStart());
 
     let response;
     try {
@@ -111,6 +123,11 @@ const Login = ({ setIsLoggedIn, env }) => {
   return (
     <form onSubmit={handleSubmit} className="max-w-sm mx-auto mt-10">
       <h2 className="text-xl font-semibold mb-4">{title}</h2>
+      {noticeMessage && (
+        <p role="status" aria-live="polite" className="text-blue-700 text-sm mb-2">
+          {noticeMessage}
+        </p>
+      )}
       <Input
         type="email"
         value={email}
@@ -156,12 +173,13 @@ const Login = ({ setIsLoggedIn, env }) => {
 const App = () => {
   const [initialAuthSession] = useState(() => createInitialAuthSession(localStorage));
   const [isLoggedIn, setIsLoggedIn] = useState(initialAuthSession.isLoggedIn);
+  const [authNotice, setAuthNotice] = useState(null);
 
   useLayoutEffect(() => {
     cleanupStoredAuthTokenIfNeeded(localStorage, initialAuthSession);
   }, [initialAuthSession]);
 
-  const handleLogout = useCallback(() => {
+  const clearAuthStorageAndLogout = useCallback(() => {
     try {
       localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
     } catch {
@@ -169,6 +187,16 @@ const App = () => {
     }
     setIsLoggedIn(false);
   }, []);
+
+  const handleLogout = useCallback(() => {
+    clearAuthStorageAndLogout();
+    setAuthNotice(getAuthNoticeAfterLogout(AUTH_LOGOUT_REASONS.MANUAL));
+  }, [clearAuthStorageAndLogout]);
+
+  const handleAuthExpired = useCallback(() => {
+    clearAuthStorageAndLogout();
+    setAuthNotice(getAuthNoticeAfterLogout(AUTH_LOGOUT_REASONS.AUTH_EXPIRED));
+  }, [clearAuthStorageAndLogout]);
 
   return (
     <Router>
@@ -186,21 +214,30 @@ const App = () => {
         )}
         <Switch>
           <Route exact path="/login">
-            {isLoggedIn ? <Redirect to="/" /> : <Login setIsLoggedIn={setIsLoggedIn} env={apiEnv} />}
+            {isLoggedIn ? (
+              <Redirect to="/" />
+            ) : (
+              <Login
+                setIsLoggedIn={setIsLoggedIn}
+                env={apiEnv}
+                authNotice={authNotice}
+                onAuthNoticeChange={setAuthNotice}
+              />
+            )}
           </Route>
           <Route exact path="/">
             {isLoggedIn ? (
-              <Dashboard env={apiEnv} onAuthExpired={handleLogout} />
+              <Dashboard env={apiEnv} onAuthExpired={handleAuthExpired} />
             ) : <Redirect to="/login" />}
           </Route>
           <Route path="/study">
             {isLoggedIn ? (
-              <StudySession env={apiEnv} onAuthExpired={handleLogout} />
+              <StudySession env={apiEnv} onAuthExpired={handleAuthExpired} />
             ) : <Redirect to="/login" />}
           </Route>
           <Route path="/decks">
             {isLoggedIn ? (
-              <DeckManagement env={apiEnv} onAuthExpired={handleLogout} />
+              <DeckManagement env={apiEnv} onAuthExpired={handleAuthExpired} />
             ) : <Redirect to="/login" />}
           </Route>
         </Switch>
