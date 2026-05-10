@@ -7,7 +7,7 @@ import StudySession from './studySession';
 import DeckManagement from './deck';
 const authFormState = require('./authFormState');
 
-const { AUTH_MODES, createAuthSubmission, getNextAuthMode } = authFormState;
+const { AUTH_MODES, createAuthSubmission, getNextAuthMode, parseAuthResponse } = authFormState;
 
 const apiEnv = Object.freeze({
   REACT_APP_API_BASE_URL: process.env.REACT_APP_API_BASE_URL,
@@ -57,26 +57,43 @@ const Login = ({ setIsLoggedIn, env }) => {
     setIsSubmitting(true);
     setError('');
 
+    let response;
     try {
-      const response = await fetch(submission.url, {
+      response = await fetch(submission.url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(submission.body),
       });
-      if (response.ok) {
-        const { token } = await response.json();
-        localStorage.setItem('token', token);
-        setIsLoggedIn(true);
-      } else {
-        setError(
-          isRegistering
-            ? 'Could not create account. Please check your email and password.'
-            : 'Login failed. Please check your credentials.'
-        );
-      }
     } catch (error) {
       console.error('Auth error:', error);
       setError('Authentication request failed. Please try again.');
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
+      return;
+    }
+
+    try {
+      let body;
+      let bodyParseError;
+      try {
+        body = await response.json();
+      } catch (error) {
+        bodyParseError = error;
+      }
+
+      const authResponse = parseAuthResponse({
+        mode,
+        ok: response.ok,
+        body,
+        bodyParseError,
+      });
+
+      if (authResponse.ok) {
+        localStorage.setItem('token', authResponse.token);
+        setIsLoggedIn(true);
+      } else {
+        setError(authResponse.error);
+      }
     } finally {
       isSubmittingRef.current = false;
       setIsSubmitting(false);

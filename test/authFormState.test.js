@@ -7,6 +7,7 @@ const {
   createAuthSubmission,
   getAuthEndpoint,
   getNextAuthMode,
+  parseAuthResponse,
   resolveApiBaseUrl,
   validateAuthInput,
 } = require('../authFormState');
@@ -165,5 +166,119 @@ test('createAuthSubmission returns a request when not blocked and input is valid
         password: 's3cret',
       },
     }
+  );
+});
+
+test('parseAuthResponse returns a trimmed token for successful auth responses', () => {
+  assert.deepEqual(
+    parseAuthResponse({
+      mode: AUTH_MODES.LOGIN,
+      ok: true,
+      body: { token: '  abc.def.ghi  ' },
+    }),
+    { ok: true, token: 'abc.def.ghi' }
+  );
+});
+
+test('parseAuthResponse rejects malformed successful auth payloads', () => {
+  for (const body of [
+    {},
+    { token: '' },
+    { token: '   ' },
+    { token: 123 },
+    null,
+    undefined,
+    'not an object',
+  ]) {
+    assert.deepEqual(
+      parseAuthResponse({
+        mode: AUTH_MODES.LOGIN,
+        ok: true,
+        body,
+      }),
+      { ok: false, error: 'Authentication response was invalid. Please try again.' }
+    );
+  }
+});
+
+test('parseAuthResponse uses generic login copy for every non-2xx login response', () => {
+  for (const body of [
+    { error: 'Email not found.' },
+    { message: 'Password was incorrect.' },
+    { error: 'Account exists.', message: 'Password was incorrect.' },
+  ]) {
+    assert.deepEqual(
+      parseAuthResponse({
+        mode: AUTH_MODES.LOGIN,
+        ok: false,
+        body,
+      }),
+      { ok: false, error: 'Login failed. Please check your credentials.' }
+    );
+  }
+});
+
+test('parseAuthResponse uses bounded backend error copy for non-2xx registration responses', () => {
+  assert.deepEqual(
+    parseAuthResponse({
+      mode: AUTH_MODES.REGISTER,
+      ok: false,
+      body: { error: '  Invalid email address.\nPlease try again.  ' },
+    }),
+    { ok: false, error: 'Invalid email address. Please try again.' }
+  );
+
+  assert.deepEqual(
+    parseAuthResponse({
+      mode: AUTH_MODES.REGISTER,
+      ok: false,
+      body: { message: 'Email is already registered.' },
+    }),
+    { ok: false, error: 'Email is already registered.' }
+  );
+});
+
+test('parseAuthResponse falls back to mode-specific generic copy for unusable non-2xx payloads', () => {
+  assert.deepEqual(
+    parseAuthResponse({
+      mode: AUTH_MODES.LOGIN,
+      ok: false,
+      body: { error: '   ', message: 123 },
+    }),
+    { ok: false, error: 'Login failed. Please check your credentials.' }
+  );
+
+  assert.deepEqual(
+    parseAuthResponse({
+      mode: AUTH_MODES.REGISTER,
+      ok: false,
+      body: { error: 'x'.repeat(241) },
+    }),
+    {
+      ok: false,
+      error: 'Could not create account. Please check your email and password.',
+    }
+  );
+});
+
+test('parseAuthResponse handles invalid JSON or body read failures without allowing login', () => {
+  const bodyParseError = new SyntaxError('Unexpected end of JSON input');
+
+  assert.deepEqual(
+    parseAuthResponse({
+      mode: AUTH_MODES.LOGIN,
+      ok: true,
+      bodyParseError,
+    }),
+    { ok: false, error: 'Authentication response was invalid. Please try again.' }
+  );
+
+  assert.deepEqual(
+    parseAuthResponse({
+      mode: AUTH_MODES.LOGIN,
+      ok: false,
+      bodyParseError,
+    }),
+    { ok: false, error: 'Login failed. Please check your credentials.' }
   );
 });

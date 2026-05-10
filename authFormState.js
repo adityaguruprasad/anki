@@ -4,6 +4,12 @@ const AUTH_MODES = Object.freeze({
 });
 
 const DEFAULT_API_BASE_URL = 'http://localhost:3001';
+const INVALID_AUTH_RESPONSE_ERROR = 'Authentication response was invalid. Please try again.';
+const MAX_BACKEND_AUTH_ERROR_LENGTH = 240;
+const GENERIC_AUTH_ERRORS = Object.freeze({
+  [AUTH_MODES.LOGIN]: 'Login failed. Please check your credentials.',
+  [AUTH_MODES.REGISTER]: 'Could not create account. Please check your email and password.',
+});
 
 function resolveApiBaseUrl(env) {
   const configuredUrl =
@@ -17,6 +23,57 @@ function resolveApiBaseUrl(env) {
 
 function normalizeAuthMode(mode) {
   return mode === AUTH_MODES.REGISTER ? AUTH_MODES.REGISTER : AUTH_MODES.LOGIN;
+}
+
+function getGenericAuthError(mode) {
+  return GENERIC_AUTH_ERRORS[normalizeAuthMode(mode)];
+}
+
+function normalizeBackendAuthError(value) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  const message = value.trim().replace(/\s+/g, ' ');
+  if (message.length === 0 || message.length > MAX_BACKEND_AUTH_ERROR_LENGTH) {
+    return '';
+  }
+
+  return message;
+}
+
+function getBackendAuthError(body) {
+  if (body === null || typeof body !== 'object') {
+    return '';
+  }
+
+  return normalizeBackendAuthError(body.error) || normalizeBackendAuthError(body.message);
+}
+
+function parseAuthResponse({ mode, ok, body, bodyParseError }) {
+  const authMode = normalizeAuthMode(mode);
+
+  if (!ok) {
+    if (authMode === AUTH_MODES.LOGIN || bodyParseError) {
+      return { ok: false, error: getGenericAuthError(authMode) };
+    }
+
+    return {
+      ok: false,
+      error: getBackendAuthError(body) || getGenericAuthError(authMode),
+    };
+  }
+
+  if (bodyParseError || body === null || typeof body !== 'object') {
+    return { ok: false, error: INVALID_AUTH_RESPONSE_ERROR };
+  }
+
+  const token = typeof body.token === 'string' ? body.token.trim() : '';
+  if (token.length === 0) {
+    return { ok: false, error: INVALID_AUTH_RESPONSE_ERROR };
+  }
+
+  return { ok: true, token };
 }
 
 function getAuthEndpoint(mode, env) {
@@ -108,6 +165,7 @@ module.exports = {
   getAuthEndpoint,
   getNextAuthMode,
   normalizeAuthMode,
+  parseAuthResponse,
   resolveApiBaseUrl,
   validateAuthInput,
 };
