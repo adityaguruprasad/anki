@@ -173,6 +173,7 @@ module.exports = {
   getLatestDeckCardBrowserRequestId,
   hasSameAppendRequest,
   normalizeCursor,
+  normalizeRequestId,
   normalizeSearchQuery,
   setDeckCardBrowserAppendRequest,
   isLatestDeckCardBrowserReplaceRequest,

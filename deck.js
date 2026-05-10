@@ -10,6 +10,7 @@ const deckManagementApiRequests = require('./deckManagementApiRequests');
 const deckCollectionState = require('./deckCollectionState');
 const deckCardState = require('./deckCardState');
 const deckCardBrowserRequestState = require('./deckCardBrowserRequestState');
+const deckCardBrowserDisplayState = require('./deckCardBrowserDisplayState');
 const deckCardActionInFlightState = require('./deckCardActionInFlightState');
 const deckRemovalInFlightState = require('./deckRemovalInFlightState');
 const deckCardCreateState = require('./deckCardCreateState');
@@ -54,6 +55,11 @@ const {
   isLatestDeckCardBrowserReplaceRequest,
   setDeckCardBrowserAppendRequest,
 } = deckCardBrowserRequestState;
+const {
+  DECK_CARD_BROWSER_ERROR_KINDS,
+  buildDeckCardBrowserDisplayState,
+  createDeckCardBrowserFailure,
+} = deckCardBrowserDisplayState;
 const {
   beginCardRemove,
   beginCardSave,
@@ -532,6 +538,7 @@ const DeckManagement = ({ env }) => {
 
   const fetchDeckCards = async (deckId, options = {}) => {
     const { cursor = null, append = false } = options;
+    const isRetry = Boolean(options.retry);
     const hasExplicitQuery = Object.prototype.hasOwnProperty.call(options, 'q');
     const rawSearchQuery = hasExplicitQuery
       ? options.q
@@ -608,6 +615,37 @@ const DeckManagement = ({ env }) => {
       );
     };
 
+    const setDeckCardBrowserFailure = (message) => {
+      const failure = createDeckCardBrowserFailure({
+        kind: append
+          ? DECK_CARD_BROWSER_ERROR_KINDS.APPEND
+          : DECK_CARD_BROWSER_ERROR_KINDS.REPLACE,
+        message,
+        searchQuery: trimmedSearchQuery,
+        cursor: append ? appendRequest?.cursor || cursor : null,
+        requestId: append ? appendRequest?.requestId : requestId,
+      });
+
+      setDeckCards((currentCards) => {
+        const currentDeckCards = currentCards[deckId] || {};
+
+        return {
+          ...currentCards,
+          [deckId]: {
+            ...currentDeckCards,
+            cards: append ? currentDeckCards.cards || [] : [],
+            nextCursor: append ? currentDeckCards.nextCursor || null : null,
+            hasLoaded: append ? Boolean(currentDeckCards.hasLoaded) : false,
+            loading: false,
+            loadingMore: false,
+            browserRequestId: append ? currentDeckCards.browserRequestId : requestId,
+            appliedSearchQuery: trimmedSearchQuery,
+            error: failure,
+          },
+        };
+      });
+    };
+
     setDeckCards((currentCards) => {
       const currentDeckCards = currentCards[deckId] || {};
       return {
@@ -623,7 +661,7 @@ const DeckManagement = ({ env }) => {
           appliedSearchQuery: trimmedSearchQuery,
           loading: !append,
           loadingMore: append,
-          error: '',
+          error: isRetry ? currentDeckCards.error || '' : '',
         },
       };
     });
@@ -639,20 +677,7 @@ const DeckManagement = ({ env }) => {
 
       if (!cursorCreatedAt || !cursorId) {
         clearCurrentAppendRequest();
-        setDeckCards((currentCards) => ({
-          ...currentCards,
-          [deckId]: {
-            cards: [],
-            nextCursor: null,
-            hasLoaded: false,
-            ...(currentCards[deckId] || {}),
-            appliedSearchQuery: trimmedSearchQuery,
-            loading: false,
-            loadingMore: false,
-            browserRequestId: append ? currentCards[deckId]?.browserRequestId : requestId,
-            error: 'Unable to load more cards.',
-          },
-        }));
+        setDeckCardBrowserFailure('Unable to load more cards.');
         return;
       }
 
@@ -672,19 +697,7 @@ const DeckManagement = ({ env }) => {
         }
 
         clearCurrentAppendRequest();
-        setDeckCards((currentCards) => ({
-          ...currentCards,
-          [deckId]: {
-            cards: [],
-            nextCursor: null,
-            hasLoaded: false,
-            ...(currentCards[deckId] || {}),
-            loading: false,
-            loadingMore: false,
-            browserRequestId: append ? currentCards[deckId]?.browserRequestId : requestId,
-            error: data.error || 'Unable to load cards.',
-          },
-        }));
+        setDeckCardBrowserFailure(data.error || (append ? 'Unable to load more cards.' : 'Unable to load cards.'));
         return;
       }
 
@@ -720,21 +733,35 @@ const DeckManagement = ({ env }) => {
       }
 
       clearCurrentAppendRequest();
-      setDeckCards((currentCards) => ({
-        ...currentCards,
-        [deckId]: {
-          cards: [],
-          nextCursor: null,
-          hasLoaded: false,
-          ...(currentCards[deckId] || {}),
-          loading: false,
-          loadingMore: false,
-          browserRequestId: append ? currentCards[deckId]?.browserRequestId : requestId,
-          appliedSearchQuery: trimmedSearchQuery,
-          error: 'Network error. Please try again.',
-        },
-      }));
+      setDeckCardBrowserFailure('Network error. Please try again.');
     }
+  };
+
+  const retryDeckCards = (deckId, retryRequest) => {
+    const currentDeckCards = deckCards[deckId] || {};
+    if (!retryRequest || currentDeckCards.loading || currentDeckCards.loadingMore) {
+      return;
+    }
+
+    if (retryRequest.append) {
+      if (!retryRequest.cursor) {
+        return;
+      }
+
+      fetchDeckCards(deckId, {
+        cursor: retryRequest.cursor,
+        append: true,
+        q: retryRequest.q || '',
+        requestId: retryRequest.requestId,
+        retry: true,
+      });
+      return;
+    }
+
+    fetchDeckCards(deckId, {
+      q: retryRequest.q || '',
+      retry: true,
+    });
   };
 
   const toggleDeckCards = (deckId) => {
@@ -1132,6 +1159,13 @@ const DeckManagement = ({ env }) => {
             const isExpanded = Boolean(currentDeckCards.expanded);
             const loadedCards = currentDeckCards.cards || [];
             const hasActiveCardSearch = Boolean((currentDeckCards.appliedSearchQuery || '').trim());
+            const cardBrowserDisplay = buildDeckCardBrowserDisplayState(currentDeckCards);
+            const cardBrowserErrorTitleId = cardBrowserDisplay.showError
+              ? `deck-${deck.id}-card-browser-error-title`
+              : undefined;
+            const cardBrowserErrorMessageId = cardBrowserDisplay.showError
+              ? `deck-${deck.id}-card-browser-error-message`
+              : undefined;
 
             return (
               <Card key={deck.id}>
@@ -1192,8 +1226,10 @@ const DeckManagement = ({ env }) => {
                           Search
                         </Button>
                       </form>
-                      {currentDeckCards.loading && (
-                        <p className="text-sm text-gray-500">Loading cards...</p>
+                      {cardBrowserDisplay.showLoadingStatus && (
+                        <p className="text-sm text-gray-500" role="status" aria-live="polite">
+                          {cardBrowserDisplay.loadingText}
+                        </p>
                       )}
                       {loadedCards.length > 0 && (
                         <div className="space-y-2">
@@ -1254,13 +1290,36 @@ const DeckManagement = ({ env }) => {
                           {hasActiveCardSearch ? 'No matching cards.' : 'No cards in this deck yet.'}
                         </p>
                       )}
-                      {currentDeckCards.error && (
-                        <p className="text-sm text-red-600">{currentDeckCards.error}</p>
+                      {cardBrowserDisplay.showError && (
+                        <div
+                          className="rounded border border-red-200 bg-red-50 p-3"
+                          role="alert"
+                          aria-labelledby={cardBrowserErrorTitleId}
+                          aria-describedby={cardBrowserErrorMessageId}
+                        >
+                          <p
+                            id={cardBrowserErrorTitleId}
+                            className="text-sm font-semibold text-red-800"
+                          >
+                            {cardBrowserDisplay.errorTitle}
+                          </p>
+                          <p id={cardBrowserErrorMessageId} className="mt-1 text-sm text-red-700">
+                            {cardBrowserDisplay.errorMessage}
+                          </p>
+                          <Button
+                            type="button"
+                            className="mt-3"
+                            disabled={cardBrowserDisplay.retryDisabled}
+                            onClick={() => retryDeckCards(deck.id, cardBrowserDisplay.retryRequest)}
+                          >
+                            {cardBrowserDisplay.retryButtonLabel}
+                          </Button>
+                        </div>
                       )}
-                      {currentDeckCards.nextCursor && (
+                      {cardBrowserDisplay.showLoadMore && (
                         <Button
                           type="button"
-                          disabled={currentDeckCards.loadingMore}
+                          disabled={cardBrowserDisplay.isLoadingMore}
                           onClick={() => fetchDeckCards(deck.id, {
                             cursor: currentDeckCards.nextCursor,
                             append: true,
@@ -1268,7 +1327,7 @@ const DeckManagement = ({ env }) => {
                             requestId: currentDeckCards.browserRequestId,
                           })}
                         >
-                          {currentDeckCards.loadingMore ? 'Loading...' : 'Load more'}
+                          {cardBrowserDisplay.loadMoreButtonLabel}
                         </Button>
                       )}
                     </div>

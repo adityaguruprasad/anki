@@ -11,6 +11,7 @@ const {
   getLatestDeckCardBrowserRequestId,
   hasSameAppendRequest,
   normalizeCursor,
+  normalizeRequestId,
   normalizeSearchQuery,
   setDeckCardBrowserAppendRequest,
   isLatestDeckCardBrowserReplaceRequest,
@@ -178,6 +179,10 @@ test('normalizers handle blank search queries and invalid cursors', () => {
   assert.equal(normalizeSearchQuery('  math  '), 'math');
   assert.equal(normalizeCursor(null), null);
   assert.equal(normalizeCursor({ cursorCreatedAt: '', cursorId: 1 }), null);
+  assert.equal(normalizeRequestId(12), 12);
+  assert.equal(normalizeRequestId('12'), 0);
+  assert.equal(normalizeRequestId(''), 0);
+  assert.equal(normalizeRequestId(Number.NaN), 0);
   assert.equal(getLatestDeckCardBrowserRequestId({}, 10), 0);
   assert.deepEqual(getLatestDeckCardBrowserRequest({}, 10), {
     requestId: 0,
