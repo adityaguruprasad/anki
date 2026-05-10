@@ -19,6 +19,7 @@ const FRONTEND_MODULES = Object.freeze([
   'schedulingInsightsSummary.js',
   'deckCardActionInFlightState.js',
   'deckCardBrowseResponse.js',
+  'deckCardMutationResponse.js',
   'deckCardBrowserDisplayState.js',
   'deckCardBrowserRequestState.js',
   'deckCardCreateState.js',

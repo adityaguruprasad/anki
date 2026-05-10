@@ -10,6 +10,7 @@ const deckManagementApiRequests = require('./deckManagementApiRequests');
 const deckCollectionState = require('./deckCollectionState');
 const deckCardState = require('./deckCardState');
 const deckCardBrowseResponse = require('./deckCardBrowseResponse');
+const deckCardMutationResponse = require('./deckCardMutationResponse');
 const deckCardBrowserRequestState = require('./deckCardBrowserRequestState');
 const deckCardBrowserDisplayState = require('./deckCardBrowserDisplayState');
 const deckCardActionInFlightState = require('./deckCardActionInFlightState');
@@ -49,6 +50,7 @@ const {
   mergeUniqueCards,
 } = deckCardState;
 const { parseDeckCardBrowseResponsePayload } = deckCardBrowseResponse;
+const { parseDeckCardMutationResponsePayload } = deckCardMutationResponse;
 const {
   beginDeckCardBrowserReplaceRequest,
   canStartDeckCardBrowserAppendRequest,
@@ -884,6 +886,17 @@ const DeckManagement = ({ env, onAuthExpired }) => {
         return;
       }
 
+      let createdCard;
+      try {
+        createdCard = parseDeckCardMutationResponsePayload(data);
+      } catch {
+        setCardFormStatus(deckId, {
+          error: 'Unable to add card.',
+          success: '',
+        });
+        return;
+      }
+
       setCardForms((currentForms) => ({
         ...currentForms,
         [deckId]: {
@@ -894,8 +907,8 @@ const DeckManagement = ({ env, onAuthExpired }) => {
           success: 'Card added.',
         },
       }));
-      setDecks((currentDecks) => incrementDeckCardCounts(currentDecks, deckId, data));
-      setDeckCards((currentCards) => addCreatedCardToLoadedDeckCards(currentCards, deckId, data));
+      setDecks((currentDecks) => incrementDeckCardCounts(currentDecks, deckId, createdCard));
+      setDeckCards((currentCards) => addCreatedCardToLoadedDeckCards(currentCards, deckId, createdCard));
     } catch (error) {
       console.error('Error creating card:', error);
       setCardFormStatus(deckId, {
@@ -962,12 +975,24 @@ const DeckManagement = ({ env, onAuthExpired }) => {
         return;
       }
 
-      updateLoadedCard(deckId, card.id, data);
+      let savedCard;
+      try {
+        savedCard = parseDeckCardMutationResponsePayload(data);
+      } catch {
+        setCardActionState(card.id, {
+          saving: false,
+          error: 'Unable to save card.',
+          success: '',
+        });
+        return;
+      }
+
+      updateLoadedCard(deckId, card.id, savedCard);
       setCardEditForms((currentForms) => ({
         ...currentForms,
         [card.id]: {
-          frontContent: data.front_content ?? frontContent,
-          backContent: data.back_content ?? backContent,
+          frontContent: savedCard.front_content ?? frontContent,
+          backContent: savedCard.back_content ?? backContent,
         },
       }));
       setCardActionState(card.id, {

@@ -172,10 +172,89 @@ test('fetchDeckCards validates successful browse payloads before storing them', 
   assert.doesNotMatch(body, /nextCursor: data\.nextCursor \|\| null/);
 });
 
+test('card mutations validate successful payloads before updating visible state', () => {
+  const addBody = extractConstFunctionBody('addCard');
+  const saveBody = extractConstFunctionBody('saveCard');
+  const addAuthExpiredIndex = addBody.indexOf('if (handleAuthExpiredResponse(response, onAuthExpired))');
+  const addJsonIndex = addBody.indexOf('const data = await response.json().catch(() => ({}));');
+  const addResponseOkIndex = addBody.indexOf('if (!response.ok) {');
+  const addValidationIndex = addBody.indexOf('createdCard = parseDeckCardMutationResponsePayload(data);');
+  const addClearFormIndex = addBody.indexOf('setCardForms((currentForms) => ({');
+  const addIncrementIndex = addBody.indexOf('incrementDeckCardCounts(currentDecks, deckId, createdCard)');
+  const addLocalCardIndex = addBody.indexOf('addCreatedCardToLoadedDeckCards(currentCards, deckId, createdCard)');
+  const saveAuthExpiredIndex = saveBody.indexOf('if (handleAuthExpiredResponse(response, onAuthExpired))');
+  const saveJsonIndex = saveBody.indexOf('const data = await response.json().catch(() => ({}));');
+  const saveResponseOkIndex = saveBody.indexOf('if (!response.ok) {');
+  const saveValidationIndex = saveBody.indexOf('savedCard = parseDeckCardMutationResponsePayload(data);');
+  const saveMergeIndex = saveBody.indexOf('updateLoadedCard(deckId, card.id, savedCard);');
+  const saveEditFormIndex = saveBody.indexOf('frontContent: savedCard.front_content ?? frontContent,');
+
+  assert.match(
+    deckSource,
+    /require\(['"]\.\/deckCardMutationResponse['"]\)/,
+    'Expected deck.js to import the card-mutation response validator',
+  );
+  assert.match(
+    deckSource,
+    /const \{ parseDeckCardMutationResponsePayload \} = deckCardMutationResponse;/,
+    'Expected deck.js to destructure the card-mutation response parser',
+  );
+
+  assert.notEqual(addAuthExpiredIndex, -1, 'Expected auth-expired handling to remain in addCard');
+  assert.notEqual(addJsonIndex, -1, 'Expected addCard to parse response JSON');
+  assert.notEqual(addResponseOkIndex, -1, 'Expected addCard to keep non-2xx handling');
+  assert.notEqual(addValidationIndex, -1, 'Expected addCard to validate successful payloads');
+  assert.notEqual(addClearFormIndex, -1, 'Expected addCard to clear the form only after validation');
+  assert.notEqual(addIncrementIndex, -1, 'Expected addCard to increment counts using the parsed card');
+  assert.notEqual(addLocalCardIndex, -1, 'Expected addCard to add the parsed card locally');
+  assert.ok(addAuthExpiredIndex < addJsonIndex, 'Expected addCard auth expiration before JSON parsing');
+  assert.ok(addJsonIndex < addResponseOkIndex, 'Expected addCard non-2xx handling after JSON parsing');
+  assert.ok(addResponseOkIndex < addValidationIndex, 'Expected addCard validation after non-2xx handling');
+  assert.ok(addValidationIndex < addClearFormIndex, 'Expected addCard validation before clearing the form');
+  assert.ok(addValidationIndex < addIncrementIndex, 'Expected addCard validation before count updates');
+  assert.ok(addValidationIndex < addLocalCardIndex, 'Expected addCard validation before local card insertion');
+  assert.match(
+    addBody.slice(addResponseOkIndex, addValidationIndex),
+    /error: data\.error \|\| 'Unable to add card\.'/,
+    'Expected addCard non-2xx responses to keep backend error copy behavior',
+  );
+  assert.match(
+    addBody.slice(addValidationIndex, addClearFormIndex),
+    /error: 'Unable to add card\.'/,
+    'Expected malformed successful creates to use safe add-card failure copy',
+  );
+
+  assert.notEqual(saveAuthExpiredIndex, -1, 'Expected auth-expired handling to remain in saveCard');
+  assert.notEqual(saveJsonIndex, -1, 'Expected saveCard to parse response JSON');
+  assert.notEqual(saveResponseOkIndex, -1, 'Expected saveCard to keep non-2xx handling');
+  assert.notEqual(saveValidationIndex, -1, 'Expected saveCard to validate successful payloads');
+  assert.notEqual(saveMergeIndex, -1, 'Expected saveCard to merge only the parsed card');
+  assert.notEqual(saveEditFormIndex, -1, 'Expected saveCard to overwrite forms only from the parsed card');
+  assert.ok(saveAuthExpiredIndex < saveJsonIndex, 'Expected saveCard auth expiration before JSON parsing');
+  assert.ok(saveJsonIndex < saveResponseOkIndex, 'Expected saveCard non-2xx handling after JSON parsing');
+  assert.ok(saveResponseOkIndex < saveValidationIndex, 'Expected saveCard validation after non-2xx handling');
+  assert.ok(saveValidationIndex < saveMergeIndex, 'Expected saveCard validation before merging card data');
+  assert.ok(saveValidationIndex < saveEditFormIndex, 'Expected saveCard validation before edit form writes');
+  assert.match(
+    saveBody.slice(saveResponseOkIndex, saveValidationIndex),
+    /error: data\.error \|\| 'Unable to save card\.'/,
+    'Expected saveCard non-2xx responses to keep backend error copy behavior',
+  );
+  assert.match(
+    saveBody.slice(saveValidationIndex, saveMergeIndex),
+    /error: 'Unable to save card\.'/,
+    'Expected malformed successful saves to use safe save-card failure copy',
+  );
+});
+
 test('CRA source sync mirrors the card-browser response validator', () => {
   assert.ok(
     FRONTEND_MODULES.includes('deckCardBrowseResponse.js'),
     'Expected deckCardBrowseResponse.js to be mirrored into CRA src',
+  );
+  assert.ok(
+    FRONTEND_MODULES.includes('deckCardMutationResponse.js'),
+    'Expected deckCardMutationResponse.js to be mirrored into CRA src',
   );
 });
 
