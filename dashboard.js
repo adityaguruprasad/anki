@@ -6,12 +6,17 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 const dashboardApiRequests = require('./dashboardApiRequests');
 const dashboardDeckTarget = require('./dashboardDeckTarget');
 const dashboardStatsDisplayState = require('./dashboardStatsDisplayState');
+const dashboardAuxiliaryDisplayState = require('./dashboardAuxiliaryDisplayState');
 const schedulingInsightsSummary = require('./schedulingInsightsSummary');
 const authHeaders = require('./authHeaders');
 
 const { getDashboardApiRequests } = dashboardApiRequests;
-const { getStudyDeckTargetPath, hasDueCards, selectStudyDeckTarget } = dashboardDeckTarget;
+const { getStudyDeckTargetPath, selectStudyDeckTarget } = dashboardDeckTarget;
 const { buildDashboardStatsDisplayState } = dashboardStatsDisplayState;
+const {
+  buildDeckAvailabilityDisplayState,
+  buildSchedulingInsightsDisplayState,
+} = dashboardAuxiliaryDisplayState;
 const { buildSchedulingInsightsSummary } = schedulingInsightsSummary;
 const { buildAuthHeaders } = authHeaders;
 
@@ -21,6 +26,10 @@ const Dashboard = ({ env }) => {
   const isMountedRef = useRef(true);
   const latestStatsUrlRef = useRef(apiRequests.statsUrl);
   const statsRequestSequenceRef = useRef(0);
+  const latestDeckListUrlRef = useRef(apiRequests.deckListUrl);
+  const deckRequestSequenceRef = useRef(0);
+  const latestSchedulingInsightsUrlRef = useRef(apiRequests.schedulingInsightsUrl);
+  const schedulingInsightsRequestSequenceRef = useRef(0);
   const [stats, setStats] = useState(null);
   const [isLoadingStats, setIsLoadingStats] = useState(true);
   const [statsLoadFailed, setStatsLoadFailed] = useState(false);
@@ -32,6 +41,8 @@ const Dashboard = ({ env }) => {
   const [schedulingInsightsLoadFailed, setSchedulingInsightsLoadFailed] = useState(false);
 
   latestStatsUrlRef.current = apiRequests.statsUrl;
+  latestDeckListUrlRef.current = apiRequests.deckListUrl;
+  latestSchedulingInsightsUrlRef.current = apiRequests.schedulingInsightsUrl;
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -42,19 +53,23 @@ const Dashboard = ({ env }) => {
   }, []);
 
   const fetchStats = useCallback(async ({ shouldIgnore = () => false } = {}) => {
-    const requestSequence = statsRequestSequenceRef.current + 1;
-    statsRequestSequenceRef.current = requestSequence;
     const statsUrl = apiRequests.statsUrl;
-    const shouldSkipUpdate = () => (
+    const shouldSkipRequest = () => (
       !isMountedRef.current
       || shouldIgnore()
-      || requestSequence !== statsRequestSequenceRef.current
       || statsUrl !== latestStatsUrlRef.current
     );
 
-    if (shouldSkipUpdate()) {
+    if (shouldSkipRequest()) {
       return;
     }
+
+    const requestSequence = statsRequestSequenceRef.current + 1;
+    statsRequestSequenceRef.current = requestSequence;
+    const shouldSkipUpdate = () => (
+      shouldSkipRequest()
+      || requestSequence !== statsRequestSequenceRef.current
+    );
 
     setIsLoadingStats(true);
 
@@ -84,75 +99,111 @@ const Dashboard = ({ env }) => {
     }
   }, [apiRequests.statsUrl]);
 
+  const fetchDecks = useCallback(async ({ shouldIgnore = () => false } = {}) => {
+    const deckListUrl = apiRequests.deckListUrl;
+    const shouldSkipRequest = () => (
+      !isMountedRef.current
+      || shouldIgnore()
+      || deckListUrl !== latestDeckListUrlRef.current
+    );
+
+    if (shouldSkipRequest()) {
+      return;
+    }
+
+    const requestSequence = deckRequestSequenceRef.current + 1;
+    deckRequestSequenceRef.current = requestSequence;
+    const shouldSkipUpdate = () => (
+      shouldSkipRequest()
+      || requestSequence !== deckRequestSequenceRef.current
+    );
+
+    setIsLoadingDecks(true);
+
+    try {
+      const response = await fetch(deckListUrl, {
+        headers: buildAuthHeaders(localStorage)
+      });
+      if (!response.ok) {
+        throw new Error('Unable to fetch decks');
+      }
+      const data = await response.json();
+      if (shouldSkipUpdate()) {
+        return;
+      }
+      setStudyDeckTarget(selectStudyDeckTarget(data));
+      setDeckLoadFailed(false);
+    } catch (error) {
+      if (shouldSkipUpdate()) {
+        return;
+      }
+      console.error('Error fetching decks:', error);
+      setDeckLoadFailed(true);
+    } finally {
+      if (!shouldSkipUpdate()) {
+        setIsLoadingDecks(false);
+      }
+    }
+  }, [apiRequests.deckListUrl]);
+
+  const fetchSchedulingInsights = useCallback(async ({ shouldIgnore = () => false } = {}) => {
+    const schedulingInsightsUrl = apiRequests.schedulingInsightsUrl;
+    const shouldSkipRequest = () => (
+      !isMountedRef.current
+      || shouldIgnore()
+      || schedulingInsightsUrl !== latestSchedulingInsightsUrlRef.current
+    );
+
+    if (shouldSkipRequest()) {
+      return;
+    }
+
+    const requestSequence = schedulingInsightsRequestSequenceRef.current + 1;
+    schedulingInsightsRequestSequenceRef.current = requestSequence;
+    const shouldSkipUpdate = () => (
+      shouldSkipRequest()
+      || requestSequence !== schedulingInsightsRequestSequenceRef.current
+    );
+
+    setIsLoadingSchedulingInsights(true);
+
+    try {
+      const response = await fetch(schedulingInsightsUrl, {
+        headers: buildAuthHeaders(localStorage)
+      });
+      if (!response.ok) {
+        throw new Error('Unable to fetch scheduling insights');
+      }
+      const data = await response.json();
+      if (shouldSkipUpdate()) {
+        return;
+      }
+      setSchedulingInsights(data);
+      setSchedulingInsightsLoadFailed(false);
+    } catch (error) {
+      if (shouldSkipUpdate()) {
+        return;
+      }
+      console.error('Error fetching scheduling insights:', error);
+      setSchedulingInsightsLoadFailed(true);
+    } finally {
+      if (!shouldSkipUpdate()) {
+        setIsLoadingSchedulingInsights(false);
+      }
+    }
+  }, [apiRequests.schedulingInsightsUrl]);
+
   useEffect(() => {
     let ignore = false;
 
-    const fetchDecks = async () => {
-      try {
-        setIsLoadingDecks(true);
-        setDeckLoadFailed(false);
-        const response = await fetch(apiRequests.deckListUrl, {
-          headers: buildAuthHeaders(localStorage)
-        });
-        if (!response.ok) {
-          throw new Error('Unable to fetch decks');
-        }
-        const data = await response.json();
-        if (ignore) {
-          return;
-        }
-        setStudyDeckTarget(selectStudyDeckTarget(data));
-      } catch (error) {
-        if (ignore) {
-          return;
-        }
-        console.error('Error fetching decks:', error);
-        setStudyDeckTarget(null);
-        setDeckLoadFailed(true);
-      } finally {
-        if (!ignore) {
-          setIsLoadingDecks(false);
-        }
-      }
-    };
-
-    const fetchSchedulingInsights = async () => {
-      try {
-        setIsLoadingSchedulingInsights(true);
-        setSchedulingInsightsLoadFailed(false);
-        const response = await fetch(apiRequests.schedulingInsightsUrl, {
-          headers: buildAuthHeaders(localStorage)
-        });
-        if (!response.ok) {
-          throw new Error('Unable to fetch scheduling insights');
-        }
-        const data = await response.json();
-        if (ignore) {
-          return;
-        }
-        setSchedulingInsights(data);
-      } catch (error) {
-        if (ignore) {
-          return;
-        }
-        console.error('Error fetching scheduling insights:', error);
-        setSchedulingInsights(null);
-        setSchedulingInsightsLoadFailed(true);
-      } finally {
-        if (!ignore) {
-          setIsLoadingSchedulingInsights(false);
-        }
-      }
-    };
-
     fetchStats({ shouldIgnore: () => ignore });
-    fetchDecks();
-    fetchSchedulingInsights();
+    fetchDecks({ shouldIgnore: () => ignore });
+    fetchSchedulingInsights({ shouldIgnore: () => ignore });
 
     return () => {
       ignore = true;
     };
-  }, [apiRequests, fetchStats]);
+  }, [fetchDecks, fetchSchedulingInsights, fetchStats]);
 
   const handleStartStudying = () => {
     if (isLoadingDecks) {
@@ -166,37 +217,35 @@ const Dashboard = ({ env }) => {
     fetchStats();
   };
 
+  const handleRetryDecks = () => {
+    fetchDecks();
+  };
+
+  const handleRetrySchedulingInsights = () => {
+    fetchSchedulingInsights();
+  };
+
   const chartData = [
     { name: 'Today', cards: stats?.todayReviews || 0 },
     { name: 'This Week', cards: stats?.weekReviews || 0 },
     { name: 'This Month', cards: stats?.monthReviews || 0 },
   ];
-  const hasDueStudyTarget = hasDueCards(studyDeckTarget);
   const schedulingSummary = buildSchedulingInsightsSummary(schedulingInsights);
   const statsDisplay = buildDashboardStatsDisplayState({
     stats,
     isLoadingStats,
     statsLoadFailed,
   });
-
-  const studyPrompt = isLoadingDecks
-    ? 'Checking deck availability...'
-    : studyDeckTarget
-      ? hasDueStudyTarget
-        ? 'Resume with the next deck that has cards ready.'
-        : 'No cards are due right now. Browse or manage your decks instead.'
-      : deckLoadFailed
-        ? 'Deck status could not be loaded. Manage your decks to add cards or try again.'
-        : 'Add cards or create a deck before starting a study session.';
-  const startButtonLabel = isLoadingDecks
-    ? 'Checking Decks...'
-    : studyDeckTarget
-      ? hasDueStudyTarget
-        ? 'Start Studying'
-        : 'Browse Decks'
-      : deckLoadFailed
-        ? 'Manage Decks'
-        : 'Add Cards or Decks';
+  const deckAvailabilityDisplay = buildDeckAvailabilityDisplayState({
+    studyDeckTarget,
+    isLoadingDecks,
+    deckLoadFailed,
+  });
+  const schedulingInsightsDisplay = buildSchedulingInsightsDisplayState({
+    schedulingInsights,
+    isLoadingSchedulingInsights,
+    schedulingInsightsLoadFailed,
+  });
 
   return (
     <div className="max-w-4xl mx-auto mt-10">
@@ -273,15 +322,40 @@ const Dashboard = ({ env }) => {
         <CardContent className="p-4">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold">Scheduling Insights</h3>
-            {isLoadingSchedulingInsights && (
-              <span className="text-sm text-gray-500">Loading...</span>
+            {schedulingInsightsDisplay.isLoading && (
+              <span className="text-sm text-gray-500" role="status" aria-live="polite">
+                {schedulingInsightsDisplay.headerLoadingText}
+              </span>
             )}
           </div>
-          {schedulingInsightsLoadFailed ? (
-            <p className="text-sm text-gray-600">Scheduling insights could not be loaded.</p>
-          ) : isLoadingSchedulingInsights && !schedulingInsights ? (
-            <p className="text-sm text-gray-600">Loading scheduling insights...</p>
-          ) : (
+          {schedulingInsightsDisplay.showError && (
+            <div
+              className="mb-4 rounded border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+              role="alert"
+              aria-labelledby="dashboard-scheduling-insights-error-title"
+            >
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p id="dashboard-scheduling-insights-error-title" className="font-semibold">
+                    {schedulingInsightsDisplay.errorTitle}
+                  </p>
+                  <p>{schedulingInsightsDisplay.errorMessage}</p>
+                </div>
+                <Button
+                  type="button"
+                  onClick={handleRetrySchedulingInsights}
+                  disabled={schedulingInsightsDisplay.retryDisabled}
+                >
+                  {schedulingInsightsDisplay.retryButtonLabel}
+                </Button>
+              </div>
+            </div>
+          )}
+          {schedulingInsightsDisplay.showLoadingBody ? (
+            <p className="text-sm text-gray-600" role="status" aria-live="polite">
+              {schedulingInsightsDisplay.loadingText}
+            </p>
+          ) : schedulingInsightsDisplay.showSummary ? (
             <>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
                 <div>
@@ -310,13 +384,42 @@ const Dashboard = ({ env }) => {
                 ))}
               </div>
             </>
-          )}
+          ) : null}
         </CardContent>
       </Card>
       <div>
-        <p className="text-sm text-gray-600 mb-3">{studyPrompt}</p>
-        <Button onClick={handleStartStudying} disabled={isLoadingDecks}>
-          {startButtonLabel}
+        {deckAvailabilityDisplay.showError && (
+          <div
+            className="mb-4 rounded border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+            role="alert"
+            aria-labelledby="dashboard-deck-availability-error-title"
+          >
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p id="dashboard-deck-availability-error-title" className="font-semibold">
+                  {deckAvailabilityDisplay.errorTitle}
+                </p>
+                <p>{deckAvailabilityDisplay.errorMessage}</p>
+              </div>
+              <Button
+                type="button"
+                onClick={handleRetryDecks}
+                disabled={deckAvailabilityDisplay.retryDisabled}
+              >
+                {deckAvailabilityDisplay.retryButtonLabel}
+              </Button>
+            </div>
+          </div>
+        )}
+        <p
+          className="text-sm text-gray-600 mb-3"
+          role={deckAvailabilityDisplay.isLoading ? 'status' : undefined}
+          aria-live={deckAvailabilityDisplay.isLoading ? 'polite' : undefined}
+        >
+          {deckAvailabilityDisplay.prompt}
+        </p>
+        <Button onClick={handleStartStudying} disabled={deckAvailabilityDisplay.ctaDisabled}>
+          {deckAvailabilityDisplay.ctaLabel}
         </Button>
       </div>
     </div>
