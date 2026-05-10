@@ -5,7 +5,9 @@ import { Input } from '@/components/ui/input';
 import Dashboard from './dashboard';
 import StudySession from './studySession';
 import DeckManagement from './deck';
-import { AUTH_MODES, createAuthSubmission, getNextAuthMode } from './authFormState';
+const authFormState = require('./authFormState');
+
+const { AUTH_MODES, createAuthSubmission, getNextAuthMode } = authFormState;
 
 const apiEnv = Object.freeze({
   REACT_APP_API_BASE_URL: process.env.REACT_APP_API_BASE_URL,

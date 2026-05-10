@@ -1,20 +1,36 @@
 {
-    "name": "anki",
-    "version": "1.0.0",
-    "description": "An Anki-like flashcard application",
-    "main": "main.js",
-    "dependencies": {
-      "bcrypt": "^5.1.1",
-      "react": "^17.0.2",
-      "react-dom": "^17.0.2",
-      "react-router-dom": "^5.3.4",
-      "react-scripts": "4.0.3"
-    },
-    "scripts": {
-      "start": "react-scripts start",
-      "build": "react-scripts build",
-      "test": "react-scripts test",
-      "test:unit": "node --test test/**/*.test.js",
-      "eject": "react-scripts eject"
-    }
+  "name": "anki",
+  "version": "1.0.0",
+  "description": "An Anki-like flashcard application",
+  "main": "main.js",
+  "dependencies": {
+    "bcrypt": "^5.1.1",
+    "react": "^17.0.2",
+    "react-dom": "^17.0.2",
+    "react-router-dom": "^5.3.4",
+    "react-scripts": "4.0.3",
+    "recharts": "^2.15.4"
+  },
+  "scripts": {
+    "prestart": "node scripts/sync-cra-src.js",
+    "start": "react-scripts --openssl-legacy-provider start",
+    "prebuild": "node scripts/sync-cra-src.js",
+    "build": "react-scripts --openssl-legacy-provider build",
+    "pretest": "node scripts/sync-cra-src.js",
+    "test": "react-scripts test",
+    "test:unit": "node --test test/**/*.test.js",
+    "eject": "react-scripts eject"
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
   }
+}

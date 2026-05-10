@@ -8,7 +8,7 @@ const studySessionSource = fs.readFileSync(path.join(__dirname, '..', 'studySess
 test('StudySession consumes submission feedback helper output', () => {
   assert.match(
     studySessionSource,
-    /from\s+['"]\.\/studySessionFeedback['"]/,
+    /(?:from\s+|require\()['"]\.\/studySessionFeedback['"]/,
     'studySession.js should import the study session feedback helper',
   );
   assert.match(

@@ -2,18 +2,25 @@ import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react'
 import { useHistory, useLocation } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { getStudySessionApiRequests } from './studySessionApiRequests';
-import {
+const studySessionApiRequests = require('./studySessionApiRequests');
+const studySessionShortcuts = require('./studySessionShortcuts');
+const studySessionFeedback = require('./studySessionFeedback');
+const studySessionNotice = require('./studySessionNotice');
+const studySessionTarget = require('./studySessionTarget');
+const authHeaders = require('./authHeaders');
+
+const { getStudySessionApiRequests } = studySessionApiRequests;
+const {
   getStudySessionShortcutAction,
   STUDY_SESSION_SHORTCUT_ACTIONS,
-} from './studySessionShortcuts';
-import {
+} = studySessionShortcuts;
+const {
   getStudySessionSubmissionFeedback,
   parseStudySessionSubmissionResponse,
-} from './studySessionFeedback';
-import { getStudySessionNotice, STUDY_SESSION_NOTICE_TYPES } from './studySessionNotice';
-import { getStudySessionRequest, STUDY_SESSION_REQUESTS } from './studySessionTarget';
-import { buildAuthHeaders } from './authHeaders';
+} = studySessionFeedback;
+const { getStudySessionNotice, STUDY_SESSION_NOTICE_TYPES } = studySessionNotice;
+const { getStudySessionRequest, STUDY_SESSION_REQUESTS } = studySessionTarget;
+const { buildAuthHeaders } = authHeaders;
 
 const StudySession = ({ env }) => {
   const location = useLocation();

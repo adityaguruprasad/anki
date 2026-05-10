@@ -3,37 +3,49 @@ import { useHistory } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
+const deckCreateState = require('./deckCreateState');
+const deckListLoadState = require('./deckListLoadState');
+const deckRenameState = require('./deckRenameState');
+const deckManagementApiRequests = require('./deckManagementApiRequests');
+const deckCollectionState = require('./deckCollectionState');
+const deckCardState = require('./deckCardState');
+const deckCardBrowserRequestState = require('./deckCardBrowserRequestState');
+const deckCardActionInFlightState = require('./deckCardActionInFlightState');
+const deckRemovalInFlightState = require('./deckRemovalInFlightState');
+const deckCardCreateState = require('./deckCardCreateState');
+const authHeaders = require('./authHeaders');
+
+const {
   CREATE_DECK_MESSAGES,
   createDeckSubmission,
   getCreateDeckFailureMessage,
-} from './deckCreateState';
-import {
+} = deckCreateState;
+const {
   DECK_LIST_LOAD_MESSAGES,
   beginDeckListLoad,
   finishDeckListLoadFailure,
   finishDeckListSilentFailure,
   finishDeckListLoadSuccess,
   getDeckListLoadFailureMessage,
-} from './deckListLoadState';
-import {
+} = deckListLoadState;
+const {
   RENAME_DECK_MESSAGES,
   getRenameDeckFailureMessage,
   renameDeckSubmission,
-} from './deckRenameState';
-import { getDeckManagementApiRequests } from './deckManagementApiRequests';
-import {
+} = deckRenameState;
+const { getDeckManagementApiRequests } = deckManagementApiRequests;
+const {
   addCreatedDeck,
   mergeRenamedDeck,
   removeDeckFromList,
-} from './deckCollectionState';
-import {
+} = deckCollectionState;
+const {
   addCreatedCardToLoadedDeckCards,
   decrementDeckCardCounts,
   incrementDeckCardCounts,
   mergeUniqueCards,
-} from './deckCardState';
-import {
+} = deckCardState;
+const {
   beginDeckCardBrowserReplaceRequest,
   canStartDeckCardBrowserAppendRequest,
   canApplyDeckCardBrowserAppendResponse,
@@ -41,20 +53,20 @@ import {
   createDeckCardBrowserAppendRequest,
   isLatestDeckCardBrowserReplaceRequest,
   setDeckCardBrowserAppendRequest,
-} from './deckCardBrowserRequestState';
-import {
+} = deckCardBrowserRequestState;
+const {
   beginCardRemove,
   beginCardSave,
   clearCardAction,
   isCardActionInFlight,
-} from './deckCardActionInFlightState';
-import {
+} = deckCardActionInFlightState;
+const {
   beginDeckRemoval,
   clearDeckRemoval,
   isDeckRemovalInFlight,
-} from './deckRemovalInFlightState';
-import { createCardSubmission } from './deckCardCreateState';
-import { buildAuthHeaders } from './authHeaders';
+} = deckRemovalInFlightState;
+const { createCardSubmission } = deckCardCreateState;
+const { buildAuthHeaders } = authHeaders;
 
 const CARD_PAGE_LIMIT = 10;
 const CREATE_DECK_SUCCESS_VISIBLE_MS = 2500;

@@ -3,10 +3,15 @@ import { useHistory } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { getDashboardApiRequests } from './dashboardApiRequests';
-import { getStudyDeckTargetPath, hasDueCards, selectStudyDeckTarget } from './dashboardDeckTarget';
-import { buildSchedulingInsightsSummary } from './schedulingInsightsSummary';
-import { buildAuthHeaders } from './authHeaders';
+const dashboardApiRequests = require('./dashboardApiRequests');
+const dashboardDeckTarget = require('./dashboardDeckTarget');
+const schedulingInsightsSummary = require('./schedulingInsightsSummary');
+const authHeaders = require('./authHeaders');
+
+const { getDashboardApiRequests } = dashboardApiRequests;
+const { getStudyDeckTargetPath, hasDueCards, selectStudyDeckTarget } = dashboardDeckTarget;
+const { buildSchedulingInsightsSummary } = schedulingInsightsSummary;
+const { buildAuthHeaders } = authHeaders;
 
 const Dashboard = ({ env }) => {
   const history = useHistory();
