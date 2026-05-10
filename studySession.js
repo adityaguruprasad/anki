@@ -7,6 +7,7 @@ const studySessionShortcuts = require('./studySessionShortcuts');
 const studySessionFeedback = require('./studySessionFeedback');
 const studySessionNotice = require('./studySessionNotice');
 const studySessionTarget = require('./studySessionTarget');
+const studySessionDueCards = require('./studySessionDueCards');
 const authHeaders = require('./authHeaders');
 const authExpiration = require('./authExpiration');
 
@@ -25,6 +26,7 @@ const {
   getValidatedStudySessionDeckListRequest,
   STUDY_SESSION_REQUESTS,
 } = studySessionTarget;
+const { selectValidatedStudySessionDueCard } = studySessionDueCards;
 const { buildAuthHeaders } = authHeaders;
 const { handleAuthExpiredResponse } = authExpiration;
 
@@ -82,9 +84,11 @@ const StudySession = ({ env, onAuthExpired }) => {
 
       if (!isCurrentRequest()) return;
 
+      const selectedCard = selectValidatedStudySessionDueCard(cards);
+
       activeDeckIdRef.current = requestDeckId;
-      if (Array.isArray(cards) && cards.length > 0) {
-        setCurrentCard(cards[0]);
+      if (selectedCard) {
+        setCurrentCard(selectedCard);
         setShowAnswer(false);
         setSubmitError('');
         setSubmitInFlight(false);

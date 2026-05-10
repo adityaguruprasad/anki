@@ -30,6 +30,7 @@ const FRONTEND_MODULES = Object.freeze([
   'deckRemovalInFlightState.js',
   'deckRenameState.js',
   'studySessionApiRequests.js',
+  'studySessionDueCards.js',
   'studySessionFeedback.js',
   'studySessionNotice.js',
   'studySessionShortcuts.js',
