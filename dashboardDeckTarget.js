@@ -1,9 +1,37 @@
-function hasPositiveNumericCount(deck, key) {
-  return deck && typeof deck[key] === 'number' && Number.isFinite(deck[key]) && deck[key] > 0;
+function hasNonNegativeSafeIntegerCount(deck, key) {
+  return Boolean(deck) && Number.isSafeInteger(deck[key]) && deck[key] >= 0;
+}
+
+function hasPositiveSafeIntegerCount(deck, key) {
+  return hasNonNegativeSafeIntegerCount(deck, key) && deck[key] > 0;
+}
+
+function hasUsableDeckId(deck) {
+  if (!deck) {
+    return false;
+  }
+
+  if (typeof deck.id === 'string') {
+    return deck.id.trim().length > 0;
+  }
+
+  return typeof deck.id === 'number' && Number.isFinite(deck.id);
+}
+
+function hasDashboardDeckListPayload(decks) {
+  return Array.isArray(decks)
+    && decks.every((deck) => (
+      deck
+      && typeof deck === 'object'
+      && !Array.isArray(deck)
+      && hasUsableDeckId(deck)
+      && hasNonNegativeSafeIntegerCount(deck, 'totalCards')
+      && hasNonNegativeSafeIntegerCount(deck, 'dueCards')
+    ));
 }
 
 function hasDueCards(deck) {
-  return hasPositiveNumericCount(deck, 'dueCards');
+  return hasPositiveSafeIntegerCount(deck, 'dueCards');
 }
 
 function selectStudyDeckTarget(decks) {
@@ -13,7 +41,7 @@ function selectStudyDeckTarget(decks) {
 
   return (
     decks.find(hasDueCards) ||
-    decks.find((deck) => hasPositiveNumericCount(deck, 'totalCards')) ||
+    decks.find((deck) => hasPositiveSafeIntegerCount(deck, 'totalCards')) ||
     null
   );
 }
@@ -28,6 +56,7 @@ function getStudyDeckTargetPath(deck) {
 
 module.exports = {
   getStudyDeckTargetPath,
+  hasDashboardDeckListPayload,
   hasDueCards,
   selectStudyDeckTarget,
 };

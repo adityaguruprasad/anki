@@ -13,7 +13,7 @@ const authHeaders = require('./authHeaders');
 const authExpiration = require('./authExpiration');
 
 const { getDashboardApiRequests } = dashboardApiRequests;
-const { getStudyDeckTargetPath, selectStudyDeckTarget } = dashboardDeckTarget;
+const { getStudyDeckTargetPath, hasDashboardDeckListPayload, selectStudyDeckTarget } = dashboardDeckTarget;
 const { buildDashboardReviewActivityDisplayState } = dashboardReviewActivityDisplayState;
 const { buildDashboardStatsDisplayState, hasStatsPayload } = dashboardStatsDisplayState;
 const {
@@ -150,6 +150,9 @@ const Dashboard = ({ env, onAuthExpired }) => {
       const data = await response.json();
       if (shouldSkipUpdate()) {
         return;
+      }
+      if (!hasDashboardDeckListPayload(data)) {
+        throw new Error('Malformed deck list payload');
       }
       setStudyDeckTarget(selectStudyDeckTarget(data));
       setDeckLoadFailed(false);

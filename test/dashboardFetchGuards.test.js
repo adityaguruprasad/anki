@@ -131,3 +131,32 @@ test('fetchStats rejects malformed successful payloads after stale guards before
     'Expected malformed stats to flow through retryable load failure handling'
   );
 });
+
+test('fetchDecks rejects malformed successful payloads before setting the target or clearing failure', () => {
+  const body = extractConstFunctionBody('fetchDecks');
+  const jsonIndex = body.indexOf('const data = await response.json();');
+  const staleGuardAfterJsonIndex = body.indexOf('if (shouldSkipUpdate()) {', jsonIndex);
+  const validationIndex = body.indexOf('if (!hasDashboardDeckListPayload(data)) {');
+  const setTargetIndex = body.indexOf('setStudyDeckTarget(selectStudyDeckTarget(data));');
+  const clearFailureIndex = body.indexOf('setDeckLoadFailed(false);');
+
+  assert.match(
+    dashboardSource,
+    /const \{ getStudyDeckTargetPath, hasDashboardDeckListPayload, selectStudyDeckTarget \} = dashboardDeckTarget;/,
+    'Expected dashboard to import the deck-list payload validator'
+  );
+  assert.notEqual(jsonIndex, -1, 'Expected fetchDecks to parse response JSON');
+  assert.notEqual(staleGuardAfterJsonIndex, -1, 'Expected fetchDecks to keep stale guard after parsing JSON');
+  assert.notEqual(validationIndex, -1, 'Expected fetchDecks to validate parsed decks');
+  assert.notEqual(setTargetIndex, -1, 'Expected fetchDecks to set the study target from valid decks');
+  assert.notEqual(clearFailureIndex, -1, 'Expected fetchDecks to clear the deck load failure after success');
+  assert.ok(jsonIndex < staleGuardAfterJsonIndex, 'Expected stale guard after parsing JSON');
+  assert.ok(staleGuardAfterJsonIndex < validationIndex, 'Expected validation after the stale guard');
+  assert.ok(validationIndex < setTargetIndex, 'Expected validation before setting the study target');
+  assert.ok(validationIndex < clearFailureIndex, 'Expected validation before clearing deck load failure');
+  assert.match(
+    body.slice(validationIndex, setTargetIndex),
+    /throw new Error\('Malformed deck list payload'\);/,
+    'Expected malformed deck lists to flow through retryable load failure handling'
+  );
+});
