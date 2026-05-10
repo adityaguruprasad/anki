@@ -9,6 +9,13 @@ import {
   getCreateDeckFailureMessage,
 } from './deckCreateState';
 import {
+  DECK_LIST_LOAD_MESSAGES,
+  beginDeckListLoad,
+  finishDeckListLoadFailure,
+  finishDeckListLoadSuccess,
+  getDeckListLoadFailureMessage,
+} from './deckListLoadState';
+import {
   RENAME_DECK_MESSAGES,
   getRenameDeckFailureMessage,
   renameDeckSubmission,
@@ -40,6 +47,9 @@ const DeckManagement = ({ env }) => {
   const history = useHistory();
   const apiRequests = useMemo(() => getDeckManagementApiRequests(env), [env]);
   const [decks, setDecks] = useState([]);
+  const [deckListLoadState, setDeckListLoadState] = useState(() => beginDeckListLoad());
+  const deckListRequestIdRef = useRef(0);
+  const isDeckListMountedRef = useRef(false);
   const [newDeckName, setNewDeckName] = useState('');
   const [createDeckStatus, setCreateDeckStatus] = useState({
     creating: false,
@@ -62,20 +72,72 @@ const DeckManagement = ({ env }) => {
   const [cardActionStates, setCardActionStates] = useState({});
   const cardActionInFlightRef = useRef({});
 
+  useEffect(() => {
+    isDeckListMountedRef.current = true;
+
+    return () => {
+      isDeckListMountedRef.current = false;
+      deckListRequestIdRef.current += 1;
+    };
+  }, []);
+
   const fetchDecks = useCallback(async () => {
+    const requestId = deckListRequestIdRef.current + 1;
+    deckListRequestIdRef.current = requestId;
+    setDeckListLoadState(beginDeckListLoad());
+
+    const isCurrentDeckListRequest = () => (
+      isDeckListMountedRef.current && deckListRequestIdRef.current === requestId
+    );
+
     try {
       const response = await fetch(apiRequests.deckListUrl, {
         headers: buildAuthHeaders(localStorage)
       });
+
+      if (!response.ok) {
+        const errorPayload = await response.json().catch(() => ({}));
+        if (isCurrentDeckListRequest()) {
+          setDeckListLoadState(finishDeckListLoadFailure(
+            getDeckListLoadFailureMessage(errorPayload)
+          ));
+        }
+        return false;
+      }
+
       const data = await response.json();
+      if (!Array.isArray(data)) {
+        if (isCurrentDeckListRequest()) {
+          setDeckListLoadState(finishDeckListLoadFailure(
+            DECK_LIST_LOAD_MESSAGES.loadFailed
+          ));
+        }
+        return false;
+      }
+
+      if (!isCurrentDeckListRequest()) {
+        return false;
+      }
+
       setDecks(data);
+      setDeckListLoadState(finishDeckListLoadSuccess());
+      return true;
     } catch (error) {
       console.error('Error fetching decks:', error);
+      if (isCurrentDeckListRequest()) {
+        setDeckListLoadState(finishDeckListLoadFailure(
+          DECK_LIST_LOAD_MESSAGES.networkFailed
+        ));
+      }
+      return false;
     }
   }, [apiRequests]);
 
   useEffect(() => {
     fetchDecks();
+    return () => {
+      deckListRequestIdRef.current += 1;
+    };
   }, [fetchDecks]);
 
   useEffect(() => () => {
@@ -836,6 +898,9 @@ const DeckManagement = ({ env }) => {
   const createDeckStatusId = createDeckStatus.error || createDeckStatus.success
     ? 'create-deck-status'
     : undefined;
+  const isDeckListLoading = Boolean(deckListLoadState.loading);
+  const deckListError = deckListLoadState.error;
+  const shouldShowDeckGrid = !deckListError || decks.length > 0;
 
   return (
     <div className="max-w-2xl mx-auto mt-10">
@@ -867,192 +932,219 @@ const DeckManagement = ({ env }) => {
           </p>
         )}
       </form>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {decks.map(deck => {
-          const totalCards = deck.totalCards ?? 0;
-          const dueCards = deck.dueCards ?? 0;
-          const cardForm = cardForms[deck.id] || {};
-          const isCreatingCard = Boolean(cardForm.creating);
-          const renameValue = renameForms[deck.id] ?? deck.name;
-          const renameError = renameErrors[deck.id];
-          const renameErrorId = renameError ? `rename-deck-${deck.id}-error` : undefined;
-          const isRenamingDeck = Boolean(renamingDecks[deck.id]);
-          const deleteError = deleteErrors[deck.id];
-          const isDeletingDeck = Boolean(deletingDecks[deck.id]);
-          const currentDeckCards = deckCards[deck.id] || {};
-          const isExpanded = Boolean(currentDeckCards.expanded);
-          const loadedCards = currentDeckCards.cards || [];
-          const hasActiveCardSearch = Boolean((currentDeckCards.appliedSearchQuery || '').trim());
+      {isDeckListLoading && (
+        <p className="mb-4 text-sm text-gray-600" role="status" aria-live="polite">
+          {DECK_LIST_LOAD_MESSAGES.loading}
+        </p>
+      )}
+      {deckListError && (
+        <div
+          className="mb-4 rounded border border-red-200 bg-red-50 p-4"
+          role="alert"
+          aria-labelledby="deck-list-load-error-title"
+        >
+          <h3 id="deck-list-load-error-title" className="text-sm font-semibold text-red-800">
+            Unable to load decks
+          </h3>
+          <p className="mt-1 text-sm text-red-700">{deckListError}</p>
+          <Button
+            type="button"
+            className="mt-3"
+            onClick={fetchDecks}
+            disabled={isDeckListLoading}
+          >
+            {isDeckListLoading ? 'Retrying...' : 'Try Again'}
+          </Button>
+        </div>
+      )}
+      {shouldShowDeckGrid && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {decks.map(deck => {
+            const totalCards = deck.totalCards ?? 0;
+            const dueCards = deck.dueCards ?? 0;
+            const cardForm = cardForms[deck.id] || {};
+            const isCreatingCard = Boolean(cardForm.creating);
+            const renameValue = renameForms[deck.id] ?? deck.name;
+            const renameError = renameErrors[deck.id];
+            const renameErrorId = renameError ? `rename-deck-${deck.id}-error` : undefined;
+            const isRenamingDeck = Boolean(renamingDecks[deck.id]);
+            const deleteError = deleteErrors[deck.id];
+            const isDeletingDeck = Boolean(deletingDecks[deck.id]);
+            const currentDeckCards = deckCards[deck.id] || {};
+            const isExpanded = Boolean(currentDeckCards.expanded);
+            const loadedCards = currentDeckCards.cards || [];
+            const hasActiveCardSearch = Boolean((currentDeckCards.appliedSearchQuery || '').trim());
 
-          return (
-            <Card key={deck.id}>
-              <CardContent className="p-4">
-                <h3 className="text-lg font-semibold">{deck.name}</h3>
-                <p className="text-sm text-gray-500">Cards: {totalCards}</p>
-                <p className="text-sm text-gray-500">Due: {dueCards}</p>
-                <form className="mt-3 flex gap-2" onSubmit={(event) => renameDeck(event, deck.id, deck.name)}>
-                  <Input
-                    type="text"
-                    value={renameValue}
-                    onChange={(e) => updateRenameForm(deck.id, e.target.value)}
-                    aria-label={`Rename ${deck.name}`}
-                    aria-invalid={Boolean(renameError)}
-                    aria-describedby={renameErrorId}
-                    disabled={isRenamingDeck}
-                  />
-                  <Button type="submit" disabled={isRenamingDeck}>
-                    {isRenamingDeck ? 'Saving...' : 'Rename'}
+            return (
+              <Card key={deck.id}>
+                <CardContent className="p-4">
+                  <h3 className="text-lg font-semibold">{deck.name}</h3>
+                  <p className="text-sm text-gray-500">Cards: {totalCards}</p>
+                  <p className="text-sm text-gray-500">Due: {dueCards}</p>
+                  <form className="mt-3 flex gap-2" onSubmit={(event) => renameDeck(event, deck.id, deck.name)}>
+                    <Input
+                      type="text"
+                      value={renameValue}
+                      onChange={(e) => updateRenameForm(deck.id, e.target.value)}
+                      aria-label={`Rename ${deck.name}`}
+                      aria-invalid={Boolean(renameError)}
+                      aria-describedby={renameErrorId}
+                      disabled={isRenamingDeck}
+                    />
+                    <Button type="submit" disabled={isRenamingDeck}>
+                      {isRenamingDeck ? 'Saving...' : 'Rename'}
+                    </Button>
+                  </form>
+                  {renameError && (
+                    <p id={renameErrorId} role="alert" className="mt-2 text-sm text-red-600">
+                      {renameError}
+                    </p>
+                  )}
+                  <Button className="mt-2" onClick={() => history.push(`/study?${new URLSearchParams({ deckId: deck.id })}`)}>
+                    Study
                   </Button>
-                </form>
-                {renameError && (
-                  <p id={renameErrorId} role="alert" className="mt-2 text-sm text-red-600">
-                    {renameError}
-                  </p>
-                )}
-                <Button className="mt-2" onClick={() => history.push(`/study?${new URLSearchParams({ deckId: deck.id })}`)}>
-                  Study
-                </Button>
-                <Button
-                  className="mt-2 ml-2 bg-red-600 hover:bg-red-700"
-                  disabled={isDeletingDeck}
-                  onClick={() => deleteDeck(deck.id)}
-                >
-                  {isDeletingDeck ? 'Deleting...' : 'Delete'}
-                </Button>
-                <Button className="mt-2 ml-2" onClick={() => toggleDeckCards(deck.id)}>
-                  {isExpanded ? 'Hide cards' : 'View cards'}
-                </Button>
-                {deleteError && (
-                  <p className="mt-2 text-sm text-red-600">{deleteError}</p>
-                )}
-                {isExpanded && (
-                  <div className="mt-4 space-y-3">
-                    <form className="flex gap-2" onSubmit={(event) => searchDeckCards(event, deck.id)}>
-                      <Input
-                        type="search"
-                        value={currentDeckCards.searchQuery || ''}
-                        onChange={(e) => updateDeckCardSearch(deck.id, e.target.value)}
-                        placeholder="Search cards"
-                        aria-label={`Search cards in ${deck.name}`}
-                        className="text-sm"
-                      />
-                      <Button
-                        type="submit"
-                        disabled={currentDeckCards.loading || currentDeckCards.loadingMore}
-                      >
-                        Search
-                      </Button>
-                    </form>
-                    {currentDeckCards.loading && (
-                      <p className="text-sm text-gray-500">Loading cards...</p>
-                    )}
-                    {loadedCards.length > 0 && (
-                      <div className="space-y-2">
-                        {loadedCards.map((card) => {
-                          const cardEditForm = cardEditForms[card.id] || {};
-                          const cardActionState = cardActionStates[card.id] || {};
-                          const isSavingCard = Boolean(cardActionState.saving);
-                          const isDeletingCard = Boolean(cardActionState.deleting);
+                  <Button
+                    className="mt-2 ml-2 bg-red-600 hover:bg-red-700"
+                    disabled={isDeletingDeck}
+                    onClick={() => deleteDeck(deck.id)}
+                  >
+                    {isDeletingDeck ? 'Deleting...' : 'Delete'}
+                  </Button>
+                  <Button className="mt-2 ml-2" onClick={() => toggleDeckCards(deck.id)}>
+                    {isExpanded ? 'Hide cards' : 'View cards'}
+                  </Button>
+                  {deleteError && (
+                    <p className="mt-2 text-sm text-red-600">{deleteError}</p>
+                  )}
+                  {isExpanded && (
+                    <div className="mt-4 space-y-3">
+                      <form className="flex gap-2" onSubmit={(event) => searchDeckCards(event, deck.id)}>
+                        <Input
+                          type="search"
+                          value={currentDeckCards.searchQuery || ''}
+                          onChange={(e) => updateDeckCardSearch(deck.id, e.target.value)}
+                          placeholder="Search cards"
+                          aria-label={`Search cards in ${deck.name}`}
+                          className="text-sm"
+                        />
+                        <Button
+                          type="submit"
+                          disabled={currentDeckCards.loading || currentDeckCards.loadingMore}
+                        >
+                          Search
+                        </Button>
+                      </form>
+                      {currentDeckCards.loading && (
+                        <p className="text-sm text-gray-500">Loading cards...</p>
+                      )}
+                      {loadedCards.length > 0 && (
+                        <div className="space-y-2">
+                          {loadedCards.map((card) => {
+                            const cardEditForm = cardEditForms[card.id] || {};
+                            const cardActionState = cardActionStates[card.id] || {};
+                            const isSavingCard = Boolean(cardActionState.saving);
+                            const isDeletingCard = Boolean(cardActionState.deleting);
 
-                          return (
-                            <form
-                              key={card.id}
-                              className="space-y-2 rounded border border-gray-200 p-3"
-                              onSubmit={(event) => saveCard(event, deck.id, card)}
-                            >
-                              <p className="text-sm font-medium text-gray-700">Front</p>
-                              <textarea
-                                className="min-h-[80px] w-full rounded-md border border-gray-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
-                                value={cardEditForm.frontContent ?? card.front_content ?? ''}
-                                onChange={(e) => updateCardEditForm(card, 'frontContent', e.target.value)}
-                                aria-label="Card front"
-                                disabled={isSavingCard || isDeletingCard}
-                              />
-                              <p className="text-sm font-medium text-gray-700">Back</p>
-                              <textarea
-                                className="min-h-[80px] w-full rounded-md border border-gray-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
-                                value={cardEditForm.backContent ?? card.back_content ?? ''}
-                                onChange={(e) => updateCardEditForm(card, 'backContent', e.target.value)}
-                                aria-label="Card back"
-                                disabled={isSavingCard || isDeletingCard}
-                              />
-                              {cardActionState.error && (
-                                <p className="text-sm text-red-600">{cardActionState.error}</p>
-                              )}
-                              {cardActionState.success && (
-                                <p className="text-sm text-green-600">{cardActionState.success}</p>
-                              )}
-                              <div className="flex gap-2">
-                                <Button type="submit" disabled={isSavingCard || isDeletingCard}>
-                                  {isSavingCard ? 'Saving...' : 'Save'}
-                                </Button>
-                                <Button
-                                  type="button"
-                                  className="bg-red-600 hover:bg-red-700"
+                            return (
+                              <form
+                                key={card.id}
+                                className="space-y-2 rounded border border-gray-200 p-3"
+                                onSubmit={(event) => saveCard(event, deck.id, card)}
+                              >
+                                <p className="text-sm font-medium text-gray-700">Front</p>
+                                <textarea
+                                  className="min-h-[80px] w-full rounded-md border border-gray-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                                  value={cardEditForm.frontContent ?? card.front_content ?? ''}
+                                  onChange={(e) => updateCardEditForm(card, 'frontContent', e.target.value)}
+                                  aria-label="Card front"
                                   disabled={isSavingCard || isDeletingCard}
-                                  onClick={() => deleteCard(deck.id, card.id)}
-                                >
-                                  {isDeletingCard ? 'Removing...' : 'Remove'}
-                                </Button>
-                              </div>
-                            </form>
-                          );
-                        })}
-                      </div>
-                    )}
-                    {currentDeckCards.hasLoaded && loadedCards.length === 0 && !currentDeckCards.loading && (
-                      <p className="text-sm text-gray-500">
-                        {hasActiveCardSearch ? 'No matching cards.' : 'No cards in this deck yet.'}
-                      </p>
-                    )}
-                    {currentDeckCards.error && (
-                      <p className="text-sm text-red-600">{currentDeckCards.error}</p>
-                    )}
-                    {currentDeckCards.nextCursor && (
-                      <Button
-                        type="button"
-                        disabled={currentDeckCards.loadingMore}
-                        onClick={() => fetchDeckCards(deck.id, {
-                          cursor: currentDeckCards.nextCursor,
-                          append: true,
-                          q: currentDeckCards.appliedSearchQuery || '',
-                        })}
-                      >
-                        {currentDeckCards.loadingMore ? 'Loading...' : 'Load more'}
-                      </Button>
-                    )}
-                  </div>
-                )}
-                <form className="mt-4 space-y-2" onSubmit={(event) => addCard(event, deck.id)}>
-                  <Input
-                    type="text"
-                    value={cardForm.frontContent || ''}
-                    onChange={(e) => updateCardForm(deck.id, 'frontContent', e.target.value)}
-                    placeholder="Front"
-                    disabled={isCreatingCard}
-                  />
-                  <Input
-                    type="text"
-                    value={cardForm.backContent || ''}
-                    onChange={(e) => updateCardForm(deck.id, 'backContent', e.target.value)}
-                    placeholder="Back"
-                    disabled={isCreatingCard}
-                  />
-                  {cardForm.error && (
-                    <p className="text-sm text-red-600">{cardForm.error}</p>
+                                />
+                                <p className="text-sm font-medium text-gray-700">Back</p>
+                                <textarea
+                                  className="min-h-[80px] w-full rounded-md border border-gray-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                                  value={cardEditForm.backContent ?? card.back_content ?? ''}
+                                  onChange={(e) => updateCardEditForm(card, 'backContent', e.target.value)}
+                                  aria-label="Card back"
+                                  disabled={isSavingCard || isDeletingCard}
+                                />
+                                {cardActionState.error && (
+                                  <p className="text-sm text-red-600">{cardActionState.error}</p>
+                                )}
+                                {cardActionState.success && (
+                                  <p className="text-sm text-green-600">{cardActionState.success}</p>
+                                )}
+                                <div className="flex gap-2">
+                                  <Button type="submit" disabled={isSavingCard || isDeletingCard}>
+                                    {isSavingCard ? 'Saving...' : 'Save'}
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    className="bg-red-600 hover:bg-red-700"
+                                    disabled={isSavingCard || isDeletingCard}
+                                    onClick={() => deleteCard(deck.id, card.id)}
+                                  >
+                                    {isDeletingCard ? 'Removing...' : 'Remove'}
+                                  </Button>
+                                </div>
+                              </form>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {currentDeckCards.hasLoaded && loadedCards.length === 0 && !currentDeckCards.loading && (
+                        <p className="text-sm text-gray-500">
+                          {hasActiveCardSearch ? 'No matching cards.' : 'No cards in this deck yet.'}
+                        </p>
+                      )}
+                      {currentDeckCards.error && (
+                        <p className="text-sm text-red-600">{currentDeckCards.error}</p>
+                      )}
+                      {currentDeckCards.nextCursor && (
+                        <Button
+                          type="button"
+                          disabled={currentDeckCards.loadingMore}
+                          onClick={() => fetchDeckCards(deck.id, {
+                            cursor: currentDeckCards.nextCursor,
+                            append: true,
+                            q: currentDeckCards.appliedSearchQuery || '',
+                          })}
+                        >
+                          {currentDeckCards.loadingMore ? 'Loading...' : 'Load more'}
+                        </Button>
+                      )}
+                    </div>
                   )}
-                  {cardForm.success && (
-                    <p className="text-sm text-green-600">{cardForm.success}</p>
-                  )}
-                  <Button type="submit" className="mt-1" disabled={isCreatingCard}>
-                    {isCreatingCard ? 'Adding card...' : 'Add Card'}
-                  </Button>
-                </form>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+                  <form className="mt-4 space-y-2" onSubmit={(event) => addCard(event, deck.id)}>
+                    <Input
+                      type="text"
+                      value={cardForm.frontContent || ''}
+                      onChange={(e) => updateCardForm(deck.id, 'frontContent', e.target.value)}
+                      placeholder="Front"
+                      disabled={isCreatingCard}
+                    />
+                    <Input
+                      type="text"
+                      value={cardForm.backContent || ''}
+                      onChange={(e) => updateCardForm(deck.id, 'backContent', e.target.value)}
+                      placeholder="Back"
+                      disabled={isCreatingCard}
+                    />
+                    {cardForm.error && (
+                      <p className="text-sm text-red-600">{cardForm.error}</p>
+                    )}
+                    {cardForm.success && (
+                      <p className="text-sm text-green-600">{cardForm.success}</p>
+                    )}
+                    <Button type="submit" className="mt-1" disabled={isCreatingCard}>
+                      {isCreatingCard ? 'Adding card...' : 'Add Card'}
+                    </Button>
+                  </form>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 };
