@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const {
   STUDY_SESSION_REQUESTS,
   getStudySessionRequest,
+  getValidatedStudySessionDeckListRequest,
   parseDeckId,
 } = require('../studySessionTarget');
 
@@ -76,5 +77,65 @@ test('getStudySessionRequest uses an explicit deck id without requiring deck loa
       deckId: 123,
       source: 'explicit',
     },
+  );
+});
+
+test('getValidatedStudySessionDeckListRequest rejects malformed deck lists instead of selecting from them', () => {
+  const malformedSelectablePayload = [
+    { id: 1, name: 'Malformed', totalCards: '2', dueCards: 1 },
+    { id: 2, name: 'Due deck', totalCards: 5, dueCards: 3 },
+  ];
+
+  assert.deepEqual(
+    getStudySessionRequest('', malformedSelectablePayload),
+    {
+      type: STUDY_SESSION_REQUESTS.LOAD_CARDS,
+      deckId: 1,
+      deck: malformedSelectablePayload[0],
+      source: 'selected',
+    },
+    'The unvalidated selector would use this malformed due deck',
+  );
+  assert.throws(
+    () => getValidatedStudySessionDeckListRequest('', malformedSelectablePayload),
+    /Malformed deck list payload/,
+  );
+
+  [
+    null,
+    {},
+    { id: 1, totalCards: 2, dueCards: 1 },
+    [{ id: 1, name: 'Missing total', dueCards: 1 }],
+  ].forEach((payload) => {
+    assert.throws(
+      () => getValidatedStudySessionDeckListRequest('', payload),
+      /Malformed deck list payload/,
+    );
+  });
+});
+
+test('getValidatedStudySessionDeckListRequest preserves valid deck selection behavior', () => {
+  const dueDeck = { id: 2, name: 'Biology', totalCards: 5, dueCards: 1 };
+  const noDueDeck = { id: 1, name: 'Math', totalCards: 10, dueCards: 0 };
+  const duePayload = [
+    noDueDeck,
+    dueDeck,
+  ];
+  const noDuePayload = [
+    noDueDeck,
+    { id: 3, name: 'Empty', totalCards: 0, dueCards: 0 },
+  ];
+
+  assert.deepEqual(
+    getValidatedStudySessionDeckListRequest('', duePayload),
+    getStudySessionRequest('', duePayload),
+  );
+  assert.deepEqual(
+    getValidatedStudySessionDeckListRequest('', noDuePayload),
+    getStudySessionRequest('', noDuePayload),
+  );
+  assert.deepEqual(
+    getValidatedStudySessionDeckListRequest('', []),
+    getStudySessionRequest('', []),
   );
 });

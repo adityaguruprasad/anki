@@ -20,7 +20,11 @@ const {
   parseStudySessionSubmissionResponse,
 } = studySessionFeedback;
 const { getStudySessionNotice, STUDY_SESSION_NOTICE_TYPES } = studySessionNotice;
-const { getStudySessionRequest, STUDY_SESSION_REQUESTS } = studySessionTarget;
+const {
+  getStudySessionRequest,
+  getValidatedStudySessionDeckListRequest,
+  STUDY_SESSION_REQUESTS,
+} = studySessionTarget;
 const { buildAuthHeaders } = authHeaders;
 const { handleAuthExpiredResponse } = authExpiration;
 
@@ -150,7 +154,7 @@ const StudySession = ({ env, onAuthExpired }) => {
 
       if (!isCurrentRequest()) return;
 
-      const selectedRequest = getStudySessionRequest(requestSearch, decks);
+      const selectedRequest = getValidatedStudySessionDeckListRequest(requestSearch, decks);
 
       if (selectedRequest.type === STUDY_SESSION_REQUESTS.LOAD_CARDS) {
         await fetchNextCard(selectedRequest.deckId, requestSearch);

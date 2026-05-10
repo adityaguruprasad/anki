@@ -1,4 +1,8 @@
-const { hasDueCards, selectStudyDeckTarget } = require('./dashboardDeckTarget');
+const {
+  hasDashboardDeckListPayload,
+  hasDueCards,
+  selectStudyDeckTarget,
+} = require('./dashboardDeckTarget');
 
 const STUDY_SESSION_REQUESTS = {
   LOAD_CARDS: 'load-cards',
@@ -49,8 +53,17 @@ function getStudySessionRequest(search, decks) {
   };
 }
 
+function getValidatedStudySessionDeckListRequest(search, decks) {
+  if (!hasDashboardDeckListPayload(decks)) {
+    throw new Error('Malformed deck list payload');
+  }
+
+  return getStudySessionRequest(search, decks);
+}
+
 module.exports = {
   STUDY_SESSION_REQUESTS,
   getStudySessionRequest,
+  getValidatedStudySessionDeckListRequest,
   parseDeckId,
 };
