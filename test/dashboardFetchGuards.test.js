@@ -87,3 +87,21 @@ test('dashboard fetch helpers skip before claiming a new request sequence', () =
     );
   });
 });
+
+test('fetchSchedulingInsights rejects malformed successful payloads before storing them', () => {
+  const body = extractConstFunctionBody('fetchSchedulingInsights');
+  const jsonIndex = body.indexOf('const data = await response.json();');
+  const validationIndex = body.indexOf('if (!hasSchedulingInsightsPayload(data)) {');
+  const setInsightsIndex = body.indexOf('setSchedulingInsights(data);');
+
+  assert.notEqual(jsonIndex, -1, 'Expected fetchSchedulingInsights to parse response JSON');
+  assert.notEqual(validationIndex, -1, 'Expected fetchSchedulingInsights to validate parsed insights');
+  assert.notEqual(setInsightsIndex, -1, 'Expected fetchSchedulingInsights to store valid insights');
+  assert.ok(jsonIndex < validationIndex, 'Expected validation after parsing JSON');
+  assert.ok(validationIndex < setInsightsIndex, 'Expected validation before storing insights');
+  assert.match(
+    body.slice(validationIndex, setInsightsIndex),
+    /throw new Error\('Malformed scheduling insights payload'\);/,
+    'Expected malformed insights to flow through retryable load failure handling'
+  );
+});

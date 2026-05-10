@@ -85,7 +85,7 @@ function buildSchedulingInsightsDisplayState({
     hasInsights,
     showError: Boolean(schedulingInsightsLoadFailed),
     showLoadingBody: isLoading && !hasInsights,
-    showSummary: hasInsights || (!isLoading && !schedulingInsightsLoadFailed),
+    showSummary: hasInsights,
     headerLoadingText: copy.headerLoading,
     loadingText: copy.loading,
     errorTitle: copy.errorTitle,

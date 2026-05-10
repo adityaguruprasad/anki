@@ -91,6 +91,8 @@ test('hasSchedulingInsightsPayload only accepts object insights payloads', () =>
   assert.equal(hasSchedulingInsightsPayload(null), false);
   assert.equal(hasSchedulingInsightsPayload(undefined), false);
   assert.equal(hasSchedulingInsightsPayload([]), false);
+  assert.equal(hasSchedulingInsightsPayload(''), false);
+  assert.equal(hasSchedulingInsightsPayload(0), false);
 });
 
 test('buildSchedulingInsightsDisplayState shows loading copy while insights are unavailable', () => {
@@ -125,6 +127,26 @@ test('buildSchedulingInsightsDisplayState exposes retryable failure copy', () =>
   assert.equal(state.retryDisabled, false);
 });
 
+test('buildSchedulingInsightsDisplayState does not show summary without a valid payload', () => {
+  [
+    null,
+    undefined,
+    [],
+    '',
+    0,
+  ].forEach((schedulingInsights) => {
+    const state = buildSchedulingInsightsDisplayState({
+      schedulingInsights,
+      isLoadingSchedulingInsights: false,
+      schedulingInsightsLoadFailed: false,
+    });
+
+    assert.equal(state.hasInsights, false);
+    assert.equal(state.showLoadingBody, false);
+    assert.equal(state.showSummary, false);
+  });
+});
+
 test('buildSchedulingInsightsDisplayState keeps summaries visible during background retry', () => {
   const state = buildSchedulingInsightsDisplayState({
     schedulingInsights: { dueToday: 2 },
@@ -138,4 +160,19 @@ test('buildSchedulingInsightsDisplayState keeps summaries visible during backgro
   assert.equal(state.showSummary, true);
   assert.equal(state.retryButtonLabel, DASHBOARD_AUXILIARY_COPY.schedulingInsights.retrying);
   assert.equal(state.retryDisabled, true);
+});
+
+test('buildSchedulingInsightsDisplayState keeps stale summaries visible after retry failure', () => {
+  const state = buildSchedulingInsightsDisplayState({
+    schedulingInsights: { dueToday: 2 },
+    isLoadingSchedulingInsights: false,
+    schedulingInsightsLoadFailed: true,
+  });
+
+  assert.equal(state.hasInsights, true);
+  assert.equal(state.showError, true);
+  assert.equal(state.showLoadingBody, false);
+  assert.equal(state.showSummary, true);
+  assert.equal(state.retryButtonLabel, DASHBOARD_AUXILIARY_COPY.schedulingInsights.retry);
+  assert.equal(state.retryDisabled, false);
 });

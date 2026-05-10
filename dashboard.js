@@ -19,6 +19,7 @@ const { buildDashboardStatsDisplayState } = dashboardStatsDisplayState;
 const {
   buildDeckAvailabilityDisplayState,
   buildSchedulingInsightsDisplayState,
+  hasSchedulingInsightsPayload,
 } = dashboardAuxiliaryDisplayState;
 const { buildSchedulingInsightsSummary } = schedulingInsightsSummary;
 const { buildAuthHeaders } = authHeaders;
@@ -199,6 +200,9 @@ const Dashboard = ({ env, onAuthExpired }) => {
       const data = await response.json();
       if (shouldSkipUpdate()) {
         return;
+      }
+      if (!hasSchedulingInsightsPayload(data)) {
+        throw new Error('Malformed scheduling insights payload');
       }
       setSchedulingInsights(data);
       setSchedulingInsightsLoadFailed(false);
