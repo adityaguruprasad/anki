@@ -7,6 +7,10 @@ const AUTH_TOKEN_STORAGE_KEY = 'token';
 const DEFAULT_API_BASE_URL = 'http://localhost:3001';
 const INVALID_AUTH_RESPONSE_ERROR = 'Authentication response was invalid. Please try again.';
 const MAX_BACKEND_AUTH_ERROR_LENGTH = 240;
+// Mirrors auth.js and the anki.db users schema. Register derives username from email,
+// so registration must honor the backend username cap before submitting.
+const AUTH_EMAIL_MAX_LENGTH = 100;
+const AUTH_USERNAME_MAX_LENGTH = 50;
 const GENERIC_AUTH_ERRORS = Object.freeze({
   [AUTH_MODES.LOGIN]: 'Login failed. Please check your credentials.',
   [AUTH_MODES.REGISTER]: 'Could not create account. Please check your email and password.',
@@ -166,6 +170,20 @@ function validateAuthInput({ mode, email, password }) {
     return { ok: false, error: 'Valid email is required' };
   }
 
+  if (authMode === AUTH_MODES.REGISTER && trimmedEmail.length > AUTH_USERNAME_MAX_LENGTH) {
+    return {
+      ok: false,
+      error: `Email must be ${AUTH_USERNAME_MAX_LENGTH} characters or fewer to create an account`,
+    };
+  }
+
+  if (trimmedEmail.length > AUTH_EMAIL_MAX_LENGTH) {
+    return {
+      ok: false,
+      error: `Email must be ${AUTH_EMAIL_MAX_LENGTH} characters or fewer`,
+    };
+  }
+
   if (typeof password !== 'string' || password.length === 0) {
     return { ok: false, error: 'Password is required' };
   }
@@ -191,7 +209,7 @@ function createAuthRequest({ mode, email, password, env }) {
   }
 
   const { mode: authMode, email: trimmedEmail, password: validatedPassword } = validation.value;
-  // The current backend still requires username, so register derives it from the trimmed email.
+  // Register derives username from the trimmed email, so validation must honor both schema caps.
   const body =
     authMode === AUTH_MODES.REGISTER
       ? { username: trimmedEmail, email: trimmedEmail, password: validatedPassword }
@@ -228,6 +246,8 @@ function createAuthSubmission({ mode, email, password, isSubmitting, env }) {
 
 module.exports = {
   AUTH_MODES,
+  AUTH_EMAIL_MAX_LENGTH,
+  AUTH_USERNAME_MAX_LENGTH,
   AUTH_TOKEN_STORAGE_KEY,
   cleanupStoredAuthTokenIfNeeded,
   createInitialAuthSession,

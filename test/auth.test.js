@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 
 const {
+  AUTH_EMAIL_MAX_LENGTH,
+  AUTH_USERNAME_MAX_LENGTH,
   DEFAULT_JWT_EXPIRES_IN_SECONDS,
   DEFAULT_DEV_JWT_SECRET,
   createAuthHandlers,
@@ -11,6 +13,11 @@ const {
   signToken,
   verifyToken,
 } = require('../auth');
+
+function createEmailWithLength(totalLength) {
+  const domain = '@example.com';
+  return `${'a'.repeat(totalLength - domain.length)}${domain}`;
+}
 
 function createRes() {
   return {
@@ -120,9 +127,27 @@ test('register rejects invalid input before hashing or querying', async (t) => {
       error: 'Username is required',
     },
     {
+      name: 'username too long',
+      body: {
+        username: 'a'.repeat(AUTH_USERNAME_MAX_LENGTH + 1),
+        email: 'ada@example.com',
+        password: 'valid-pass',
+      },
+      error: `Username must be ${AUTH_USERNAME_MAX_LENGTH} characters or fewer`,
+    },
+    {
       name: 'invalid email',
       body: { username: 'ada', email: 'ada@@example.com', password: 'valid-pass' },
       error: 'Valid email is required',
+    },
+    {
+      name: 'email too long',
+      body: {
+        username: 'ada',
+        email: `  ${createEmailWithLength(AUTH_EMAIL_MAX_LENGTH + 1).toUpperCase()}  `,
+        password: 'valid-pass',
+      },
+      error: `Email must be ${AUTH_EMAIL_MAX_LENGTH} characters or fewer`,
     },
     {
       name: 'short password',
@@ -210,6 +235,14 @@ test('login rejects invalid input before querying or comparing', async (t) => {
       name: 'invalid email',
       body: { email: 'not-an-email', password: 's3cret' },
       error: 'Valid email is required',
+    },
+    {
+      name: 'email too long',
+      body: {
+        email: `  ${createEmailWithLength(AUTH_EMAIL_MAX_LENGTH + 1).toUpperCase()}  `,
+        password: 's3cret',
+      },
+      error: `Email must be ${AUTH_EMAIL_MAX_LENGTH} characters or fewer`,
     },
     {
       name: 'empty password',

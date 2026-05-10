@@ -3,6 +3,9 @@ const crypto = require('node:crypto');
 
 const DEFAULT_DEV_JWT_SECRET = 'your_secret_key';
 const DEFAULT_JWT_EXPIRES_IN_SECONDS = 60 * 60 * 24;
+// Keep these aligned with anki.db users.username VARCHAR(50) and users.email VARCHAR(100).
+const AUTH_USERNAME_MAX_LENGTH = 50;
+const AUTH_EMAIL_MAX_LENGTH = 100;
 
 function base64UrlEncode(value) {
   return Buffer.from(value).toString('base64url');
@@ -136,8 +139,18 @@ function createAuthHandlers(db, options = {}) {
     if (trimmedUsername === '') {
       return res.status(400).json({ error: 'Username is required' });
     }
+    if (trimmedUsername.length > AUTH_USERNAME_MAX_LENGTH) {
+      return res
+        .status(400)
+        .json({ error: `Username must be ${AUTH_USERNAME_MAX_LENGTH} characters or fewer` });
+    }
     if (normalizedEmail == null) {
       return res.status(400).json({ error: 'Valid email is required' });
+    }
+    if (normalizedEmail.length > AUTH_EMAIL_MAX_LENGTH) {
+      return res
+        .status(400)
+        .json({ error: `Email must be ${AUTH_EMAIL_MAX_LENGTH} characters or fewer` });
     }
     if (typeof password !== 'string' || password.length < 8) {
       return res.status(400).json({ error: 'Password must be at least 8 characters' });
@@ -163,6 +176,11 @@ function createAuthHandlers(db, options = {}) {
     const normalizedEmail = normalizeEmail(email);
     if (normalizedEmail == null) {
       return res.status(400).json({ error: 'Valid email is required' });
+    }
+    if (normalizedEmail.length > AUTH_EMAIL_MAX_LENGTH) {
+      return res
+        .status(400)
+        .json({ error: `Email must be ${AUTH_EMAIL_MAX_LENGTH} characters or fewer` });
     }
     if (typeof password !== 'string' || password.length === 0) {
       return res.status(400).json({ error: 'Password is required' });
@@ -205,6 +223,8 @@ function createAuthHandlers(db, options = {}) {
 }
 
 module.exports = {
+  AUTH_EMAIL_MAX_LENGTH,
+  AUTH_USERNAME_MAX_LENGTH,
   DEFAULT_JWT_EXPIRES_IN_SECONDS,
   DEFAULT_DEV_JWT_SECRET,
   createAuthHandlers,

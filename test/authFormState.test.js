@@ -2,7 +2,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  AUTH_EMAIL_MAX_LENGTH,
   AUTH_MODES,
+  AUTH_USERNAME_MAX_LENGTH,
   AUTH_TOKEN_STORAGE_KEY,
   cleanupStoredAuthTokenIfNeeded,
   createInitialAuthSession,
@@ -16,6 +18,11 @@ const {
 } = require('../authFormState');
 
 const LOCAL_ENV = Object.freeze({});
+
+function createEmailWithLength(totalLength) {
+  const domain = '@example.com';
+  return `${'a'.repeat(totalLength - domain.length)}${domain}`;
+}
 
 test('getNextAuthMode toggles between login and register modes', () => {
   assert.equal(getNextAuthMode(AUTH_MODES.LOGIN), AUTH_MODES.REGISTER);
@@ -234,6 +241,78 @@ test('validateAuthInput rejects emails that do not have exactly one @ with non-e
       { ok: false, error: 'Valid email is required' }
     );
   }
+});
+
+test('validateAuthInput enforces the backend email length cap and accepts the boundary', () => {
+  const maxLengthEmail = createEmailWithLength(AUTH_EMAIL_MAX_LENGTH);
+  const tooLongEmail = createEmailWithLength(AUTH_EMAIL_MAX_LENGTH + 1);
+
+  assert.equal(maxLengthEmail.length, AUTH_EMAIL_MAX_LENGTH);
+  assert.deepEqual(
+    validateAuthInput({ mode: AUTH_MODES.LOGIN, email: `  ${maxLengthEmail}  `, password: 's3cret' }),
+    {
+      ok: true,
+      value: {
+        mode: AUTH_MODES.LOGIN,
+        email: maxLengthEmail,
+        password: 's3cret',
+      },
+    }
+  );
+  assert.deepEqual(
+    createAuthRequest({ mode: AUTH_MODES.LOGIN, email: tooLongEmail, password: 's3cret' }),
+    { ok: false, error: `Email must be ${AUTH_EMAIL_MAX_LENGTH} characters or fewer` }
+  );
+});
+
+test('createAuthRequest caps register email where it becomes the generated username', () => {
+  const maxUsernameEmail = createEmailWithLength(AUTH_USERNAME_MAX_LENGTH);
+  const tooLongUsernameEmail = createEmailWithLength(AUTH_USERNAME_MAX_LENGTH + 1);
+
+  assert.equal(maxUsernameEmail.length, AUTH_USERNAME_MAX_LENGTH);
+  assert.deepEqual(
+    createAuthRequest({
+      mode: AUTH_MODES.REGISTER,
+      email: maxUsernameEmail,
+      password: 'long-password',
+      env: LOCAL_ENV,
+    }),
+    {
+      ok: true,
+      url: getAuthEndpoint(AUTH_MODES.REGISTER, LOCAL_ENV),
+      body: {
+        username: maxUsernameEmail,
+        email: maxUsernameEmail,
+        password: 'long-password',
+      },
+    }
+  );
+  assert.deepEqual(
+    createAuthRequest({
+      mode: AUTH_MODES.REGISTER,
+      email: tooLongUsernameEmail,
+      password: 'long-password',
+      env: LOCAL_ENV,
+    }),
+    {
+      ok: false,
+      error: `Email must be ${AUTH_USERNAME_MAX_LENGTH} characters or fewer to create an account`,
+    }
+  );
+});
+
+test('validateAuthInput reports the register email cap before password or login email caps', () => {
+  assert.deepEqual(
+    validateAuthInput({
+      mode: AUTH_MODES.REGISTER,
+      email: createEmailWithLength(AUTH_EMAIL_MAX_LENGTH + 1),
+      password: 'short',
+    }),
+    {
+      ok: false,
+      error: `Email must be ${AUTH_USERNAME_MAX_LENGTH} characters or fewer to create an account`,
+    }
+  );
 });
 
 test('validateAuthInput requires at least 8 password characters for registration', () => {
