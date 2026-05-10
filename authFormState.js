@@ -3,6 +3,7 @@ const AUTH_MODES = Object.freeze({
   REGISTER: 'register',
 });
 
+const AUTH_TOKEN_STORAGE_KEY = 'token';
 const DEFAULT_API_BASE_URL = 'http://localhost:3001';
 const INVALID_AUTH_RESPONSE_ERROR = 'Authentication response was invalid. Please try again.';
 const MAX_BACKEND_AUTH_ERROR_LENGTH = 240;
@@ -85,6 +86,73 @@ function getNextAuthMode(mode) {
   return normalizeAuthMode(mode) === AUTH_MODES.LOGIN ? AUTH_MODES.REGISTER : AUTH_MODES.LOGIN;
 }
 
+function readInitialAuthToken(tokenSource) {
+  if (typeof tokenSource === 'function') {
+    return tokenSource();
+  }
+
+  if (tokenSource && typeof tokenSource.getItem === 'function') {
+    return tokenSource.getItem(AUTH_TOKEN_STORAGE_KEY);
+  }
+
+  return tokenSource;
+}
+
+function loggedOutInitialAuthSession(cleanupNeeded = false) {
+  return {
+    isLoggedIn: false,
+    token: '',
+    cleanupNeeded,
+  };
+}
+
+function createInitialAuthSession(tokenSource) {
+  let token;
+
+  try {
+    token = readInitialAuthToken(tokenSource);
+  } catch {
+    return loggedOutInitialAuthSession(true);
+  }
+
+  if (token == null) {
+    return loggedOutInitialAuthSession();
+  }
+
+  if (typeof token !== 'string') {
+    return loggedOutInitialAuthSession(true);
+  }
+
+  const trimmedToken = token.trim();
+  if (trimmedToken.length === 0) {
+    return loggedOutInitialAuthSession(true);
+  }
+
+  return {
+    isLoggedIn: true,
+    token: trimmedToken,
+    cleanupNeeded: false,
+  };
+}
+
+function cleanupStoredAuthTokenIfNeeded(storage, authSession) {
+  if (!authSession || !authSession.cleanupNeeded) {
+    return false;
+  }
+
+  if (!storage || typeof storage.removeItem !== 'function') {
+    return false;
+  }
+
+  try {
+    storage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+  } catch {
+    return false;
+  }
+
+  return true;
+}
+
 function validateAuthInput({ mode, email, password }) {
   const authMode = normalizeAuthMode(mode);
   const trimmedEmail = typeof email === 'string' ? email.trim() : '';
@@ -160,6 +228,9 @@ function createAuthSubmission({ mode, email, password, isSubmitting, env }) {
 
 module.exports = {
   AUTH_MODES,
+  AUTH_TOKEN_STORAGE_KEY,
+  cleanupStoredAuthTokenIfNeeded,
+  createInitialAuthSession,
   createAuthRequest,
   createAuthSubmission,
   getAuthEndpoint,

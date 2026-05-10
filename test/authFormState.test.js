@@ -3,6 +3,9 @@ const assert = require('node:assert/strict');
 
 const {
   AUTH_MODES,
+  AUTH_TOKEN_STORAGE_KEY,
+  cleanupStoredAuthTokenIfNeeded,
+  createInitialAuthSession,
   createAuthRequest,
   createAuthSubmission,
   getAuthEndpoint,
@@ -17,6 +20,131 @@ const LOCAL_ENV = Object.freeze({});
 test('getNextAuthMode toggles between login and register modes', () => {
   assert.equal(getNextAuthMode(AUTH_MODES.LOGIN), AUTH_MODES.REGISTER);
   assert.equal(getNextAuthMode(AUTH_MODES.REGISTER), AUTH_MODES.LOGIN);
+});
+
+test('createInitialAuthSession reads and trims a usable stored token', () => {
+  const requestedKeys = [];
+  const storage = {
+    getItem(key) {
+      requestedKeys.push(key);
+      return '  abc.def.ghi  ';
+    },
+  };
+
+  assert.deepEqual(createInitialAuthSession(storage), {
+    isLoggedIn: true,
+    token: 'abc.def.ghi',
+    cleanupNeeded: false,
+  });
+  assert.deepEqual(requestedKeys, [AUTH_TOKEN_STORAGE_KEY]);
+});
+
+test('createInitialAuthSession treats missing tokens as logged out without cleanup', () => {
+  for (const token of [null, undefined]) {
+    assert.deepEqual(createInitialAuthSession({ getItem: () => token }), {
+      isLoggedIn: false,
+      token: '',
+      cleanupNeeded: false,
+    });
+  }
+
+  assert.deepEqual(createInitialAuthSession(), {
+    isLoggedIn: false,
+    token: '',
+    cleanupNeeded: false,
+  });
+});
+
+test('createInitialAuthSession treats blank stored tokens as cleanup-needed logout', () => {
+  for (const token of ['', '   ']) {
+    assert.deepEqual(createInitialAuthSession({ getItem: () => token }), {
+      isLoggedIn: false,
+      token: '',
+      cleanupNeeded: true,
+    });
+  }
+});
+
+test('createInitialAuthSession treats non-string stored tokens as cleanup-needed logout', () => {
+  for (const token of [0, 1, false, true, {}, []]) {
+    assert.deepEqual(createInitialAuthSession({ getItem: () => token }), {
+      isLoggedIn: false,
+      token: '',
+      cleanupNeeded: true,
+    });
+  }
+});
+
+test('createInitialAuthSession handles throwing token reads as cleanup-needed logout', () => {
+  const expectedSession = {
+    isLoggedIn: false,
+    token: '',
+    cleanupNeeded: true,
+  };
+
+  assert.deepEqual(createInitialAuthSession(() => {
+    throw new Error('storage unavailable');
+  }), expectedSession);
+  assert.deepEqual(createInitialAuthSession({
+    getItem() {
+      throw new Error('storage unavailable');
+    },
+  }), expectedSession);
+});
+
+test('cleanupStoredAuthTokenIfNeeded removes bad stored tokens best-effort', () => {
+  const removedKeys = [];
+  const storage = {
+    removeItem(key) {
+      removedKeys.push(key);
+    },
+  };
+
+  assert.equal(
+    cleanupStoredAuthTokenIfNeeded(storage, {
+      isLoggedIn: false,
+      token: '',
+      cleanupNeeded: true,
+    }),
+    true
+  );
+  assert.deepEqual(removedKeys, [AUTH_TOKEN_STORAGE_KEY]);
+});
+
+test('cleanupStoredAuthTokenIfNeeded skips usable sessions and swallows cleanup failures', () => {
+  const usableSession = {
+    isLoggedIn: true,
+    token: 'abc.def.ghi',
+    cleanupNeeded: false,
+  };
+  let removeCalls = 0;
+
+  assert.equal(cleanupStoredAuthTokenIfNeeded({
+    removeItem() {
+      removeCalls += 1;
+    },
+  }, usableSession), false);
+  assert.equal(removeCalls, 0);
+  assert.equal(
+    cleanupStoredAuthTokenIfNeeded({}, {
+      isLoggedIn: false,
+      token: '',
+      cleanupNeeded: true,
+    }),
+    false
+  );
+  assert.equal(
+    cleanupStoredAuthTokenIfNeeded({
+      removeItem() {
+        throw new Error('remove failed');
+      },
+    }, {
+      isLoggedIn: false,
+      token: '',
+      cleanupNeeded: true,
+    }),
+    false
+  );
 });
 
 test('createAuthRequest selects login endpoint and body', () => {

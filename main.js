@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
 import { BrowserRouter as Router, Route, Switch, Redirect, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,7 +7,15 @@ import StudySession from './studySession';
 import DeckManagement from './deck';
 const authFormState = require('./authFormState');
 
-const { AUTH_MODES, createAuthSubmission, getNextAuthMode, parseAuthResponse } = authFormState;
+const {
+  AUTH_MODES,
+  AUTH_TOKEN_STORAGE_KEY,
+  cleanupStoredAuthTokenIfNeeded,
+  createInitialAuthSession,
+  createAuthSubmission,
+  getNextAuthMode,
+  parseAuthResponse,
+} = authFormState;
 
 const apiEnv = Object.freeze({
   REACT_APP_API_BASE_URL: process.env.REACT_APP_API_BASE_URL,
@@ -89,7 +97,7 @@ const Login = ({ setIsLoggedIn, env }) => {
       });
 
       if (authResponse.ok) {
-        localStorage.setItem('token', authResponse.token);
+        localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, authResponse.token);
         setIsLoggedIn(true);
       } else {
         setError(authResponse.error);
@@ -146,10 +154,15 @@ const Login = ({ setIsLoggedIn, env }) => {
 };
 
 const App = () => {
-  const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('token'));
+  const [initialAuthSession] = useState(() => createInitialAuthSession(localStorage));
+  const [isLoggedIn, setIsLoggedIn] = useState(initialAuthSession.isLoggedIn);
+
+  useLayoutEffect(() => {
+    cleanupStoredAuthTokenIfNeeded(localStorage, initialAuthSession);
+  }, [initialAuthSession]);
 
   const handleLogout = () => {
-    localStorage.removeItem('token');
+    localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
     setIsLoggedIn(false);
   };
 
