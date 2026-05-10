@@ -12,6 +12,7 @@ import {
   DECK_LIST_LOAD_MESSAGES,
   beginDeckListLoad,
   finishDeckListLoadFailure,
+  finishDeckListSilentFailure,
   finishDeckListLoadSuccess,
   getDeckListLoadFailureMessage,
 } from './deckListLoadState';
@@ -22,7 +23,13 @@ import {
 } from './deckRenameState';
 import { getDeckManagementApiRequests } from './deckManagementApiRequests';
 import {
+  addCreatedDeck,
+  mergeRenamedDeck,
+  removeDeckFromList,
+} from './deckCollectionState';
+import {
   addCreatedCardToLoadedDeckCards,
+  decrementDeckCardCounts,
   incrementDeckCardCounts,
   mergeUniqueCards,
 } from './deckCardState';
@@ -92,14 +99,21 @@ const DeckManagement = ({ env }) => {
     };
   }, []);
 
-  const fetchDecks = useCallback(async () => {
+  const fetchDecks = useCallback(async (options = {}) => {
+    const { silent = false } = options;
     const requestId = deckListRequestIdRef.current + 1;
     deckListRequestIdRef.current = requestId;
-    setDeckListLoadState(beginDeckListLoad());
+    if (!silent) {
+      setDeckListLoadState(beginDeckListLoad());
+    }
 
     const isCurrentDeckListRequest = () => (
       isDeckListMountedRef.current && deckListRequestIdRef.current === requestId
     );
+
+    const finishSilentDeckListFailure = () => {
+      setDeckListLoadState((currentState) => finishDeckListSilentFailure(currentState));
+    };
 
     try {
       const response = await fetch(apiRequests.deckListUrl, {
@@ -109,9 +123,13 @@ const DeckManagement = ({ env }) => {
       if (!response.ok) {
         const errorPayload = await response.json().catch(() => ({}));
         if (isCurrentDeckListRequest()) {
-          setDeckListLoadState(finishDeckListLoadFailure(
-            getDeckListLoadFailureMessage(errorPayload)
-          ));
+          if (silent) {
+            finishSilentDeckListFailure();
+          } else {
+            setDeckListLoadState(finishDeckListLoadFailure(
+              getDeckListLoadFailureMessage(errorPayload)
+            ));
+          }
         }
         return false;
       }
@@ -119,9 +137,13 @@ const DeckManagement = ({ env }) => {
       const data = await response.json();
       if (!Array.isArray(data)) {
         if (isCurrentDeckListRequest()) {
-          setDeckListLoadState(finishDeckListLoadFailure(
-            DECK_LIST_LOAD_MESSAGES.loadFailed
-          ));
+          if (silent) {
+            finishSilentDeckListFailure();
+          } else {
+            setDeckListLoadState(finishDeckListLoadFailure(
+              DECK_LIST_LOAD_MESSAGES.loadFailed
+            ));
+          }
         }
         return false;
       }
@@ -136,9 +158,13 @@ const DeckManagement = ({ env }) => {
     } catch (error) {
       console.error('Error fetching decks:', error);
       if (isCurrentDeckListRequest()) {
-        setDeckListLoadState(finishDeckListLoadFailure(
-          DECK_LIST_LOAD_MESSAGES.networkFailed
-        ));
+        if (silent) {
+          finishSilentDeckListFailure();
+        } else {
+          setDeckListLoadState(finishDeckListLoadFailure(
+            DECK_LIST_LOAD_MESSAGES.networkFailed
+          ));
+        }
       }
       return false;
     }
@@ -243,7 +269,8 @@ const DeckManagement = ({ env }) => {
       }
 
       setNewDeckName('');
-      await fetchDecks();
+      setDecks((currentDecks) => addCreatedDeck(currentDecks, data, submission.name));
+      void fetchDecks({ silent: true });
       showCreateDeckSuccess();
     } catch (error) {
       console.error('Error creating deck:', error);
@@ -338,7 +365,8 @@ const DeckManagement = ({ env }) => {
       }
 
       clearRenameDeckState(deckId);
-      await fetchDecks();
+      setDecks((currentDecks) => mergeRenamedDeck(currentDecks, deckId, data, submission.name));
+      void fetchDecks({ silent: true });
     } catch (error) {
       console.error('Error renaming deck:', error);
       setRenameErrors((currentErrors) => ({
@@ -878,7 +906,17 @@ const DeckManagement = ({ env }) => {
     }
   };
 
-  const deleteCard = async (deckId, cardId) => {
+  const deleteCard = async (deckId, card) => {
+    const isCardObject = card && typeof card === 'object';
+    const cardId = isCardObject ? card.id : undefined;
+    const hasUsableCardId = (
+      (typeof cardId === 'number' && Number.isFinite(cardId)) ||
+      (typeof cardId === 'string' && cardId.trim() !== '')
+    );
+    if (!isCardObject || !hasUsableCardId) {
+      return;
+    }
+
     // Avoid prompting for removal while a save/remove request for this card is already in flight.
     if (isCardActionInFlight(cardActionInFlightRef.current, cardId)) {
       return;
@@ -915,13 +953,14 @@ const DeckManagement = ({ env }) => {
       }
 
       removeLoadedCard(deckId, cardId);
+      setDecks((currentDecks) => decrementDeckCardCounts(currentDecks, deckId, card));
       setCardEditForms((currentForms) => {
         const nextForms = { ...currentForms };
         delete nextForms[cardId];
         return nextForms;
       });
       clearCardActionState(cardId);
-      fetchDecks();
+      void fetchDecks({ silent: true });
     } catch (error) {
       console.error('Error deleting card:', error);
       setCardActionState(cardId, {
@@ -978,7 +1017,13 @@ const DeckManagement = ({ env }) => {
         delete nextErrors[deckId];
         return nextErrors;
       });
-      fetchDecks();
+      setDecks((currentDecks) => removeDeckFromList(currentDecks, deckId));
+      setDeckCards((currentCards) => {
+        const nextCards = { ...currentCards };
+        delete nextCards[deckId];
+        return nextCards;
+      });
+      void fetchDecks({ silent: true });
     } catch (error) {
       console.error('Error deleting deck:', error);
       setDeleteErrors((currentErrors) => ({
@@ -1051,7 +1096,7 @@ const DeckManagement = ({ env }) => {
           <Button
             type="button"
             className="mt-3"
-            onClick={fetchDecks}
+            onClick={() => fetchDecks()}
             disabled={isDeckListLoading}
           >
             {isDeckListLoading ? 'Retrying...' : 'Try Again'}
@@ -1182,7 +1227,7 @@ const DeckManagement = ({ env }) => {
                                     type="button"
                                     className="bg-red-600 hover:bg-red-700"
                                     disabled={isSavingCard || isDeletingCard}
-                                    onClick={() => deleteCard(deck.id, card.id)}
+                                    onClick={() => deleteCard(deck.id, card)}
                                   >
                                     {isDeletingCard ? 'Removing...' : 'Remove'}
                                   </Button>

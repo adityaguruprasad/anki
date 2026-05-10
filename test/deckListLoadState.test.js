@@ -6,6 +6,7 @@ const {
   beginDeckListLoad,
   createDeckListLoadState,
   finishDeckListLoadFailure,
+  finishDeckListSilentFailure,
   finishDeckListLoadSuccess,
   getDeckListLoadFailureMessage,
 } = require('../deckListLoadState');
@@ -43,6 +44,19 @@ test('finishDeckListLoadFailure preserves a server-facing error message', () => 
     loading: false,
     error: 'Deck service is unavailable.',
   });
+});
+
+test('finishDeckListSilentFailure clears prominent loading and error state', () => {
+  assert.deepEqual(
+    finishDeckListSilentFailure({
+      loading: true,
+      error: DECK_LIST_LOAD_MESSAGES.loadFailed,
+    }),
+    {
+      loading: false,
+      error: '',
+    },
+  );
 });
 
 test('getDeckListLoadFailureMessage surfaces non-2xx server errors when present', () => {

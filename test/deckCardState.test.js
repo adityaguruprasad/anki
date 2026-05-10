@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const {
   addCreatedCardToLoadedDeckCards,
+  decrementDeckCardCounts,
   incrementDeckCardCounts,
   isCardCurrentlyDue,
   mergeUniqueCards,
@@ -48,6 +49,51 @@ test('incrementDeckCardCounts increments total and only increments due count for
       decks[0],
       { id: 2, name: 'Biology', totalCards: 5, dueCards: 3 },
     ],
+  );
+});
+
+test('decrementDeckCardCounts decrements total and only decrements due count for due cards', () => {
+  const decks = [
+    { id: 1, name: 'Math', totalCards: 2, dueCards: 1 },
+    { id: 2, name: 'Biology', totalCards: 4, dueCards: 3 },
+  ];
+
+  assert.deepEqual(
+    decrementDeckCardCounts(
+      decks,
+      '2',
+      { id: 9, next_review: '2026-05-09T11:00:00.000Z' },
+      new Date('2026-05-09T12:00:00.000Z'),
+    ),
+    [
+      decks[0],
+      { id: 2, name: 'Biology', totalCards: 3, dueCards: 2 },
+    ],
+  );
+
+  assert.deepEqual(
+    decrementDeckCardCounts(
+      decks,
+      2,
+      { id: 10, next_review: '2026-05-10T12:00:00.000Z' },
+      new Date('2026-05-09T12:00:00.000Z'),
+    ),
+    [
+      decks[0],
+      { id: 2, name: 'Biology', totalCards: 3, dueCards: 3 },
+    ],
+  );
+});
+
+test('decrementDeckCardCounts does not produce negative card counts', () => {
+  assert.deepEqual(
+    decrementDeckCardCounts(
+      [{ id: 2, name: 'Biology', totalCards: 0, dueCards: 0 }],
+      2,
+      { id: 9, next_review: '2026-05-09T11:00:00.000Z' },
+      new Date('2026-05-09T12:00:00.000Z'),
+    ),
+    [{ id: 2, name: 'Biology', totalCards: 0, dueCards: 0 }],
   );
 });
 

@@ -6,6 +6,10 @@ function incrementCount(value) {
   return typeof value === 'number' && Number.isFinite(value) ? value + 1 : 1;
 }
 
+function decrementCount(value) {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.max(value - 1, 0) : 0;
+}
+
 function isCardCurrentlyDue(card, now = new Date()) {
   const nextReview = card?.next_review;
   if (!nextReview) {
@@ -29,6 +33,22 @@ function incrementDeckCardCounts(decks, deckId, createdCard, now = new Date()) {
       ...deck,
       totalCards: incrementCount(deck.totalCards),
       dueCards: dueIncrement ? incrementCount(deck.dueCards) : deck.dueCards,
+    };
+  });
+}
+
+function decrementDeckCardCounts(decks, deckId, removedCard, now = new Date()) {
+  const dueDecrement = isCardCurrentlyDue(removedCard, now) ? 1 : 0;
+
+  return decks.map((deck) => {
+    if (!hasSameId(deck.id, deckId)) {
+      return deck;
+    }
+
+    return {
+      ...deck,
+      totalCards: decrementCount(deck.totalCards),
+      dueCards: dueDecrement ? decrementCount(deck.dueCards) : deck.dueCards,
     };
   });
 }
@@ -63,6 +83,7 @@ function addCreatedCardToLoadedDeckCards(deckCards, deckId, createdCard) {
 
 module.exports = {
   addCreatedCardToLoadedDeckCards,
+  decrementDeckCardCounts,
   incrementDeckCardCounts,
   isCardCurrentlyDue,
   mergeUniqueCards,

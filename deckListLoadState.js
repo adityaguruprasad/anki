@@ -34,6 +34,14 @@ function finishDeckListLoadFailure(message) {
   });
 }
 
+function finishDeckListSilentFailure(currentState = {}) {
+  return createDeckListLoadState({
+    ...currentState,
+    loading: false,
+    error: '',
+  });
+}
+
 function getDeckListLoadFailureMessage(payload) {
   if (payload && typeof payload.error === 'string' && payload.error.trim()) {
     return payload.error;
@@ -47,6 +55,7 @@ module.exports = {
   beginDeckListLoad,
   createDeckListLoadState,
   finishDeckListLoadFailure,
+  finishDeckListSilentFailure,
   finishDeckListLoadSuccess,
   getDeckListLoadFailureMessage,
 };
