@@ -8,6 +8,7 @@ const deckListLoadState = require('./deckListLoadState');
 const deckRenameState = require('./deckRenameState');
 const deckManagementApiRequests = require('./deckManagementApiRequests');
 const deckManagementDeckListPayload = require('./deckManagementDeckListPayload');
+const deckMutationResponse = require('./deckMutationResponse');
 const deckCollectionState = require('./deckCollectionState');
 const deckCardState = require('./deckCardState');
 const deckCardBrowseResponse = require('./deckCardBrowseResponse');
@@ -40,6 +41,7 @@ const {
 } = deckRenameState;
 const { getDeckManagementApiRequests } = deckManagementApiRequests;
 const { parseDeckManagementDeckListPayload } = deckManagementDeckListPayload;
+const { parseDeckMutationResponsePayload } = deckMutationResponse;
 const {
   addCreatedDeck,
   mergeRenamedDeck,
@@ -303,8 +305,20 @@ const DeckManagement = ({ env, onAuthExpired }) => {
         return;
       }
 
+      let createdDeck;
+      try {
+        createdDeck = parseDeckMutationResponsePayload(data);
+      } catch {
+        setCreateDeckStatus({
+          creating: false,
+          error: CREATE_DECK_MESSAGES.createFailed,
+          success: '',
+        });
+        return;
+      }
+
       setNewDeckName('');
-      setDecks((currentDecks) => addCreatedDeck(currentDecks, data, submission.name));
+      setDecks((currentDecks) => addCreatedDeck(currentDecks, createdDeck, submission.name));
       void fetchDecks({ silent: true });
       showCreateDeckSuccess();
     } catch (error) {
@@ -402,8 +416,19 @@ const DeckManagement = ({ env, onAuthExpired }) => {
         return;
       }
 
+      let renamedDeck;
+      try {
+        renamedDeck = parseDeckMutationResponsePayload(data, { expectedId: deckId });
+      } catch {
+        setRenameErrors((currentErrors) => ({
+          ...currentErrors,
+          [deckId]: RENAME_DECK_MESSAGES.renameFailed,
+        }));
+        return;
+      }
+
       clearRenameDeckState(deckId);
-      setDecks((currentDecks) => mergeRenamedDeck(currentDecks, deckId, data, submission.name));
+      setDecks((currentDecks) => mergeRenamedDeck(currentDecks, deckId, renamedDeck, submission.name));
       void fetchDecks({ silent: true });
     } catch (error) {
       console.error('Error renaming deck:', error);
