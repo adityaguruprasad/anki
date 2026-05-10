@@ -28,6 +28,7 @@ const FRONTEND_MODULES = Object.freeze([
   'deckCreateState.js',
   'deckListLoadState.js',
   'deckManagementApiRequests.js',
+  'deckManagementDeckListPayload.js',
   'deckNameValidation.js',
   'deckRemovalInFlightState.js',
   'deckRenameState.js',

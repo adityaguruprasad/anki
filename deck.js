@@ -7,6 +7,7 @@ const deckCreateState = require('./deckCreateState');
 const deckListLoadState = require('./deckListLoadState');
 const deckRenameState = require('./deckRenameState');
 const deckManagementApiRequests = require('./deckManagementApiRequests');
+const deckManagementDeckListPayload = require('./deckManagementDeckListPayload');
 const deckCollectionState = require('./deckCollectionState');
 const deckCardState = require('./deckCardState');
 const deckCardBrowseResponse = require('./deckCardBrowseResponse');
@@ -38,6 +39,7 @@ const {
   renameDeckSubmission,
 } = deckRenameState;
 const { getDeckManagementApiRequests } = deckManagementApiRequests;
+const { parseDeckManagementDeckListPayload } = deckManagementDeckListPayload;
 const {
   addCreatedDeck,
   mergeRenamedDeck,
@@ -163,24 +165,26 @@ const DeckManagement = ({ env, onAuthExpired }) => {
       }
 
       const data = await response.json();
-      if (!Array.isArray(data)) {
-        if (isCurrentDeckListRequest()) {
-          if (silent) {
-            finishSilentDeckListFailure();
-          } else {
-            setDeckListLoadState(finishDeckListLoadFailure(
-              DECK_LIST_LOAD_MESSAGES.loadFailed
-            ));
-          }
-        }
-        return false;
-      }
-
       if (!isCurrentDeckListRequest()) {
         return false;
       }
 
-      setDecks(data);
+      let validatedDecks;
+      try {
+        validatedDecks = parseDeckManagementDeckListPayload(data);
+      } catch (error) {
+        console.error('Error validating deck list payload:', error);
+        if (silent) {
+          finishSilentDeckListFailure();
+        } else {
+          setDeckListLoadState(finishDeckListLoadFailure(
+            DECK_LIST_LOAD_MESSAGES.loadFailed
+          ));
+        }
+        return false;
+      }
+
+      setDecks(validatedDecks);
       setDeckListLoadState(finishDeckListLoadSuccess());
       return true;
     } catch (error) {
