@@ -15,6 +15,7 @@ const deckCardActionInFlightState = require('./deckCardActionInFlightState');
 const deckRemovalInFlightState = require('./deckRemovalInFlightState');
 const deckCardCreateState = require('./deckCardCreateState');
 const authHeaders = require('./authHeaders');
+const authExpiration = require('./authExpiration');
 
 const {
   CREATE_DECK_MESSAGES,
@@ -73,11 +74,12 @@ const {
 } = deckRemovalInFlightState;
 const { createCardSubmission } = deckCardCreateState;
 const { buildAuthHeaders } = authHeaders;
+const { handleAuthExpiredResponse } = authExpiration;
 
 const CARD_PAGE_LIMIT = 10;
 const CREATE_DECK_SUCCESS_VISIBLE_MS = 2500;
 
-const DeckManagement = ({ env }) => {
+const DeckManagement = ({ env, onAuthExpired }) => {
   const history = useHistory();
   const apiRequests = useMemo(() => getDeckManagementApiRequests(env), [env]);
   const [decks, setDecks] = useState([]);
@@ -138,6 +140,10 @@ const DeckManagement = ({ env }) => {
         headers: buildAuthHeaders(localStorage)
       });
 
+      if (handleAuthExpiredResponse(response, onAuthExpired)) {
+        return false;
+      }
+
       if (!response.ok) {
         const errorPayload = await response.json().catch(() => ({}));
         if (isCurrentDeckListRequest()) {
@@ -186,7 +192,7 @@ const DeckManagement = ({ env }) => {
       }
       return false;
     }
-  }, [apiRequests]);
+  }, [apiRequests, onAuthExpired]);
 
   useEffect(() => {
     fetchDecks();
@@ -275,6 +281,9 @@ const DeckManagement = ({ env }) => {
         },
         body: JSON.stringify({ name: submission.name })
       });
+      if (handleAuthExpiredResponse(response, onAuthExpired)) {
+        return;
+      }
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
@@ -372,6 +381,9 @@ const DeckManagement = ({ env }) => {
         },
         body: JSON.stringify({ name: submission.name })
       });
+      if (handleAuthExpiredResponse(response, onAuthExpired)) {
+        return;
+      }
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
@@ -689,6 +701,9 @@ const DeckManagement = ({ env }) => {
       const response = await fetch(apiRequests.browseDeckCardsUrl(deckId, searchParams), {
         headers: buildAuthHeaders(localStorage)
       });
+      if (handleAuthExpiredResponse(response, onAuthExpired)) {
+        return;
+      }
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
@@ -835,6 +850,9 @@ const DeckManagement = ({ env }) => {
           backContent: submission.backContent,
         })
       });
+      if (handleAuthExpiredResponse(response, onAuthExpired)) {
+        return;
+      }
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
@@ -909,6 +927,9 @@ const DeckManagement = ({ env }) => {
           backContent,
         })
       });
+      if (handleAuthExpiredResponse(response, onAuthExpired)) {
+        return;
+      }
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
@@ -980,6 +1001,9 @@ const DeckManagement = ({ env }) => {
         method: 'DELETE',
         headers: buildAuthHeaders(localStorage)
       });
+      if (handleAuthExpiredResponse(response, onAuthExpired)) {
+        return;
+      }
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
@@ -1041,6 +1065,9 @@ const DeckManagement = ({ env }) => {
         method: 'DELETE',
         headers: buildAuthHeaders(localStorage)
       });
+      if (handleAuthExpiredResponse(response, onAuthExpired)) {
+        return;
+      }
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {

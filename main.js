@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { BrowserRouter as Router, Route, Switch, Redirect, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -161,10 +161,14 @@ const App = () => {
     cleanupStoredAuthTokenIfNeeded(localStorage, initialAuthSession);
   }, [initialAuthSession]);
 
-  const handleLogout = () => {
-    localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+  const handleLogout = useCallback(() => {
+    try {
+      localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+    } catch {
+      // Keep logout state authoritative even if browser storage is unavailable.
+    }
     setIsLoggedIn(false);
-  };
+  }, []);
 
   return (
     <Router>
@@ -185,13 +189,19 @@ const App = () => {
             {isLoggedIn ? <Redirect to="/" /> : <Login setIsLoggedIn={setIsLoggedIn} env={apiEnv} />}
           </Route>
           <Route exact path="/">
-            {isLoggedIn ? <Dashboard env={apiEnv} /> : <Redirect to="/login" />}
+            {isLoggedIn ? (
+              <Dashboard env={apiEnv} onAuthExpired={handleLogout} />
+            ) : <Redirect to="/login" />}
           </Route>
           <Route path="/study">
-            {isLoggedIn ? <StudySession env={apiEnv} /> : <Redirect to="/login" />}
+            {isLoggedIn ? (
+              <StudySession env={apiEnv} onAuthExpired={handleLogout} />
+            ) : <Redirect to="/login" />}
           </Route>
           <Route path="/decks">
-            {isLoggedIn ? <DeckManagement env={apiEnv} /> : <Redirect to="/login" />}
+            {isLoggedIn ? (
+              <DeckManagement env={apiEnv} onAuthExpired={handleLogout} />
+            ) : <Redirect to="/login" />}
           </Route>
         </Switch>
       </div>

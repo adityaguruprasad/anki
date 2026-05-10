@@ -8,6 +8,7 @@ const studySessionFeedback = require('./studySessionFeedback');
 const studySessionNotice = require('./studySessionNotice');
 const studySessionTarget = require('./studySessionTarget');
 const authHeaders = require('./authHeaders');
+const authExpiration = require('./authExpiration');
 
 const { getStudySessionApiRequests } = studySessionApiRequests;
 const {
@@ -21,8 +22,9 @@ const {
 const { getStudySessionNotice, STUDY_SESSION_NOTICE_TYPES } = studySessionNotice;
 const { getStudySessionRequest, STUDY_SESSION_REQUESTS } = studySessionTarget;
 const { buildAuthHeaders } = authHeaders;
+const { handleAuthExpiredResponse } = authExpiration;
 
-const StudySession = ({ env }) => {
+const StudySession = ({ env, onAuthExpired }) => {
   const location = useLocation();
   const history = useHistory();
   const apiRequests = useMemo(() => getStudySessionApiRequests(env), [env]);
@@ -64,6 +66,10 @@ const StudySession = ({ env }) => {
 
       if (!isCurrentRequest()) return;
 
+      if (handleAuthExpiredResponse(response, onAuthExpired)) {
+        return;
+      }
+
       if (!response.ok) {
         throw new Error('Unable to fetch cards');
       }
@@ -97,7 +103,7 @@ const StudySession = ({ env }) => {
       setSubmitInFlight(false);
       setIsLoading(false);
     }
-  }, [apiRequests, setSubmitInFlight]);
+  }, [apiRequests, onAuthExpired, setSubmitInFlight]);
 
   const loadStudySession = useCallback(async () => {
     const requestSearch = location.search;
@@ -131,6 +137,10 @@ const StudySession = ({ env }) => {
       });
 
       if (!isCurrentRequest()) return;
+
+      if (handleAuthExpiredResponse(response, onAuthExpired)) {
+        return;
+      }
 
       if (!response.ok) {
         throw new Error('Unable to fetch decks');
@@ -166,7 +176,7 @@ const StudySession = ({ env }) => {
       setSessionNotice(getStudySessionNotice(STUDY_SESSION_NOTICE_TYPES.DECK_AVAILABILITY_ERROR));
       setIsLoading(false);
     }
-  }, [apiRequests, fetchNextCard, location.search, setSubmitInFlight]);
+  }, [apiRequests, fetchNextCard, location.search, onAuthExpired, setSubmitInFlight]);
 
   useEffect(() => {
     loadStudySession();
@@ -196,6 +206,10 @@ const StudySession = ({ env }) => {
         body: JSON.stringify({ cardId: currentCard.id, quality }),
       });
 
+      if (handleAuthExpiredResponse(response, onAuthExpired)) {
+        return;
+      }
+
       if (!response.ok) {
         throw new Error('Unable to submit answer');
       }
@@ -222,7 +236,7 @@ const StudySession = ({ env }) => {
       setSubmitError('Unable to submit your answer. Please try again.');
       setSubmitInFlight(false);
     }
-  }, [apiRequests, currentCard, fetchNextCard, setSubmitInFlight]);
+  }, [apiRequests, currentCard, fetchNextCard, onAuthExpired, setSubmitInFlight]);
 
   useEffect(() => {
     const handleAnswerShortcut = (event) => {

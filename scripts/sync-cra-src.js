@@ -6,6 +6,7 @@ const FRONTEND_MODULES = Object.freeze([
   'dashboard.js',
   'deck.js',
   'studySession.js',
+  'authExpiration.js',
   'authFormState.js',
   'authHeaders.js',
   'dashboardApiRequests.js',

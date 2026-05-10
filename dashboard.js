@@ -9,6 +9,7 @@ const dashboardStatsDisplayState = require('./dashboardStatsDisplayState');
 const dashboardAuxiliaryDisplayState = require('./dashboardAuxiliaryDisplayState');
 const schedulingInsightsSummary = require('./schedulingInsightsSummary');
 const authHeaders = require('./authHeaders');
+const authExpiration = require('./authExpiration');
 
 const { getDashboardApiRequests } = dashboardApiRequests;
 const { getStudyDeckTargetPath, selectStudyDeckTarget } = dashboardDeckTarget;
@@ -19,8 +20,9 @@ const {
 } = dashboardAuxiliaryDisplayState;
 const { buildSchedulingInsightsSummary } = schedulingInsightsSummary;
 const { buildAuthHeaders } = authHeaders;
+const { handleAuthExpiredResponse } = authExpiration;
 
-const Dashboard = ({ env }) => {
+const Dashboard = ({ env, onAuthExpired }) => {
   const history = useHistory();
   const apiRequests = useMemo(() => getDashboardApiRequests(env), [env]);
   const isMountedRef = useRef(true);
@@ -77,6 +79,12 @@ const Dashboard = ({ env }) => {
       const response = await fetch(statsUrl, {
         headers: buildAuthHeaders(localStorage)
       });
+      if (shouldSkipUpdate()) {
+        return;
+      }
+      if (handleAuthExpiredResponse(response, onAuthExpired)) {
+        return;
+      }
       if (!response.ok) {
         throw new Error('Unable to fetch stats');
       }
@@ -97,7 +105,7 @@ const Dashboard = ({ env }) => {
         setIsLoadingStats(false);
       }
     }
-  }, [apiRequests.statsUrl]);
+  }, [apiRequests.statsUrl, onAuthExpired]);
 
   const fetchDecks = useCallback(async ({ shouldIgnore = () => false } = {}) => {
     const deckListUrl = apiRequests.deckListUrl;
@@ -124,6 +132,12 @@ const Dashboard = ({ env }) => {
       const response = await fetch(deckListUrl, {
         headers: buildAuthHeaders(localStorage)
       });
+      if (shouldSkipUpdate()) {
+        return;
+      }
+      if (handleAuthExpiredResponse(response, onAuthExpired)) {
+        return;
+      }
       if (!response.ok) {
         throw new Error('Unable to fetch decks');
       }
@@ -144,7 +158,7 @@ const Dashboard = ({ env }) => {
         setIsLoadingDecks(false);
       }
     }
-  }, [apiRequests.deckListUrl]);
+  }, [apiRequests.deckListUrl, onAuthExpired]);
 
   const fetchSchedulingInsights = useCallback(async ({ shouldIgnore = () => false } = {}) => {
     const schedulingInsightsUrl = apiRequests.schedulingInsightsUrl;
@@ -171,6 +185,12 @@ const Dashboard = ({ env }) => {
       const response = await fetch(schedulingInsightsUrl, {
         headers: buildAuthHeaders(localStorage)
       });
+      if (shouldSkipUpdate()) {
+        return;
+      }
+      if (handleAuthExpiredResponse(response, onAuthExpired)) {
+        return;
+      }
       if (!response.ok) {
         throw new Error('Unable to fetch scheduling insights');
       }
@@ -191,7 +211,7 @@ const Dashboard = ({ env }) => {
         setIsLoadingSchedulingInsights(false);
       }
     }
-  }, [apiRequests.schedulingInsightsUrl]);
+  }, [apiRequests.schedulingInsightsUrl, onAuthExpired]);
 
   useEffect(() => {
     let ignore = false;
