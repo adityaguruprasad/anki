@@ -548,6 +548,17 @@ const DeckManagement = ({ env, onAuthExpired }) => {
     });
   };
 
+  const clearDeckCardSearch = (deckId, clearSearchRequest = { q: '' }) => {
+    const currentDeckCards = deckCards[deckId] || {};
+    if (currentDeckCards.loading || currentDeckCards.loadingMore) {
+      return;
+    }
+
+    fetchDeckCards(deckId, {
+      q: clearSearchRequest?.q || '',
+    });
+  };
+
   const fetchDeckCards = async (deckId, options = {}) => {
     const { cursor = null, append = false } = options;
     const isRetry = Boolean(options.retry);
@@ -1185,13 +1196,15 @@ const DeckManagement = ({ env, onAuthExpired }) => {
             const currentDeckCards = deckCards[deck.id] || {};
             const isExpanded = Boolean(currentDeckCards.expanded);
             const loadedCards = currentDeckCards.cards || [];
-            const hasActiveCardSearch = Boolean((currentDeckCards.appliedSearchQuery || '').trim());
             const cardBrowserDisplay = buildDeckCardBrowserDisplayState(currentDeckCards);
             const cardBrowserErrorTitleId = cardBrowserDisplay.showError
               ? `deck-${deck.id}-card-browser-error-title`
               : undefined;
             const cardBrowserErrorMessageId = cardBrowserDisplay.showError
               ? `deck-${deck.id}-card-browser-error-message`
+              : undefined;
+            const cardBrowserEmptyMessageId = cardBrowserDisplay.showEmptyState
+              ? `deck-${deck.id}-card-browser-empty-message`
               : undefined;
 
             return (
@@ -1312,10 +1325,31 @@ const DeckManagement = ({ env, onAuthExpired }) => {
                           })}
                         </div>
                       )}
-                      {currentDeckCards.hasLoaded && loadedCards.length === 0 && !currentDeckCards.loading && (
-                        <p className="text-sm text-gray-500">
-                          {hasActiveCardSearch ? 'No matching cards.' : 'No cards in this deck yet.'}
-                        </p>
+                      {cardBrowserDisplay.showEmptyState && (
+                        <div className="space-y-2">
+                          <p
+                            id={cardBrowserEmptyMessageId}
+                            className="text-sm text-gray-500"
+                            role="status"
+                            aria-live="polite"
+                          >
+                            {cardBrowserDisplay.emptyMessage}
+                          </p>
+                          {cardBrowserDisplay.showEmptySearchResult && (
+                            <Button
+                              type="button"
+                              disabled={currentDeckCards.loading || currentDeckCards.loadingMore}
+                              onClick={() => clearDeckCardSearch(
+                                deck.id,
+                                cardBrowserDisplay.clearSearchRequest,
+                              )}
+                              aria-label={`Clear search for ${deck.name}`}
+                              aria-describedby={cardBrowserEmptyMessageId}
+                            >
+                              {cardBrowserDisplay.clearSearchButtonLabel}
+                            </Button>
+                          )}
+                        </div>
                       )}
                       {cardBrowserDisplay.showError && (
                         <div

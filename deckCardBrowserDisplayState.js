@@ -21,6 +21,9 @@ const DECK_CARD_BROWSER_COPY = Object.freeze({
   retrying: 'Retrying...',
   retryAppend: 'Try Loading More Again',
   retryingAppend: 'Retrying load more...',
+  emptyDeckMessage: 'No cards in this deck yet.',
+  emptySearchMessage: 'No cards match the search.',
+  clearSearch: 'Clear search',
 });
 
 function normalizeErrorKind(kind) {
@@ -98,9 +101,15 @@ function buildDeckCardBrowserDisplayState(deckCards = {}) {
   const error = normalizeDeckCardBrowserError(currentDeckCards.error);
   const isLoading = Boolean(currentDeckCards.loading);
   const isLoadingMore = Boolean(currentDeckCards.loadingMore);
+  const loadedCards = Array.isArray(currentDeckCards.cards) ? currentDeckCards.cards : [];
+  const appliedSearchQuery = normalizeSearchQuery(currentDeckCards.appliedSearchQuery);
+  const showEmptyState = Boolean(currentDeckCards.hasLoaded)
+    && loadedCards.length === 0
+    && !isLoading;
+  const showEmptySearchResult = showEmptyState && Boolean(appliedSearchQuery);
   const isAppendError = error?.kind === DECK_CARD_BROWSER_ERROR_KINDS.APPEND;
   const retryBusy = isAppendError ? isLoadingMore : isLoading;
-  const retrySearchQuery = error?.searchQuery || normalizeSearchQuery(currentDeckCards.appliedSearchQuery);
+  const retrySearchQuery = error?.searchQuery || appliedSearchQuery;
   const retryCursor = isAppendError
     ? error?.cursor || normalizeCursor(currentDeckCards.nextCursor)
     : null;
@@ -121,6 +130,13 @@ function buildDeckCardBrowserDisplayState(deckCards = {}) {
     isLoadingMore,
     showLoadingStatus: isLoading && !error,
     loadingText: DECK_CARD_BROWSER_COPY.loading,
+    showEmptyState,
+    showEmptySearchResult,
+    emptyMessage: showEmptySearchResult
+      ? DECK_CARD_BROWSER_COPY.emptySearchMessage
+      : DECK_CARD_BROWSER_COPY.emptyDeckMessage,
+    clearSearchButtonLabel: DECK_CARD_BROWSER_COPY.clearSearch,
+    clearSearchRequest: showEmptySearchResult ? { q: '' } : null,
     loadMoreButtonLabel: isLoadingMore
       ? DECK_CARD_BROWSER_COPY.loadingMore
       : DECK_CARD_BROWSER_COPY.loadMore,

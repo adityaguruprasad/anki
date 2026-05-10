@@ -66,6 +66,36 @@ test('loading status is shown only while no error live region is visible', () =>
   assert.equal(state.showError, false);
   assert.equal(state.showLoadingStatus, true);
   assert.equal(state.loadingText, DECK_CARD_BROWSER_COPY.loading);
+  assert.equal(state.showEmptyState, false);
+});
+
+test('empty loaded decks keep the friendly empty-deck guidance', () => {
+  const state = buildDeckCardBrowserDisplayState({
+    cards: [],
+    hasLoaded: true,
+    loading: false,
+    appliedSearchQuery: '',
+  });
+
+  assert.equal(state.showEmptyState, true);
+  assert.equal(state.showEmptySearchResult, false);
+  assert.equal(state.emptyMessage, DECK_CARD_BROWSER_COPY.emptyDeckMessage);
+  assert.equal(state.clearSearchRequest, null);
+});
+
+test('empty search results expose clear-search display state', () => {
+  const state = buildDeckCardBrowserDisplayState({
+    cards: [],
+    hasLoaded: true,
+    loading: false,
+    appliedSearchQuery: '  anatomy  ',
+  });
+
+  assert.equal(state.showEmptyState, true);
+  assert.equal(state.showEmptySearchResult, true);
+  assert.equal(state.emptyMessage, DECK_CARD_BROWSER_COPY.emptySearchMessage);
+  assert.equal(state.clearSearchButtonLabel, DECK_CARD_BROWSER_COPY.clearSearch);
+  assert.deepEqual(state.clearSearchRequest, { q: '' });
 });
 
 test('append failures expose a dedicated retry request and hide the normal load-more action', () => {

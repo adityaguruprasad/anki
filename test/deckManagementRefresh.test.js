@@ -79,6 +79,36 @@ test('deleteCard requires a card object with an id before removal work', () => {
   );
 });
 
+test('clearDeckCardSearch reloads first page without a search filter through existing guards', () => {
+  const body = extractConstFunctionBody('clearDeckCardSearch');
+
+  assert.match(body, /const currentDeckCards = deckCards\[deckId\] \|\| \{\};/);
+  assert.match(
+    body,
+    /if \(currentDeckCards\.loading \|\| currentDeckCards\.loadingMore\) \{\s*return;\s*\}/,
+    'Expected clear-search to respect card browser in-flight guards'
+  );
+  assert.match(
+    body,
+    /fetchDeckCards\(deckId, \{\s*q: clearSearchRequest\?\.q \|\| '',\s*\}\);/,
+    'Expected clear-search to use the replace fetch path with an empty query'
+  );
+  assert.doesNotMatch(body, /append:\s*true/);
+});
+
+test('clear-search button accessible name starts with the visible label', () => {
+  const clearSearchButton = deckSource.match(
+    /cardBrowserDisplay\.showEmptySearchResult && \([\s\S]*?\{cardBrowserDisplay\.clearSearchButtonLabel\}[\s\S]*?\)/
+  );
+
+  assert.ok(clearSearchButton, 'Expected the empty-search clear button to be rendered');
+  assert.match(
+    clearSearchButton[0],
+    /aria-label=\{`Clear search for \$\{deck\.name\}`\}/
+  );
+  assert.doesNotMatch(clearSearchButton[0], /Clear card search/);
+});
+
 test('silent fetch terminal failures clear loading without showing prominent load errors', () => {
   const body = extractConstFunctionBody('fetchDecks');
   assert.match(
