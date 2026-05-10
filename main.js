@@ -1,5 +1,5 @@
 import React, { useCallback, useLayoutEffect, useRef, useState } from 'react';
-import { BrowserRouter as Router, Route, Switch, Redirect, Link } from 'react-router-dom';
+import { BrowserRouter as Router, Route, Switch, Redirect, Link, useHistory } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import Dashboard from './dashboard';
@@ -7,6 +7,7 @@ import StudySession from './studySession';
 import DeckManagement from './deck';
 const authBoundaryState = require('./authBoundaryState');
 const authFormState = require('./authFormState');
+const authReturnDestination = require('./authReturnDestination');
 
 const {
   AUTH_LOGOUT_REASONS,
@@ -25,6 +26,12 @@ const {
   getNextAuthMode,
   parseAuthResponse,
 } = authFormState;
+
+const {
+  LOGIN_ROUTE_PATHNAME,
+  createAuthReturnLoginRedirect,
+  getAuthReturnDestinationFromState,
+} = authReturnDestination;
 
 const apiEnv = Object.freeze({
   REACT_APP_API_BASE_URL: process.env.REACT_APP_API_BASE_URL,
@@ -170,7 +177,19 @@ const Login = ({ setIsLoggedIn, env, authNotice, onAuthNoticeChange }) => {
   );
 };
 
-const App = () => {
+const ProtectedRoute = ({ isLoggedIn, children, ...routeProps }) => (
+  <Route
+    {...routeProps}
+    render={({ location }) => (
+      isLoggedIn
+        ? children
+        : <Redirect to={createAuthReturnLoginRedirect(location)} />
+    )}
+  />
+);
+
+const AuthenticatedApp = () => {
+  const history = useHistory();
   const [initialAuthSession] = useState(() => createInitialAuthSession(localStorage));
   const [isLoggedIn, setIsLoggedIn] = useState(initialAuthSession.isLoggedIn);
   const [authNotice, setAuthNotice] = useState(null);
@@ -191,7 +210,8 @@ const App = () => {
   const handleLogout = useCallback(() => {
     clearAuthStorageAndLogout();
     setAuthNotice(getAuthNoticeAfterLogout(AUTH_LOGOUT_REASONS.MANUAL));
-  }, [clearAuthStorageAndLogout]);
+    history.replace(LOGIN_ROUTE_PATHNAME);
+  }, [clearAuthStorageAndLogout, history]);
 
   const handleAuthExpired = useCallback(() => {
     clearAuthStorageAndLogout();
@@ -199,23 +219,25 @@ const App = () => {
   }, [clearAuthStorageAndLogout]);
 
   return (
-    <Router>
-      <div className="container mx-auto p-4">
-        <h1 className="text-2xl font-bold mb-4">Anki Web App</h1>
-        {isLoggedIn && (
-          <nav className="mb-4">
-            <ul className="flex space-x-4">
-              <li><Link to="/" className="text-blue-500 hover:underline">Dashboard</Link></li>
-              <li><Link to="/study" className="text-blue-500 hover:underline">Study</Link></li>
-              <li><Link to="/decks" className="text-blue-500 hover:underline">Manage Decks</Link></li>
-              <li><Button onClick={handleLogout}>Logout</Button></li>
-            </ul>
-          </nav>
-        )}
-        <Switch>
-          <Route exact path="/login">
-            {isLoggedIn ? (
-              <Redirect to="/" />
+    <div className="container mx-auto p-4">
+      <h1 className="text-2xl font-bold mb-4">Anki Web App</h1>
+      {isLoggedIn && (
+        <nav className="mb-4">
+          <ul className="flex space-x-4">
+            <li><Link to="/" className="text-blue-500 hover:underline">Dashboard</Link></li>
+            <li><Link to="/study" className="text-blue-500 hover:underline">Study</Link></li>
+            <li><Link to="/decks" className="text-blue-500 hover:underline">Manage Decks</Link></li>
+            <li><Button onClick={handleLogout}>Logout</Button></li>
+          </ul>
+        </nav>
+      )}
+      <Switch>
+        <Route
+          exact
+          path="/login"
+          render={({ location }) => (
+            isLoggedIn ? (
+              <Redirect to={getAuthReturnDestinationFromState(location.state)} />
             ) : (
               <Login
                 setIsLoggedIn={setIsLoggedIn}
@@ -223,25 +245,27 @@ const App = () => {
                 authNotice={authNotice}
                 onAuthNoticeChange={setAuthNotice}
               />
-            )}
-          </Route>
-          <Route exact path="/">
-            {isLoggedIn ? (
-              <Dashboard env={apiEnv} onAuthExpired={handleAuthExpired} />
-            ) : <Redirect to="/login" />}
-          </Route>
-          <Route path="/study">
-            {isLoggedIn ? (
-              <StudySession env={apiEnv} onAuthExpired={handleAuthExpired} />
-            ) : <Redirect to="/login" />}
-          </Route>
-          <Route path="/decks">
-            {isLoggedIn ? (
-              <DeckManagement env={apiEnv} onAuthExpired={handleAuthExpired} />
-            ) : <Redirect to="/login" />}
-          </Route>
-        </Switch>
-      </div>
+            )
+          )}
+        />
+        <ProtectedRoute exact path="/" isLoggedIn={isLoggedIn}>
+          <Dashboard env={apiEnv} onAuthExpired={handleAuthExpired} />
+        </ProtectedRoute>
+        <ProtectedRoute path="/study" isLoggedIn={isLoggedIn}>
+          <StudySession env={apiEnv} onAuthExpired={handleAuthExpired} />
+        </ProtectedRoute>
+        <ProtectedRoute path="/decks" isLoggedIn={isLoggedIn}>
+          <DeckManagement env={apiEnv} onAuthExpired={handleAuthExpired} />
+        </ProtectedRoute>
+      </Switch>
+    </div>
+  );
+};
+
+const App = () => {
+  return (
+    <Router>
+      <AuthenticatedApp />
     </Router>
   );
 };

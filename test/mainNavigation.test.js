@@ -25,3 +25,30 @@ test('authenticated app navigation uses SPA links for internal routes', () => {
     assert.doesNotMatch(mainSource, anchorPattern);
   });
 });
+
+test('protected routes redirect to login with return-destination router state', () => {
+  assert.match(mainSource, /require\(['"]\.\/authReturnDestination['"]\)/);
+  assert.match(mainSource, /createAuthReturnLoginRedirect/);
+  assert.match(mainSource, /getAuthReturnDestinationFromState/);
+  assert.match(
+    mainSource,
+    /const ProtectedRoute = \(\{ isLoggedIn,\s*children,\s*\.\.\.routeProps \}\) =>/
+  );
+  assert.match(
+    mainSource,
+    /<Redirect to=\{createAuthReturnLoginRedirect\(location\)\} \/>/
+  );
+  assert.match(
+    mainSource,
+    /<Redirect to=\{getAuthReturnDestinationFromState\(location\.state\)\} \/>/
+  );
+});
+
+test('manual logout replaces login without preserving a protected return destination', () => {
+  assert.match(
+    mainSource,
+    /import\s*\{[^}]*\buseHistory\b[^}]*\}\s*from\s*['"]react-router-dom['"]/
+  );
+  assert.match(mainSource, /const history = useHistory\(\);/);
+  assert.match(mainSource, /history\.replace\(LOGIN_ROUTE_PATHNAME\);/);
+});

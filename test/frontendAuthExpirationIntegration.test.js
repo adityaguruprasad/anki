@@ -77,7 +77,7 @@ test('protected components check auth-expired responses before generic failures'
   });
 });
 
-test('CRA source sync mirrors the auth-expiration helper', () => {
+test('CRA source sync mirrors frontend auth helpers', () => {
   assert.ok(
     FRONTEND_MODULES.includes('authExpiration.js'),
     'Expected authExpiration.js to be mirrored into CRA src'
@@ -85,5 +85,9 @@ test('CRA source sync mirrors the auth-expiration helper', () => {
   assert.ok(
     FRONTEND_MODULES.includes('authBoundaryState.js'),
     'Expected authBoundaryState.js to be mirrored into CRA src'
+  );
+  assert.ok(
+    FRONTEND_MODULES.includes('authReturnDestination.js'),
+    'Expected authReturnDestination.js to be mirrored into CRA src'
   );
 });
