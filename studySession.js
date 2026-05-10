@@ -200,6 +200,7 @@ const StudySession = ({ env, onAuthExpired }) => {
 
     const requestDeckId = activeDeckIdRef.current;
     const requestSearch = locationSearchRef.current;
+    const isStaleSubmitRequest = () => locationSearchRef.current !== requestSearch;
 
     try {
       setSubmitInFlight(true);
@@ -213,6 +214,10 @@ const StudySession = ({ env, onAuthExpired }) => {
         },
         body: JSON.stringify({ cardId: currentCard.id, quality }),
       });
+
+      if (isStaleSubmitRequest()) {
+        return;
+      }
 
       if (handleAuthExpiredResponse(response, onAuthExpired)) {
         return;
@@ -229,7 +234,7 @@ const StudySession = ({ env, onAuthExpired }) => {
         responseText = '';
       }
 
-      if (locationSearchRef.current !== requestSearch) {
+      if (isStaleSubmitRequest()) {
         return;
       }
 
@@ -240,6 +245,10 @@ const StudySession = ({ env, onAuthExpired }) => {
       }));
       await fetchNextCard(requestDeckId, requestSearch);
     } catch (error) {
+      if (isStaleSubmitRequest()) {
+        return;
+      }
+
       console.error('Error submitting answer:', error);
       setSubmitError('Unable to submit your answer. Please try again.');
       setSubmitInFlight(false);
