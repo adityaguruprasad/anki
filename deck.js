@@ -27,6 +27,15 @@ import {
   mergeUniqueCards,
 } from './deckCardState';
 import {
+  beginDeckCardBrowserReplaceRequest,
+  canStartDeckCardBrowserAppendRequest,
+  canApplyDeckCardBrowserAppendResponse,
+  clearDeckCardBrowserAppendRequest,
+  createDeckCardBrowserAppendRequest,
+  isLatestDeckCardBrowserReplaceRequest,
+  setDeckCardBrowserAppendRequest,
+} from './deckCardBrowserRequestState';
+import {
   beginCardRemove,
   beginCardSave,
   clearCardAction,
@@ -68,6 +77,8 @@ const DeckManagement = ({ env }) => {
   const [deletingDecks, setDeletingDecks] = useState({});
   const deckRemovalInFlightRef = useRef({});
   const [deckCards, setDeckCards] = useState({});
+  const deckCardBrowserRequestStateRef = useRef({});
+  const deckCardBrowserAppendRequestStateRef = useRef({});
   const [cardEditForms, setCardEditForms] = useState({});
   const [cardActionStates, setCardActionStates] = useState({});
   const cardActionInFlightRef = useRef({});
@@ -487,6 +498,75 @@ const DeckManagement = ({ env }) => {
       : (deckCards[deckId]?.appliedSearchQuery ?? deckCards[deckId]?.searchQuery ?? '');
     const searchQuery = typeof rawSearchQuery === 'string' ? rawSearchQuery : '';
     const trimmedSearchQuery = searchQuery.trim();
+    let requestId = null;
+    let appendRequest = null;
+
+    if (append) {
+      appendRequest = createDeckCardBrowserAppendRequest(
+        deckCardBrowserRequestStateRef.current,
+        deckId,
+        {
+          searchQuery: trimmedSearchQuery,
+          requestId: options.requestId,
+          cursor,
+        },
+      );
+      if (!canStartDeckCardBrowserAppendRequest(
+        deckCardBrowserRequestStateRef.current,
+        deckCardBrowserAppendRequestStateRef.current,
+        deckId,
+        appendRequest,
+      )) {
+        return;
+      }
+
+      deckCardBrowserAppendRequestStateRef.current = setDeckCardBrowserAppendRequest(
+        deckCardBrowserAppendRequestStateRef.current,
+        deckId,
+        appendRequest,
+      );
+    } else {
+      const nextRequest = beginDeckCardBrowserReplaceRequest(
+        deckCardBrowserRequestStateRef.current,
+        deckId,
+        {
+          searchQuery: trimmedSearchQuery,
+        },
+      );
+      requestId = nextRequest.requestId;
+      deckCardBrowserRequestStateRef.current = nextRequest.requestState;
+      deckCardBrowserAppendRequestStateRef.current = clearDeckCardBrowserAppendRequest(
+        deckCardBrowserAppendRequestStateRef.current,
+        deckId,
+      );
+    }
+
+    const isCurrentDeckCardBrowserResponse = () => (
+      append
+        ? canApplyDeckCardBrowserAppendResponse(
+          deckCardBrowserRequestStateRef.current,
+          deckCardBrowserAppendRequestStateRef.current,
+          deckId,
+          appendRequest,
+        )
+        : isLatestDeckCardBrowserReplaceRequest(
+          deckCardBrowserRequestStateRef.current,
+          deckId,
+          requestId,
+        )
+    );
+
+    const clearCurrentAppendRequest = () => {
+      if (!appendRequest) {
+        return;
+      }
+
+      deckCardBrowserAppendRequestStateRef.current = clearDeckCardBrowserAppendRequest(
+        deckCardBrowserAppendRequestStateRef.current,
+        deckId,
+        appendRequest,
+      );
+    };
 
     setDeckCards((currentCards) => {
       const currentDeckCards = currentCards[deckId] || {};
@@ -497,6 +577,7 @@ const DeckManagement = ({ env }) => {
           cards: append ? currentDeckCards.cards || [] : [],
           nextCursor: append ? currentDeckCards.nextCursor || null : null,
           hasLoaded: append ? Boolean(currentDeckCards.hasLoaded) : false,
+          browserRequestId: append ? currentDeckCards.browserRequestId : requestId,
           expanded: true,
           searchQuery: hasExplicitQuery ? searchQuery : currentDeckCards.searchQuery || '',
           appliedSearchQuery: trimmedSearchQuery,
@@ -517,6 +598,7 @@ const DeckManagement = ({ env }) => {
       const cursorId = cursor.cursorId ?? cursor.beforeId;
 
       if (!cursorCreatedAt || !cursorId) {
+        clearCurrentAppendRequest();
         setDeckCards((currentCards) => ({
           ...currentCards,
           [deckId]: {
@@ -527,6 +609,7 @@ const DeckManagement = ({ env }) => {
             appliedSearchQuery: trimmedSearchQuery,
             loading: false,
             loadingMore: false,
+            browserRequestId: append ? currentCards[deckId]?.browserRequestId : requestId,
             error: 'Unable to load more cards.',
           },
         }));
@@ -544,6 +627,11 @@ const DeckManagement = ({ env }) => {
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
+        if (!isCurrentDeckCardBrowserResponse()) {
+          return;
+        }
+
+        clearCurrentAppendRequest();
         setDeckCards((currentCards) => ({
           ...currentCards,
           [deckId]: {
@@ -553,6 +641,7 @@ const DeckManagement = ({ env }) => {
             ...(currentCards[deckId] || {}),
             loading: false,
             loadingMore: false,
+            browserRequestId: append ? currentCards[deckId]?.browserRequestId : requestId,
             error: data.error || 'Unable to load cards.',
           },
         }));
@@ -560,6 +649,11 @@ const DeckManagement = ({ env }) => {
       }
 
       const fetchedCards = Array.isArray(data.cards) ? data.cards : [];
+      if (!isCurrentDeckCardBrowserResponse()) {
+        return;
+      }
+
+      clearCurrentAppendRequest();
       setDeckCards((currentCards) => {
         const currentDeckCards = currentCards[deckId] || {};
         const currentRows = currentDeckCards.cards || [];
@@ -573,6 +667,7 @@ const DeckManagement = ({ env }) => {
             hasLoaded: true,
             loading: false,
             loadingMore: false,
+            browserRequestId: append ? currentDeckCards.browserRequestId : requestId,
             appliedSearchQuery: trimmedSearchQuery,
             error: '',
           },
@@ -580,6 +675,11 @@ const DeckManagement = ({ env }) => {
       });
     } catch (error) {
       console.error('Error fetching deck cards:', error);
+      if (!isCurrentDeckCardBrowserResponse()) {
+        return;
+      }
+
+      clearCurrentAppendRequest();
       setDeckCards((currentCards) => ({
         ...currentCards,
         [deckId]: {
@@ -589,6 +689,7 @@ const DeckManagement = ({ env }) => {
           ...(currentCards[deckId] || {}),
           loading: false,
           loadingMore: false,
+          browserRequestId: append ? currentCards[deckId]?.browserRequestId : requestId,
           appliedSearchQuery: trimmedSearchQuery,
           error: 'Network error. Please try again.',
         },
@@ -1107,6 +1208,7 @@ const DeckManagement = ({ env }) => {
                             cursor: currentDeckCards.nextCursor,
                             append: true,
                             q: currentDeckCards.appliedSearchQuery || '',
+                            requestId: currentDeckCards.browserRequestId,
                           })}
                         >
                           {currentDeckCards.loadingMore ? 'Loading...' : 'Load more'}
