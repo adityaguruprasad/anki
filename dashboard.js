@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 const dashboardApiRequests = require('./dashboardApiRequests');
 const dashboardDeckTarget = require('./dashboardDeckTarget');
+const dashboardReviewActivityDisplayState = require('./dashboardReviewActivityDisplayState');
 const dashboardStatsDisplayState = require('./dashboardStatsDisplayState');
 const dashboardAuxiliaryDisplayState = require('./dashboardAuxiliaryDisplayState');
 const schedulingInsightsSummary = require('./schedulingInsightsSummary');
@@ -13,6 +14,7 @@ const authExpiration = require('./authExpiration');
 
 const { getDashboardApiRequests } = dashboardApiRequests;
 const { getStudyDeckTargetPath, selectStudyDeckTarget } = dashboardDeckTarget;
+const { buildDashboardReviewActivityDisplayState } = dashboardReviewActivityDisplayState;
 const { buildDashboardStatsDisplayState } = dashboardStatsDisplayState;
 const {
   buildDeckAvailabilityDisplayState,
@@ -245,12 +247,12 @@ const Dashboard = ({ env, onAuthExpired }) => {
     fetchSchedulingInsights();
   };
 
-  const chartData = [
-    { name: 'Today', cards: stats?.todayReviews || 0 },
-    { name: 'This Week', cards: stats?.weekReviews || 0 },
-    { name: 'This Month', cards: stats?.monthReviews || 0 },
-  ];
   const schedulingSummary = buildSchedulingInsightsSummary(schedulingInsights);
+  const reviewActivityDisplay = buildDashboardReviewActivityDisplayState({
+    stats,
+    isLoadingStats,
+    statsLoadFailed,
+  });
   const statsDisplay = buildDashboardStatsDisplayState({
     stats,
     isLoadingStats,
@@ -326,16 +328,26 @@ const Dashboard = ({ env, onAuthExpired }) => {
       <Card className="mb-8">
         <CardContent className="p-4">
           <h3 className="text-lg font-semibold mb-4">Review Activity</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              <Bar dataKey="cards" fill="#8884d8" />
-            </BarChart>
-          </ResponsiveContainer>
+          {reviewActivityDisplay.showChart ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={reviewActivityDisplay.chartData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="name" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="cards" fill="#8884d8" />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <p
+              className="text-sm text-gray-600"
+              role={reviewActivityDisplay.messageRole}
+              aria-live={reviewActivityDisplay.messageAriaLive}
+            >
+              {reviewActivityDisplay.message}
+            </p>
+          )}
         </CardContent>
       </Card>
       <Card className="mb-8">
