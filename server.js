@@ -3,7 +3,7 @@ const cors = require('cors');
 const { Pool } = require('pg');
 const { createAuthHandlers } = require('./auth');
 const { buildCorsOptions, handleCorsError } = require('./corsPolicy');
-const { handleMalformedJsonBody } = require('./jsonBodyError');
+const { handleJsonBodyError } = require('./jsonBodyError');
 const { calculateNextReview } = require('./spacedRepetition');
 const { createCard, createDeck, deleteCard, deleteDeck, getCardsByDeck, getDecks, getDueCardsByDeck, getStats, getSchedulingInsights, renameDeck, submitStudySession, updateCard } = require('./apiHandlers');
 
@@ -13,7 +13,7 @@ const port = process.env.PORT || 3001;
 app.use(cors(buildCorsOptions()));
 app.use(handleCorsError);
 app.use(express.json());
-app.use(handleMalformedJsonBody);
+app.use(handleJsonBodyError);
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
