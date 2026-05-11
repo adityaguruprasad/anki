@@ -54,6 +54,13 @@ function createDb(results) {
   };
 }
 
+function createUniqueViolation(constraint) {
+  const error = new Error('duplicate key value violates unique constraint');
+  error.code = '23505';
+  error.constraint = constraint;
+  return error;
+}
+
 function createPasswordHasher({ compareResult = true } = {}) {
   return {
     hashCalls: [],
@@ -201,6 +208,76 @@ test('register trims username and normalizes email before storing', async () => 
     'ada@example.com',
     'hashed:correct horse battery staple',
   ]);
+});
+
+test('register returns 409 for duplicate username or email unique violations without minting a token', async (t) => {
+  const cases = [
+    { name: 'duplicate username', constraint: 'users_username_key' },
+    { name: 'duplicate email', constraint: 'users_email_key' },
+  ];
+
+  for (const { name, constraint } of cases) {
+    await t.test(name, async () => {
+      const db = createDb([createUniqueViolation(constraint)]);
+      const passwordHasher = createPasswordHasher();
+      const { register } = createAuthHandlers(db, {
+        jwtSecret: 'duplicate-register-secret',
+        passwordHasher,
+      });
+      const req = {
+        body: {
+          username: 'ada',
+          email: 'ada@example.com',
+          password: 'correct horse battery staple',
+        },
+      };
+      const res = createRes();
+
+      await register(req, res);
+
+      assert.equal(res.statusCode, 409);
+      assert.deepEqual(res.body, { error: 'Account already exists' });
+      assert.equal(res.body.token, undefined);
+      assert.deepEqual(passwordHasher.hashCalls, [
+        { password: 'correct horse battery staple', rounds: 10 },
+      ]);
+      assert.equal(db.calls.length, 1);
+      assert.doesNotMatch(db.calls[0].sql, /ON\s+CONFLICT/i);
+      assert.match(db.calls[0].sql, /RETURNING\s+id/i);
+      assert.deepEqual(db.calls[0].params, [
+        'ada',
+        'ada@example.com',
+        'hashed:correct horse battery staple',
+      ]);
+    });
+  }
+});
+
+test('register keeps unrelated unique violations on the 500 registration failure path', async () => {
+  const db = createDb([createUniqueViolation('users_future_unique_key')]);
+  const passwordHasher = createPasswordHasher();
+  const { register } = createAuthHandlers(db, {
+    jwtSecret: 'unrelated-register-error-secret',
+    passwordHasher,
+  });
+  const req = {
+    body: {
+      username: 'ada',
+      email: 'ada@example.com',
+      password: 'correct horse battery staple',
+    },
+  };
+  const res = createRes();
+
+  await register(req, res);
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Error registering user' });
+  assert.deepEqual(passwordHasher.hashCalls, [
+    { password: 'correct horse battery staple', rounds: 10 },
+  ]);
+  assert.equal(db.calls.length, 1);
+  assert.doesNotMatch(db.calls[0].sql, /ON\s+CONFLICT/i);
 });
 
 test('login uses injected db for credential lookup', async () => {

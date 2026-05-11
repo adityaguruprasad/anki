@@ -6,6 +6,7 @@ const DEFAULT_JWT_EXPIRES_IN_SECONDS = 60 * 60 * 24;
 // Keep these aligned with anki.db users.username VARCHAR(50) and users.email VARCHAR(100).
 const AUTH_USERNAME_MAX_LENGTH = 50;
 const AUTH_EMAIL_MAX_LENGTH = 100;
+const DUPLICATE_ACCOUNT_CONSTRAINTS = new Set(['users_username_key', 'users_email_key']);
 
 function base64UrlEncode(value) {
   return Buffer.from(value).toString('base64url');
@@ -160,6 +161,10 @@ function normalizeEmail(value) {
   return email;
 }
 
+function isDuplicateAccountError(error) {
+  return error?.code === '23505' && DUPLICATE_ACCOUNT_CONSTRAINTS.has(error.constraint);
+}
+
 function createAuthHandlers(db, options = {}) {
   if (!db || typeof db.query !== 'function') {
     throw new TypeError('createAuthHandlers requires a database object with a query method');
@@ -207,6 +212,10 @@ function createAuthHandlers(db, options = {}) {
       });
       res.status(201).json({ token });
     } catch (error) {
+      if (isDuplicateAccountError(error)) {
+        return res.status(409).json({ error: 'Account already exists' });
+      }
+
       res.status(500).json({ error: 'Error registering user' });
     }
   };
