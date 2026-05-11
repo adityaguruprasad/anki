@@ -20,6 +20,7 @@ const deckCardBrowserDisplayState = require('./deckCardBrowserDisplayState');
 const deckCardActionInFlightState = require('./deckCardActionInFlightState');
 const deckRemovalInFlightState = require('./deckRemovalInFlightState');
 const deckCardCreateState = require('./deckCardCreateState');
+const deckManagementMutationLifecycle = require('./deckManagementMutationLifecycle');
 const authHeaders = require('./authHeaders');
 const authExpiration = require('./authExpiration');
 
@@ -86,6 +87,12 @@ const {
   isDeckRemovalInFlight,
 } = deckRemovalInFlightState;
 const { createCardSubmission } = deckCardCreateState;
+const {
+  beginDeckManagementMutation,
+  invalidateDeckManagementMutations,
+  isCurrentDeckManagementMutation,
+  isMountedDeckManagementMutation,
+} = deckManagementMutationLifecycle;
 const { buildAuthHeaders } = authHeaders;
 const { handleAuthExpiredResponse } = authExpiration;
 
@@ -99,6 +106,8 @@ const DeckManagement = ({ env, onAuthExpired }) => {
   const [deckListLoadState, setDeckListLoadState] = useState(() => beginDeckListLoad());
   const deckListRequestIdRef = useRef(0);
   const isDeckListMountedRef = useRef(false);
+  const isDeckMutationMountedRef = useRef(false);
+  const deckMutationSequenceRef = useRef({});
   const [newDeckName, setNewDeckName] = useState('');
   const [createDeckStatus, setCreateDeckStatus] = useState({
     creating: false,
@@ -122,6 +131,25 @@ const DeckManagement = ({ env, onAuthExpired }) => {
   const [cardEditForms, setCardEditForms] = useState({});
   const [cardActionStates, setCardActionStates] = useState({});
   const cardActionInFlightRef = useRef({});
+
+  useEffect(() => {
+    isDeckMutationMountedRef.current = true;
+
+    return () => {
+      isDeckMutationMountedRef.current = false;
+      invalidateDeckManagementMutations(deckMutationSequenceRef);
+      createDeckInFlightRef.current = false;
+      cardCreateInFlightRef.current = {};
+      renameDeckInFlightRef.current = {};
+      deckRemovalInFlightRef.current = {};
+      cardActionInFlightRef.current = {};
+
+      if (createDeckSuccessTimerRef.current) {
+        clearTimeout(createDeckSuccessTimerRef.current);
+        createDeckSuccessTimerRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     isDeckListMountedRef.current = true;
@@ -222,12 +250,6 @@ const DeckManagement = ({ env, onAuthExpired }) => {
     };
   }, [fetchDecks]);
 
-  useEffect(() => () => {
-    if (createDeckSuccessTimerRef.current) {
-      clearTimeout(createDeckSuccessTimerRef.current);
-    }
-  }, []);
-
   const clearCreateDeckSuccessTimer = () => {
     if (createDeckSuccessTimerRef.current) {
       clearTimeout(createDeckSuccessTimerRef.current);
@@ -236,6 +258,10 @@ const DeckManagement = ({ env, onAuthExpired }) => {
   };
 
   const showCreateDeckSuccess = () => {
+    if (!isMountedDeckManagementMutation(isDeckMutationMountedRef)) {
+      return;
+    }
+
     clearCreateDeckSuccessTimer();
     setCreateDeckStatus({
       creating: false,
@@ -243,12 +269,26 @@ const DeckManagement = ({ env, onAuthExpired }) => {
       success: CREATE_DECK_MESSAGES.success,
     });
     createDeckSuccessTimerRef.current = setTimeout(() => {
+      if (!isMountedDeckManagementMutation(isDeckMutationMountedRef)) {
+        return;
+      }
+
       createDeckSuccessTimerRef.current = null;
       setCreateDeckStatus((currentStatus) => ({
         ...currentStatus,
         success: '',
       }));
     }, CREATE_DECK_SUCCESS_VISIBLE_MS);
+  };
+
+  const beginDeckMutationGuard = (mutationKey) => {
+    const mutation = beginDeckManagementMutation(deckMutationSequenceRef, mutationKey);
+
+    return () => isCurrentDeckManagementMutation({
+      mountedRef: isDeckMutationMountedRef,
+      sequenceRef: deckMutationSequenceRef,
+      mutation,
+    });
   };
 
   const updateCreateDeckName = (value) => {
@@ -286,6 +326,7 @@ const DeckManagement = ({ env, onAuthExpired }) => {
     }
 
     createDeckInFlightRef.current = true;
+    const isCurrentMutation = beginDeckMutationGuard('create-deck');
     clearCreateDeckSuccessTimer();
     setCreateDeckStatus({
       creating: true,
@@ -302,10 +343,16 @@ const DeckManagement = ({ env, onAuthExpired }) => {
         },
         body: JSON.stringify({ name: submission.name })
       });
+      if (!isCurrentMutation()) {
+        return;
+      }
       if (handleAuthExpiredResponse(response, onAuthExpired)) {
         return;
       }
       const data = await response.json().catch(() => ({}));
+      if (!isCurrentMutation()) {
+        return;
+      }
 
       if (!response.ok) {
         setCreateDeckStatus({
@@ -320,6 +367,9 @@ const DeckManagement = ({ env, onAuthExpired }) => {
       try {
         createdDeck = parseDeckMutationResponsePayload(data);
       } catch {
+        if (!isCurrentMutation()) {
+          return;
+        }
         setCreateDeckStatus({
           creating: false,
           error: CREATE_DECK_MESSAGES.createFailed,
@@ -328,11 +378,20 @@ const DeckManagement = ({ env, onAuthExpired }) => {
         return;
       }
 
+      if (!isCurrentMutation()) {
+        return;
+      }
       setNewDeckName('');
       setDecks((currentDecks) => addCreatedDeck(currentDecks, createdDeck, submission.name));
+      if (!isCurrentMutation()) {
+        return;
+      }
       void fetchDecks({ silent: true });
       showCreateDeckSuccess();
     } catch (error) {
+      if (!isCurrentMutation()) {
+        return;
+      }
       console.error('Error creating deck:', error);
       setCreateDeckStatus({
         creating: false,
@@ -340,7 +399,9 @@ const DeckManagement = ({ env, onAuthExpired }) => {
         success: '',
       });
     } finally {
-      createDeckInFlightRef.current = false;
+      if (isCurrentMutation()) {
+        createDeckInFlightRef.current = false;
+      }
     }
   };
 
@@ -396,6 +457,7 @@ const DeckManagement = ({ env, onAuthExpired }) => {
     }
 
     renameDeckInFlightRef.current[deckId] = true;
+    const isCurrentMutation = beginDeckMutationGuard(`rename-deck:${deckId}`);
     setRenameErrors((currentErrors) => ({
       ...currentErrors,
       [deckId]: '',
@@ -414,10 +476,16 @@ const DeckManagement = ({ env, onAuthExpired }) => {
         },
         body: JSON.stringify({ name: submission.name })
       });
+      if (!isCurrentMutation()) {
+        return;
+      }
       if (handleAuthExpiredResponse(response, onAuthExpired)) {
         return;
       }
       const data = await response.json().catch(() => ({}));
+      if (!isCurrentMutation()) {
+        return;
+      }
 
       if (!response.ok) {
         setRenameErrors((currentErrors) => ({
@@ -431,6 +499,9 @@ const DeckManagement = ({ env, onAuthExpired }) => {
       try {
         renamedDeck = parseDeckMutationResponsePayload(data, { expectedId: deckId });
       } catch {
+        if (!isCurrentMutation()) {
+          return;
+        }
         setRenameErrors((currentErrors) => ({
           ...currentErrors,
           [deckId]: RENAME_DECK_MESSAGES.renameFailed,
@@ -438,22 +509,33 @@ const DeckManagement = ({ env, onAuthExpired }) => {
         return;
       }
 
+      if (!isCurrentMutation()) {
+        return;
+      }
       clearRenameDeckState(deckId);
       setDecks((currentDecks) => mergeRenamedDeck(currentDecks, deckId, renamedDeck, submission.name));
+      if (!isCurrentMutation()) {
+        return;
+      }
       void fetchDecks({ silent: true });
     } catch (error) {
+      if (!isCurrentMutation()) {
+        return;
+      }
       console.error('Error renaming deck:', error);
       setRenameErrors((currentErrors) => ({
         ...currentErrors,
         [deckId]: RENAME_DECK_MESSAGES.networkFailed,
       }));
     } finally {
-      delete renameDeckInFlightRef.current[deckId];
-      setRenamingDecks((currentDecks) => {
-        const nextDecks = { ...currentDecks };
-        delete nextDecks[deckId];
-        return nextDecks;
-      });
+      if (isCurrentMutation()) {
+        delete renameDeckInFlightRef.current[deckId];
+        setRenamingDecks((currentDecks) => {
+          const nextDecks = { ...currentDecks };
+          delete nextDecks[deckId];
+          return nextDecks;
+        });
+      }
     }
   };
 
@@ -897,6 +979,7 @@ const DeckManagement = ({ env, onAuthExpired }) => {
     }
 
     cardCreateInFlightRef.current[deckId] = true;
+    const isCurrentMutation = beginDeckMutationGuard(`create-card:${deckId}`);
     setCardFormStatus(deckId, {
       creating: true,
       error: '',
@@ -916,10 +999,16 @@ const DeckManagement = ({ env, onAuthExpired }) => {
           backContent: submission.backContent,
         })
       });
+      if (!isCurrentMutation()) {
+        return;
+      }
       if (handleAuthExpiredResponse(response, onAuthExpired)) {
         return;
       }
       const data = await response.json().catch(() => ({}));
+      if (!isCurrentMutation()) {
+        return;
+      }
 
       if (!response.ok) {
         setCardFormStatus(deckId, {
@@ -933,6 +1022,9 @@ const DeckManagement = ({ env, onAuthExpired }) => {
       try {
         createdCard = parseDeckCardMutationResponsePayload(data);
       } catch {
+        if (!isCurrentMutation()) {
+          return;
+        }
         setCardFormStatus(deckId, {
           error: 'Unable to add card.',
           success: '',
@@ -940,6 +1032,9 @@ const DeckManagement = ({ env, onAuthExpired }) => {
         return;
       }
 
+      if (!isCurrentMutation()) {
+        return;
+      }
       setCardForms((currentForms) => ({
         ...currentForms,
         [deckId]: {
@@ -953,16 +1048,21 @@ const DeckManagement = ({ env, onAuthExpired }) => {
       setDecks((currentDecks) => incrementDeckCardCounts(currentDecks, deckId, createdCard));
       setDeckCards((currentCards) => addCreatedCardToLoadedDeckCards(currentCards, deckId, createdCard));
     } catch (error) {
+      if (!isCurrentMutation()) {
+        return;
+      }
       console.error('Error creating card:', error);
       setCardFormStatus(deckId, {
         error: 'Network error. Please try again.',
         success: '',
       });
     } finally {
-      delete cardCreateInFlightRef.current[deckId];
-      setCardFormStatus(deckId, {
-        creating: false,
-      });
+      if (isCurrentMutation()) {
+        delete cardCreateInFlightRef.current[deckId];
+        setCardFormStatus(deckId, {
+          creating: false,
+        });
+      }
     }
   };
 
@@ -986,6 +1086,7 @@ const DeckManagement = ({ env, onAuthExpired }) => {
       return;
     }
 
+    const isCurrentMutation = beginDeckMutationGuard(`save-card:${card.id}`);
     setCardActionState(card.id, {
       saving: true,
       error: '',
@@ -1004,10 +1105,16 @@ const DeckManagement = ({ env, onAuthExpired }) => {
           backContent,
         })
       });
+      if (!isCurrentMutation()) {
+        return;
+      }
       if (handleAuthExpiredResponse(response, onAuthExpired)) {
         return;
       }
       const data = await response.json().catch(() => ({}));
+      if (!isCurrentMutation()) {
+        return;
+      }
 
       if (!response.ok) {
         setCardActionState(card.id, {
@@ -1022,6 +1129,9 @@ const DeckManagement = ({ env, onAuthExpired }) => {
       try {
         savedCard = parseDeckCardMutationResponsePayload(data);
       } catch {
+        if (!isCurrentMutation()) {
+          return;
+        }
         setCardActionState(card.id, {
           saving: false,
           error: 'Unable to save card.',
@@ -1030,6 +1140,9 @@ const DeckManagement = ({ env, onAuthExpired }) => {
         return;
       }
 
+      if (!isCurrentMutation()) {
+        return;
+      }
       updateLoadedCard(deckId, card.id, savedCard);
       setCardEditForms((currentForms) => ({
         ...currentForms,
@@ -1044,6 +1157,9 @@ const DeckManagement = ({ env, onAuthExpired }) => {
         success: 'Card saved.',
       });
     } catch (error) {
+      if (!isCurrentMutation()) {
+        return;
+      }
       console.error('Error updating card:', error);
       setCardActionState(card.id, {
         saving: false,
@@ -1051,7 +1167,9 @@ const DeckManagement = ({ env, onAuthExpired }) => {
         success: '',
       });
     } finally {
-      clearCardAction(cardActionInFlightRef.current, card.id);
+      if (isCurrentMutation()) {
+        clearCardAction(cardActionInFlightRef.current, card.id);
+      }
     }
   };
 
@@ -1079,6 +1197,7 @@ const DeckManagement = ({ env, onAuthExpired }) => {
       return;
     }
 
+    const isCurrentMutation = beginDeckMutationGuard(`delete-card:${cardId}`);
     setCardActionState(cardId, {
       deleting: true,
       error: '',
@@ -1090,10 +1209,16 @@ const DeckManagement = ({ env, onAuthExpired }) => {
         method: 'DELETE',
         headers: buildAuthHeaders(localStorage)
       });
+      if (!isCurrentMutation()) {
+        return;
+      }
       if (handleAuthExpiredResponse(response, onAuthExpired)) {
         return;
       }
       const data = await response.json().catch(() => ({}));
+      if (!isCurrentMutation()) {
+        return;
+      }
 
       if (!response.ok) {
         setCardActionState(cardId, {
@@ -1107,6 +1232,9 @@ const DeckManagement = ({ env, onAuthExpired }) => {
       try {
         parseDeckCardRemovalSuccessPayload(data);
       } catch {
+        if (!isCurrentMutation()) {
+          return;
+        }
         setCardActionState(cardId, {
           deleting: false,
           error: 'Unable to remove card.',
@@ -1115,6 +1243,9 @@ const DeckManagement = ({ env, onAuthExpired }) => {
         return;
       }
 
+      if (!isCurrentMutation()) {
+        return;
+      }
       removeLoadedCard(deckId, cardId);
       setDecks((currentDecks) => decrementDeckCardCounts(currentDecks, deckId, card));
       setCardEditForms((currentForms) => {
@@ -1123,8 +1254,14 @@ const DeckManagement = ({ env, onAuthExpired }) => {
         return nextForms;
       });
       clearCardActionState(cardId);
+      if (!isCurrentMutation()) {
+        return;
+      }
       void fetchDecks({ silent: true });
     } catch (error) {
+      if (!isCurrentMutation()) {
+        return;
+      }
       console.error('Error deleting card:', error);
       setCardActionState(cardId, {
         deleting: false,
@@ -1132,7 +1269,9 @@ const DeckManagement = ({ env, onAuthExpired }) => {
         success: '',
       });
     } finally {
-      clearCardAction(cardActionInFlightRef.current, cardId);
+      if (isCurrentMutation()) {
+        clearCardAction(cardActionInFlightRef.current, cardId);
+      }
     }
   };
 
@@ -1151,6 +1290,7 @@ const DeckManagement = ({ env, onAuthExpired }) => {
       return;
     }
 
+    const isCurrentMutation = beginDeckMutationGuard(`delete-deck:${deckId}`);
     setDeleteErrors((currentErrors) => ({
       ...currentErrors,
       [deckId]: '',
@@ -1165,10 +1305,16 @@ const DeckManagement = ({ env, onAuthExpired }) => {
         method: 'DELETE',
         headers: buildAuthHeaders(localStorage)
       });
+      if (!isCurrentMutation()) {
+        return;
+      }
       if (handleAuthExpiredResponse(response, onAuthExpired)) {
         return;
       }
       const data = await response.json().catch(() => ({}));
+      if (!isCurrentMutation()) {
+        return;
+      }
 
       if (!response.ok) {
         setDeleteErrors((currentErrors) => ({
@@ -1181,6 +1327,9 @@ const DeckManagement = ({ env, onAuthExpired }) => {
       try {
         parseDeckRemovalSuccessPayload(data);
       } catch {
+        if (!isCurrentMutation()) {
+          return;
+        }
         setDeleteErrors((currentErrors) => ({
           ...currentErrors,
           [deckId]: 'Unable to delete deck.',
@@ -1188,6 +1337,9 @@ const DeckManagement = ({ env, onAuthExpired }) => {
         return;
       }
 
+      if (!isCurrentMutation()) {
+        return;
+      }
       setDeleteErrors((currentErrors) => {
         const nextErrors = { ...currentErrors };
         delete nextErrors[deckId];
@@ -1199,20 +1351,28 @@ const DeckManagement = ({ env, onAuthExpired }) => {
         delete nextCards[deckId];
         return nextCards;
       });
+      if (!isCurrentMutation()) {
+        return;
+      }
       void fetchDecks({ silent: true });
     } catch (error) {
+      if (!isCurrentMutation()) {
+        return;
+      }
       console.error('Error deleting deck:', error);
       setDeleteErrors((currentErrors) => ({
         ...currentErrors,
         [deckId]: 'Network error. Please try again.',
       }));
     } finally {
-      setDeletingDecks((currentDecks) => {
-        const nextDecks = { ...currentDecks };
-        delete nextDecks[deckId];
-        return nextDecks;
-      });
-      clearDeckRemoval(deckRemovalInFlightRef.current, deckId);
+      if (isCurrentMutation()) {
+        setDeletingDecks((currentDecks) => {
+          const nextDecks = { ...currentDecks };
+          delete nextDecks[deckId];
+          return nextDecks;
+        });
+        clearDeckRemoval(deckRemovalInFlightRef.current, deckId);
+      }
     }
   };
 
