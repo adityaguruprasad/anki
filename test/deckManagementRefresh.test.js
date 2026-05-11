@@ -471,6 +471,58 @@ test('deleteDeck validates successful removal payloads before updating visible s
   );
 });
 
+test('deleteCard validates successful removal payloads before updating visible state', () => {
+  const body = extractConstFunctionBody('deleteCard');
+  const authExpiredIndex = body.indexOf('if (handleAuthExpiredResponse(response, onAuthExpired))');
+  const jsonIndex = body.indexOf('const data = await response.json().catch(() => ({}));');
+  const responseOkIndex = body.indexOf('if (!response.ok) {');
+  const validationIndex = body.indexOf('parseDeckCardRemovalSuccessPayload(data);');
+  const removeCardIndex = body.indexOf('removeLoadedCard(deckId, cardId);');
+  const decrementCountsIndex = body.indexOf('decrementDeckCardCounts(currentDecks, deckId, card)');
+  const clearEditFormIndex = body.indexOf('delete nextForms[cardId];');
+  const clearActionIndex = body.indexOf('clearCardActionState(cardId);');
+  const silentRefreshIndex = body.indexOf('void fetchDecks({ silent: true });');
+
+  assert.match(
+    deckSource,
+    /require\(['"]\.\/deckCardRemovalResponse['"]\)/,
+    'Expected deck.js to import the card-removal response validator',
+  );
+  assert.match(
+    deckSource,
+    /const \{ parseDeckCardRemovalSuccessPayload \} = deckCardRemovalResponse;/,
+    'Expected deck.js to destructure the card-removal response parser',
+  );
+
+  assert.notEqual(authExpiredIndex, -1, 'Expected auth-expired handling to remain in deleteCard');
+  assert.notEqual(jsonIndex, -1, 'Expected deleteCard to parse response JSON');
+  assert.notEqual(responseOkIndex, -1, 'Expected deleteCard to keep non-2xx handling');
+  assert.notEqual(validationIndex, -1, 'Expected deleteCard to validate successful payloads');
+  assert.notEqual(removeCardIndex, -1, 'Expected deleteCard to remove cards only after validation');
+  assert.notEqual(decrementCountsIndex, -1, 'Expected deleteCard to decrement counts only after validation');
+  assert.notEqual(clearEditFormIndex, -1, 'Expected deleteCard to clear edit forms only after validation');
+  assert.notEqual(clearActionIndex, -1, 'Expected deleteCard to clear action state only after validation');
+  assert.notEqual(silentRefreshIndex, -1, 'Expected deleteCard to silently refresh only after validation');
+  assert.ok(authExpiredIndex < jsonIndex, 'Expected deleteCard auth expiration before JSON parsing');
+  assert.ok(jsonIndex < responseOkIndex, 'Expected deleteCard non-2xx handling after JSON parsing');
+  assert.ok(responseOkIndex < validationIndex, 'Expected deleteCard validation after non-2xx handling');
+  assert.ok(validationIndex < removeCardIndex, 'Expected deleteCard validation before local card removal');
+  assert.ok(validationIndex < decrementCountsIndex, 'Expected deleteCard validation before count decrement');
+  assert.ok(validationIndex < clearEditFormIndex, 'Expected deleteCard validation before clearing edit forms');
+  assert.ok(validationIndex < clearActionIndex, 'Expected deleteCard validation before clearing action state');
+  assert.ok(validationIndex < silentRefreshIndex, 'Expected deleteCard validation before silent refresh');
+  assert.match(
+    body.slice(responseOkIndex, validationIndex),
+    /error: data\.error \|\| 'Unable to remove card\.',/,
+    'Expected deleteCard non-2xx responses to keep backend error copy behavior',
+  );
+  assert.match(
+    body.slice(validationIndex, removeCardIndex),
+    /error: 'Unable to remove card\.',/,
+    'Expected malformed successful card deletes to use safe remove-card failure copy',
+  );
+});
+
 test('CRA source sync mirrors deck-management response validators', () => {
   assert.ok(
     FRONTEND_MODULES.includes('deckCardBrowseResponse.js'),
@@ -479,6 +531,10 @@ test('CRA source sync mirrors deck-management response validators', () => {
   assert.ok(
     FRONTEND_MODULES.includes('deckCardMutationResponse.js'),
     'Expected deckCardMutationResponse.js to be mirrored into CRA src',
+  );
+  assert.ok(
+    FRONTEND_MODULES.includes('deckCardRemovalResponse.js'),
+    'Expected deckCardRemovalResponse.js to be mirrored into CRA src',
   );
   assert.ok(
     FRONTEND_MODULES.includes('deckMutationResponse.js'),

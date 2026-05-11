@@ -14,6 +14,7 @@ const deckCollectionState = require('./deckCollectionState');
 const deckCardState = require('./deckCardState');
 const deckCardBrowseResponse = require('./deckCardBrowseResponse');
 const deckCardMutationResponse = require('./deckCardMutationResponse');
+const deckCardRemovalResponse = require('./deckCardRemovalResponse');
 const deckCardBrowserRequestState = require('./deckCardBrowserRequestState');
 const deckCardBrowserDisplayState = require('./deckCardBrowserDisplayState');
 const deckCardActionInFlightState = require('./deckCardActionInFlightState');
@@ -58,6 +59,7 @@ const {
 } = deckCardState;
 const { parseDeckCardBrowseResponsePayload } = deckCardBrowseResponse;
 const { parseDeckCardMutationResponsePayload } = deckCardMutationResponse;
+const { parseDeckCardRemovalSuccessPayload } = deckCardRemovalResponse;
 const {
   beginDeckCardBrowserReplaceRequest,
   canStartDeckCardBrowserAppendRequest,
@@ -1097,6 +1099,17 @@ const DeckManagement = ({ env, onAuthExpired }) => {
         setCardActionState(cardId, {
           deleting: false,
           error: data.error || 'Unable to remove card.',
+          success: '',
+        });
+        return;
+      }
+
+      try {
+        parseDeckCardRemovalSuccessPayload(data);
+      } catch {
+        setCardActionState(cardId, {
+          deleting: false,
+          error: 'Unable to remove card.',
           success: '',
         });
         return;
