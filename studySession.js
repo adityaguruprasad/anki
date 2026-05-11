@@ -18,6 +18,7 @@ const {
 } = studySessionShortcuts;
 const {
   getStudySessionSubmissionFeedback,
+  getValidatedStudySessionSubmissionResponse,
   parseStudySessionSubmissionResponse,
 } = studySessionFeedback;
 const { getStudySessionNotice, STUDY_SESSION_NOTICE_TYPES } = studySessionNotice;
@@ -238,7 +239,13 @@ const StudySession = ({ env, onAuthExpired }) => {
         return;
       }
 
-      const submissionResponse = parseStudySessionSubmissionResponse(responseText);
+      const parsedSubmissionResponse = parseStudySessionSubmissionResponse(responseText);
+      const submissionResponse = getValidatedStudySessionSubmissionResponse(parsedSubmissionResponse);
+
+      if (!submissionResponse) {
+        throw new Error('Invalid study session submission response');
+      }
+
       setSubmissionFeedback(getStudySessionSubmissionFeedback({
         quality,
         response: submissionResponse,

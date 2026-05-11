@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const {
   getStudySessionQualityLabel,
   getStudySessionSubmissionFeedback,
+  getValidatedStudySessionSubmissionResponse,
   parseStudySessionSubmissionResponse,
 } = require('../studySessionFeedback');
 
@@ -70,4 +71,44 @@ test('parseStudySessionSubmissionResponse returns parsed objects and ignores uns
   assert.equal(parseStudySessionSubmissionResponse(''), null);
   assert.equal(parseStudySessionSubmissionResponse('not json'), null);
   assert.equal(parseStudySessionSubmissionResponse('[{"success":true}]'), null);
+});
+
+test('getValidatedStudySessionSubmissionResponse preserves valid submission payloads', () => {
+  const response = {
+    success: true,
+    card: {
+      id: 7,
+      next_review: '2026-05-09T14:30:00.000Z',
+      interval: 3,
+    },
+    message: 'Answer submitted',
+  };
+
+  assert.equal(getValidatedStudySessionSubmissionResponse(response), response);
+});
+
+test('getValidatedStudySessionSubmissionResponse rejects malformed submission payloads', () => {
+  const validCard = {
+    id: 1,
+    next_review: '2026-05-09T14:30:00.000Z',
+  };
+
+  [
+    null,
+    [],
+    'response',
+    { success: true },
+    { success: true, card: null },
+    { success: true, card: [] },
+    { success: true, card: { ...validCard, id: 0 } },
+    { success: true, card: { ...validCard, id: -1 } },
+    { success: true, card: { ...validCard, id: 1.5 } },
+    { success: true, card: { ...validCard, id: Number.MAX_SAFE_INTEGER + 1 } },
+    { success: true, card: { ...validCard, id: '1' } },
+    { success: true, card: { ...validCard, next_review: '' } },
+    { success: true, card: { ...validCard, next_review: 'not-a-date' } },
+    { success: true, card: { ...validCard, next_review: new Date('2026-05-09T14:30:00.000Z') } },
+  ].forEach((response) => {
+    assert.equal(getValidatedStudySessionSubmissionResponse(response), null);
+  });
 });

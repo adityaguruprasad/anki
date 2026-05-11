@@ -117,8 +117,13 @@ test('handleAnswer preserves current submit success behavior behind stale guards
   );
   const parseIndex = requiredIndex(
     body,
-    'const submissionResponse = parseStudySessionSubmissionResponse(responseText);',
+    'const parsedSubmissionResponse = parseStudySessionSubmissionResponse(responseText);',
     'Expected successful answer submission to parse response text through the helper',
+  );
+  const validationIndex = requiredIndex(
+    body,
+    'const submissionResponse = getValidatedStudySessionSubmissionResponse(parsedSubmissionResponse);',
+    'Expected successful answer submission to validate parsed success data',
   );
   const feedbackIndex = requiredIndex(
     body,
@@ -138,8 +143,58 @@ test('handleAnswer preserves current submit success behavior behind stale guards
     'Expected route changes during response text parsing to stay guarded',
   );
   assert.ok(staleGuardAfterTextIndex < parseIndex, 'Expected stale guard before parsing success data');
-  assert.ok(parseIndex < feedbackIndex, 'Expected parsed success data before feedback');
+  assert.ok(parseIndex < validationIndex, 'Expected parsed success data before validation');
+  assert.ok(validationIndex < feedbackIndex, 'Expected validated success data before feedback');
   assert.ok(feedbackIndex < nextCardIndex, 'Expected feedback before next-card fetch');
+});
+
+test('handleAnswer rejects malformed successful submit responses before fetching next card', () => {
+  const body = extractConstFunctionBody('handleAnswer');
+  const responseTextIndex = requiredIndex(
+    body,
+    "let responseText = '';",
+    'Expected successful answer submission to parse response text',
+  );
+  const staleGuardAfterTextIndex = requiredIndex(
+    body,
+    'if (isStaleSubmitRequest()) {',
+    'Expected stale submit guard before applying parsed success state',
+    responseTextIndex,
+  );
+  const validationIndex = requiredIndex(
+    body,
+    'const submissionResponse = getValidatedStudySessionSubmissionResponse(parsedSubmissionResponse);',
+    'Expected successful submit responses to be validated',
+  );
+  const rejectionIndex = requiredIndex(
+    body,
+    'if (!submissionResponse) {',
+    'Expected malformed successful submit responses to be rejected',
+    validationIndex,
+  );
+  const feedbackIndex = requiredIndex(
+    body,
+    'setSubmissionFeedback(getStudySessionSubmissionFeedback({',
+    'Expected submission feedback to be stored only after validation',
+  );
+  const nextCardIndex = requiredIndex(
+    body,
+    'await fetchNextCard(requestDeckId, requestSearch);',
+    'Expected next card fetch to stay behind validation',
+  );
+
+  assert.ok(
+    staleGuardAfterTextIndex < validationIndex,
+    'Expected the post-body stale guard before successful response validation',
+  );
+  assert.ok(validationIndex < rejectionIndex, 'Expected validation before the malformed response branch');
+  assert.match(
+    body.slice(rejectionIndex, feedbackIndex),
+    /throw new Error\('Invalid study session submission response'\);/,
+    'Expected malformed successful responses to throw into the retryable submit path',
+  );
+  assert.ok(rejectionIndex < feedbackIndex, 'Expected malformed responses rejected before feedback');
+  assert.ok(rejectionIndex < nextCardIndex, 'Expected malformed responses rejected before fetchNextCard');
 });
 
 test('handleAnswer keeps retryable submit errors only on non-stale failures', () => {

@@ -4,6 +4,10 @@ const QUALITY_LABELS = Object.freeze({
   5: 'Easy',
 });
 
+function isObjectRecord(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
 function parseStudySessionSubmissionResponse(responseText) {
   if (typeof responseText !== 'string' || responseText.trim() === '') {
     return null;
@@ -11,7 +15,7 @@ function parseStudySessionSubmissionResponse(responseText) {
 
   try {
     const parsed = JSON.parse(responseText);
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+    return isObjectRecord(parsed) ? parsed : null;
   } catch {
     return null;
   }
@@ -37,6 +41,28 @@ function getValidNextReviewDate(nextReview) {
   }
 
   return nextReviewDate;
+}
+
+function getValidatedStudySessionSubmissionResponse(response) {
+  if (!isObjectRecord(response)) {
+    return null;
+  }
+
+  const { card } = response;
+
+  if (!isObjectRecord(card)) {
+    return null;
+  }
+
+  if (!Number.isSafeInteger(card.id) || card.id <= 0) {
+    return null;
+  }
+
+  if (!getValidNextReviewDate(card.next_review)) {
+    return null;
+  }
+
+  return response;
 }
 
 function formatNextReviewDate(nextReviewDate) {
@@ -69,5 +95,6 @@ function getStudySessionSubmissionFeedback(options = {}) {
 module.exports = {
   getStudySessionQualityLabel,
   getStudySessionSubmissionFeedback,
+  getValidatedStudySessionSubmissionResponse,
   parseStudySessionSubmissionResponse,
 };
