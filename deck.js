@@ -752,6 +752,9 @@ const DeckManagement = ({ env, onAuthExpired }) => {
       const response = await fetch(apiRequests.browseDeckCardsUrl(deckId, searchParams), {
         headers: buildAuthHeaders(localStorage)
       });
+      if (!isCurrentDeckCardBrowserResponse()) {
+        return;
+      }
       if (handleAuthExpiredResponse(response, onAuthExpired)) {
         return;
       }

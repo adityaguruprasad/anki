@@ -162,6 +162,60 @@ test('fetchDecks ignores stale deck-list responses before auth-expiration side e
   );
 });
 
+test('fetchDeckCards ignores stale card-browser responses before auth-expiration side effects', () => {
+  const body = extractConstFunctionBody('fetchDeckCards');
+  const currentResponseFunctionIndex = body.indexOf('const isCurrentDeckCardBrowserResponse = () => (');
+  const appendCurrentIndex = body.indexOf('canApplyDeckCardBrowserAppendResponse(', currentResponseFunctionIndex);
+  const replaceCurrentIndex = body.indexOf('isLatestDeckCardBrowserReplaceRequest(', currentResponseFunctionIndex);
+  const fetchIndex = body.indexOf('const response = await fetch(apiRequests.browseDeckCardsUrl(deckId, searchParams), {');
+  const currentGuardIndex = body.indexOf('if (!isCurrentDeckCardBrowserResponse()) {', fetchIndex);
+  const authExpiredIndex = body.indexOf('if (handleAuthExpiredResponse(response, onAuthExpired))', fetchIndex);
+  const jsonIndex = body.indexOf('const data = await response.json().catch(() => ({}));', fetchIndex);
+  const nonOkIndex = body.indexOf('if (!response.ok) {', fetchIndex);
+
+  assert.notEqual(
+    currentResponseFunctionIndex,
+    -1,
+    'Expected fetchDeckCards to keep a current-response guard',
+  );
+  assert.notEqual(
+    appendCurrentIndex,
+    -1,
+    'Expected append/load-more responses to use the current append request guard',
+  );
+  assert.notEqual(
+    replaceCurrentIndex,
+    -1,
+    'Expected replace/search responses to use the latest replace request guard',
+  );
+  assert.notEqual(fetchIndex, -1, 'Expected fetchDeckCards to keep the browse-card fetch');
+  assert.notEqual(currentGuardIndex, -1, 'Expected fetchDeckCards to guard after fetch resolution');
+  assert.notEqual(authExpiredIndex, -1, 'Expected fetchDeckCards to keep auth-expiration handling');
+  assert.notEqual(jsonIndex, -1, 'Expected fetchDeckCards to parse response JSON');
+  assert.notEqual(nonOkIndex, -1, 'Expected fetchDeckCards to keep non-2xx handling');
+  assert.ok(
+    appendCurrentIndex < replaceCurrentIndex,
+    'Expected append responses to be guarded by the append branch',
+  );
+  assert.ok(fetchIndex < currentGuardIndex, 'Expected current guard after fetch resolution');
+  assert.ok(
+    currentGuardIndex < authExpiredIndex,
+    'Expected stale responses to return before auth-expiration handling',
+  );
+  assert.ok(currentGuardIndex < jsonIndex, 'Expected stale responses to return before JSON parsing');
+  assert.ok(currentGuardIndex < nonOkIndex, 'Expected stale responses to return before generic failures');
+  assert.match(
+    body.slice(currentGuardIndex, authExpiredIndex),
+    /return;/,
+    'Expected stale deck-card browser responses to avoid response side effects',
+  );
+  assert.match(
+    body.slice(authExpiredIndex, jsonIndex),
+    /return;/,
+    'Expected current auth-expired responses to keep the logout side effect path',
+  );
+});
+
 test('fetchDeckCards validates successful browse payloads before storing them', () => {
   const body = extractConstFunctionBody('fetchDeckCards');
   const authExpiredIndex = body.indexOf('if (handleAuthExpiredResponse(response, onAuthExpired))');
