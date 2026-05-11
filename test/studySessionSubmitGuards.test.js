@@ -136,6 +136,7 @@ test('handleAnswer preserves current submit success behavior behind lifecycle gu
     body,
     'await fetchNextCard(requestDeckId, requestSearch);',
     'Expected successful answer submission to fetch the next card',
+    feedbackIndex,
   );
 
   assert.ok(authExpiredIndex < responseOkIndex, 'Expected auth handling before generic failures');
@@ -183,6 +184,7 @@ test('handleAnswer rejects malformed successful submit responses before fetching
     body,
     'await fetchNextCard(requestDeckId, requestSearch);',
     'Expected next card fetch to stay behind validation',
+    feedbackIndex,
   );
 
   assert.ok(
@@ -197,6 +199,87 @@ test('handleAnswer rejects malformed successful submit responses before fetching
   );
   assert.ok(rejectionIndex < feedbackIndex, 'Expected malformed responses rejected before feedback');
   assert.ok(rejectionIndex < nextCardIndex, 'Expected malformed responses rejected before fetchNextCard');
+});
+
+test('handleAnswer recovers stale-card submit conflicts without the generic retry error', () => {
+  const body = extractConstFunctionBody('handleAnswer');
+  const authExpiredIndex = requiredIndex(
+    body,
+    'if (handleAuthExpiredResponse(response, onAuthExpired))',
+    'Expected answer submission to keep auth-expiration handling',
+  );
+  const recoveryIndex = requiredIndex(
+    body,
+    'const submissionRecovery = getStudySessionSubmissionRecovery(response);',
+    'Expected answer submission to classify stale-card conflict responses',
+    authExpiredIndex,
+  );
+  const recoveryBranchIndex = requiredIndex(
+    body,
+    'if (submissionRecovery?.action === STUDY_SESSION_SUBMISSION_RECOVERY_ACTIONS.LOAD_NEXT_DUE_CARD) {',
+    'Expected stale-card conflicts to use explicit next-card recovery semantics',
+    recoveryIndex,
+  );
+  const clearCardIndex = requiredIndex(
+    body,
+    'setCurrentCard(null);',
+    'Expected stale-card conflicts to clear the stale current card',
+    recoveryBranchIndex,
+  );
+  const hideAnswerIndex = requiredIndex(
+    body,
+    'setShowAnswer(false);',
+    'Expected stale-card conflicts to reset answer visibility',
+    recoveryBranchIndex,
+  );
+  const feedbackIndex = requiredIndex(
+    body,
+    'setSubmissionFeedback({ message: submissionRecovery.message });',
+    'Expected stale-card conflicts to show deterministic recovery copy',
+    recoveryBranchIndex,
+  );
+  const nextCardIndex = requiredIndex(
+    body,
+    'await fetchNextCard(requestDeckId, requestSearch);',
+    'Expected stale-card conflicts to request the next due card for the same study target',
+    recoveryBranchIndex,
+  );
+  const branchReturnIndex = requiredIndex(
+    body,
+    'return;',
+    'Expected stale-card conflict recovery to exit before generic non-OK handling',
+    nextCardIndex,
+  );
+  const responseOkIndex = requiredIndex(
+    body,
+    'if (!response.ok) {',
+    'Expected answer submission to keep non-OK handling',
+  );
+  const retryErrorIndex = requiredIndex(
+    body,
+    "setSubmitError('Unable to submit your answer. Please try again.');",
+    'Expected other submit failures to keep retryable inline error copy',
+  );
+
+  assert.ok(authExpiredIndex < recoveryIndex, 'Expected auth handling before conflict recovery');
+  assert.ok(recoveryIndex < recoveryBranchIndex, 'Expected conflict classification before recovery branching');
+  assert.ok(
+    recoveryBranchIndex < responseOkIndex,
+    'Expected stale-card conflict recovery before generic non-OK handling',
+  );
+  assert.ok(clearCardIndex < nextCardIndex, 'Expected stale card clearing before next-card fetch');
+  assert.ok(hideAnswerIndex < nextCardIndex, 'Expected answer reset before next-card fetch');
+  assert.ok(feedbackIndex < nextCardIndex, 'Expected recovery feedback before next-card fetch');
+  assert.ok(
+    nextCardIndex < branchReturnIndex && branchReturnIndex < responseOkIndex,
+    'Expected stale-card conflict recovery to return before generic non-OK handling',
+  );
+  assert.doesNotMatch(
+    body.slice(recoveryBranchIndex, branchReturnIndex),
+    /setSubmitError\('Unable to submit your answer\. Please try again\.'\)/,
+    'Expected stale-card conflict recovery not to show the generic retry error',
+  );
+  assert.ok(responseOkIndex < retryErrorIndex, 'Expected retryable submit errors to remain outside recovery');
 });
 
 test('handleAnswer keeps retryable submit errors only on non-stale failures', () => {

@@ -4,6 +4,12 @@ const QUALITY_LABELS = Object.freeze({
   5: 'Easy',
 });
 
+const STUDY_SESSION_SUBMISSION_RECOVERY_ACTIONS = Object.freeze({
+  LOAD_NEXT_DUE_CARD: 'load-next-due-card',
+});
+
+const STALE_CARD_CONFLICT_MESSAGE = 'This card was already rescheduled and is no longer due. Moving to the next due card.';
+
 function isObjectRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
@@ -92,9 +98,22 @@ function getStudySessionSubmissionFeedback(options = {}) {
   };
 }
 
+function getStudySessionSubmissionRecovery(response) {
+  if (!response || response.status !== 409) {
+    return null;
+  }
+
+  return {
+    action: STUDY_SESSION_SUBMISSION_RECOVERY_ACTIONS.LOAD_NEXT_DUE_CARD,
+    message: STALE_CARD_CONFLICT_MESSAGE,
+  };
+}
+
 module.exports = {
+  STUDY_SESSION_SUBMISSION_RECOVERY_ACTIONS,
   getStudySessionQualityLabel,
   getStudySessionSubmissionFeedback,
+  getStudySessionSubmissionRecovery,
   getValidatedStudySessionSubmissionResponse,
   parseStudySessionSubmissionResponse,
 };

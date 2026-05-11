@@ -18,7 +18,9 @@ const {
   STUDY_SESSION_SHORTCUT_ACTIONS,
 } = studySessionShortcuts;
 const {
+  STUDY_SESSION_SUBMISSION_RECOVERY_ACTIONS,
   getStudySessionSubmissionFeedback,
+  getStudySessionSubmissionRecovery,
   getValidatedStudySessionSubmissionResponse,
   parseStudySessionSubmissionResponse,
 } = studySessionFeedback;
@@ -259,6 +261,15 @@ const StudySession = ({ env, onAuthExpired }) => {
         return;
       }
 
+      const submissionRecovery = getStudySessionSubmissionRecovery(response);
+      if (submissionRecovery?.action === STUDY_SESSION_SUBMISSION_RECOVERY_ACTIONS.LOAD_NEXT_DUE_CARD) {
+        setCurrentCard(null);
+        setShowAnswer(false);
+        setSubmissionFeedback({ message: submissionRecovery.message });
+        await fetchNextCard(requestDeckId, requestSearch);
+        return;
+      }
+
       if (!response.ok) {
         throw new Error('Unable to submit answer');
       }
@@ -370,7 +381,12 @@ const StudySession = ({ env, onAuthExpired }) => {
   }
 
   if (!currentCard && isLoading) {
-    return <div>Loading study session...</div>;
+    return (
+      <div className="max-w-md mx-auto mt-10">
+        {submissionFeedbackStatus}
+        <div>Loading study session...</div>
+      </div>
+    );
   }
 
   if (!currentCard) {

@@ -2,8 +2,10 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  STUDY_SESSION_SUBMISSION_RECOVERY_ACTIONS,
   getStudySessionQualityLabel,
   getStudySessionSubmissionFeedback,
+  getStudySessionSubmissionRecovery,
   getValidatedStudySessionSubmissionResponse,
   parseStudySessionSubmissionResponse,
 } = require('../studySessionFeedback');
@@ -55,6 +57,27 @@ test('getStudySessionSubmissionFeedback falls back for unrecognized quality and 
 
   assert.deepEqual(feedback, {
     message: 'Answer submitted. Review schedule updated.',
+  });
+});
+
+test('getStudySessionSubmissionRecovery maps stale-card conflicts to next-card recovery', () => {
+  assert.deepEqual(getStudySessionSubmissionRecovery({ status: 409 }), {
+    action: STUDY_SESSION_SUBMISSION_RECOVERY_ACTIONS.LOAD_NEXT_DUE_CARD,
+    message: 'This card was already rescheduled and is no longer due. Moving to the next due card.',
+  });
+});
+
+test('getStudySessionSubmissionRecovery ignores non-conflict submission responses', () => {
+  [
+    null,
+    undefined,
+    {},
+    { status: 200 },
+    { status: 400 },
+    { status: 500 },
+    { status: '409' },
+  ].forEach((response) => {
+    assert.equal(getStudySessionSubmissionRecovery(response), null);
   });
 });
 
