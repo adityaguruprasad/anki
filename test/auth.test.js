@@ -8,6 +8,7 @@ const {
   DEFAULT_JWT_EXPIRES_IN_SECONDS,
   DEFAULT_DEV_JWT_SECRET,
   createAuthHandlers,
+  extractBearerToken,
   resolveJwtExpiresInSeconds,
   resolveJwtSecret,
   signToken,
@@ -351,6 +352,30 @@ test('verifyToken rejects tokens without exp and non-HS256 algorithms', () => {
   );
 });
 
+test('extractBearerToken accepts only a single bearer credential', () => {
+  assert.equal(extractBearerToken('Bearer token-123'), 'token-123');
+  assert.equal(extractBearerToken('  bearer   token-123  '), 'token-123');
+  assert.equal(extractBearerToken('BEARER abc.def.ghi'), 'abc.def.ghi');
+
+  const malformedHeaders = [
+    undefined,
+    null,
+    '',
+    '   ',
+    'token-123',
+    'Basic token-123',
+    'Bearer',
+    'Bearer   ',
+    'Bearer token-123 extra',
+    ['Bearer token-123'],
+    42,
+  ];
+
+  for (const header of malformedHeaders) {
+    assert.equal(extractBearerToken(header), null);
+  }
+});
+
 test('authenticateToken accepts tokens signed with configured and default secrets', () => {
   const passwordHasher = createPasswordHasher();
   const configured = createAuthHandlers(createDb([]), {
@@ -384,6 +409,35 @@ test('authenticateToken accepts tokens signed with configured and default secret
 
   assert.equal(defaultNextCalled, true);
   assert.equal(defaultReq.user.userId, 'default-user');
+});
+
+test('authenticateToken rejects malformed authorization headers before token verification', () => {
+  const signedToken = signToken({ userId: 'scheme-user' }, 'auth-scheme-secret');
+  const { authenticateToken } = createAuthHandlers(createDb([]), {
+    jwtSecret: 'auth-scheme-secret',
+    passwordHasher: createPasswordHasher(),
+  });
+
+  const malformedHeaders = [
+    `Basic ${signedToken}`,
+    signedToken,
+    `Bearer ${signedToken} extra`,
+    ['Bearer', signedToken],
+  ];
+
+  for (const authorization of malformedHeaders) {
+    const req = { headers: { authorization } };
+    const res = createRes();
+    let nextCalled = false;
+
+    authenticateToken(req, res, () => {
+      nextCalled = true;
+    });
+
+    assert.equal(res.statusCode, 401);
+    assert.equal(nextCalled, false);
+    assert.equal(req.user, undefined);
+  }
 });
 
 test('resolveJwtSecret prefers JWT_SECRET and keeps deterministic test default', () => {

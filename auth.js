@@ -98,6 +98,15 @@ function verifyToken(token, secret = resolveJwtSecret(), options = {}) {
   return payload;
 }
 
+function extractBearerToken(authHeader) {
+  if (typeof authHeader !== 'string') {
+    return null;
+  }
+
+  const match = authHeader.match(/^\s*Bearer\s+(\S+)\s*$/i);
+  return match ? match[1] : null;
+}
+
 function getDefaultPasswordHasher() {
   try {
     return require('bcrypt');
@@ -206,8 +215,7 @@ function createAuthHandlers(db, options = {}) {
   };
 
   const authenticateToken = (req, res, next) => {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
+    const token = extractBearerToken(req.headers?.authorization);
     if (token == null) return res.sendStatus(401);
 
     try {
@@ -228,6 +236,7 @@ module.exports = {
   DEFAULT_JWT_EXPIRES_IN_SECONDS,
   DEFAULT_DEV_JWT_SECRET,
   createAuthHandlers,
+  extractBearerToken,
   resolveJwtExpiresInSeconds,
   resolveJwtSecret,
   signToken,
