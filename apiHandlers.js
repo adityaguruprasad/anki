@@ -44,6 +44,10 @@ function toNullableAggregateNumber(value) {
   return Number.isFinite(number) ? number : null;
 }
 
+function getDueCardPredicate(tableAlias = 'c') {
+  return `(${tableAlias}.next_review IS NULL OR ${tableAlias}.next_review <= NOW())`;
+}
+
 function validateCardContent(value, fieldName) {
   if (typeof value !== 'string') {
     return { ok: false, error: `Invalid ${fieldName}: must be a non-empty string` };
@@ -296,7 +300,7 @@ async function getDueCardsByDeck(req, res, db) {
        FROM decks d
        LEFT JOIN cards c
          ON c.deck_id = d.id
-        AND c.next_review <= NOW()
+        AND ${getDueCardPredicate('c')}
        WHERE d.id = $1 AND d.user_id = $2
        ORDER BY c.next_review ASC, c.id ASC${limitClause}`,
       params
@@ -557,7 +561,9 @@ async function submitStudySession(req, res, db, calculateNextReview) {
       `SELECT c.*
        FROM cards c
        JOIN decks d ON d.id = c.deck_id
-       WHERE c.id = $1 AND d.user_id = $2`,
+       WHERE c.id = $1
+         AND d.user_id = $2
+         AND ${getDueCardPredicate('c')}`,
       [validCardId, req.user.userId]
     );
     if (cardResult.rowCount === 0) {
@@ -581,6 +587,7 @@ async function submitStudySession(req, res, db, calculateNextReview) {
            WHERE d.id = cards.deck_id
              AND d.user_id = $5
          )
+         AND ${getDueCardPredicate('cards')}
        RETURNING id,
                  next_review,
                  interval,
@@ -696,7 +703,7 @@ async function getDecks(req, res, db) {
       `SELECT
          d.*,
          COUNT(c.id) AS "totalCards",
-         COUNT(c.id) FILTER (WHERE c.next_review <= NOW()) AS "dueCards"
+         COUNT(c.id) FILTER (WHERE ${getDueCardPredicate('c')}) AS "dueCards"
        FROM decks d
        LEFT JOIN cards c ON c.deck_id = d.id
        WHERE d.user_id = $1

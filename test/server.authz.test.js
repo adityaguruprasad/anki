@@ -66,6 +66,13 @@ function createConnectedDb(poolResults, clientResults) {
   return db;
 }
 
+function assertDuePredicate(sql, tableAlias = 'c') {
+  assert.match(
+    sql,
+    new RegExp(`\\b${tableAlias}\\.next_review IS NULL\\s+OR\\s+${tableAlias}\\.next_review <= NOW\\(\\)`, 'i'),
+  );
+}
+
 test('POST /api/decks returns 400 for invalid deck name and skips db query', async () => {
   const invalidCases = [
     [undefined, 'Invalid deck name: must be a string'],
@@ -279,7 +286,9 @@ test('GET /api/decks returns decks with one user-scoped aggregate query', async 
   assert.match(db.calls[0].sql, /GROUP BY d\.id/);
   assert.match(db.calls[0].sql, /ORDER BY d\.created_at DESC,\s*d\.id DESC/);
   assert.match(db.calls[0].sql, /COUNT\(c\.id\) AS "totalCards"/);
-  assert.match(db.calls[0].sql, /COUNT\(c\.id\) FILTER \(WHERE c\.next_review <= NOW\(\)\) AS "dueCards"/);
+  assert.match(db.calls[0].sql, /COUNT\(c\.id\) FILTER \(WHERE/i);
+  assertDuePredicate(db.calls[0].sql);
+  assert.match(db.calls[0].sql, /AS "dueCards"/);
 });
 
 test('GET /api/decks preserves empty decks with zero counts', async () => {
@@ -1313,11 +1322,12 @@ test('GET /api/cards/:deckId returns 404 when deck is not owned by user', async 
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, [42, 'user-1']);
   assert.match(db.calls[0].sql, /WHERE d\.id = \$1 AND d\.user_id = \$2/);
+  assertDuePredicate(db.calls[0].sql);
 });
 
-test('GET /api/cards/:deckId returns all due cards for owned deck when limit is omitted', async () => {
+test('GET /api/cards/:deckId returns due and unscheduled cards for owned deck when limit is omitted', async () => {
   const dueCards = [
-    { id: 1, next_review: '2026-05-07T12:00:00.000Z' },
+    { id: 1, next_review: null },
     { id: 2, next_review: '2026-05-08T12:00:00.000Z' },
   ];
   const db = createDb([
@@ -1337,6 +1347,7 @@ test('GET /api/cards/:deckId returns all due cards for owned deck when limit is 
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, [42, 'user-1']);
   assert.match(db.calls[0].sql, /LEFT JOIN cards c/);
+  assertDuePredicate(db.calls[0].sql);
   assert.match(db.calls[0].sql, /WHERE d\.id = \$1 AND d\.user_id = \$2/);
   assert.match(db.calls[0].sql, /ORDER BY c\.next_review ASC,\s*c\.id ASC/);
   assert.doesNotMatch(db.calls[0].sql, /\bLIMIT\b/);
@@ -1363,6 +1374,7 @@ test('GET /api/cards/:deckId accepts boundary limit with a parameterized limit',
   assert.deepEqual(res.body, [dueCard]);
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, [42, 'user-1', 100]);
+  assertDuePredicate(db.calls[0].sql);
   assert.match(db.calls[0].sql, /ORDER BY c\.next_review ASC,\s*c\.id ASC\s+LIMIT \$3/);
   assert.doesNotMatch(db.calls[0].sql, /LIMIT\s+100/);
 });
@@ -2050,6 +2062,69 @@ test('POST /api/study-session returns 404 when card is not in user decks', async
   assert.equal(res.statusCode, 404);
   assert.deepEqual(res.body, { error: 'Card not found' });
   assert.equal(db.calls.length, 1);
+  assertDuePredicate(db.calls[0].sql);
+});
+
+test('POST /api/study-session returns 404 and skips scheduling when the due-gated lookup finds no card', async () => {
+  let schedulerCalled = false;
+  const db = createDb([{ rowCount: 0, rows: [] }]);
+  const req = { body: { cardId: 7, quality: 4 }, user: { userId: 'user-1' } };
+  const res = createRes();
+
+  await submitStudySession(req, res, db, () => {
+    schedulerCalled = true;
+    return {};
+  });
+
+  assert.equal(res.statusCode, 404);
+  assert.deepEqual(res.body, { error: 'Card not found' });
+  assert.equal(schedulerCalled, false);
+  assert.equal(db.calls.length, 1);
+  assertDuePredicate(db.calls[0].sql);
+});
+
+test('POST /api/study-session treats unscheduled owned cards as due for review', async () => {
+  const nextReview = '2026-05-08T12:00:00.000Z';
+  const sourceCard = {
+    id: 7,
+    deck_id: 1,
+    next_review: null,
+    ease_factor: 2.5,
+    interval: 2,
+    review_count: 2,
+  };
+  const updatedCard = {
+    id: 7,
+    next_review: nextReview,
+    interval: 3,
+    ease_factor: 2.6,
+    review_count: 3,
+    last_reviewed: '2026-05-08T12:05:00.000Z',
+  };
+  const db = createDb([
+    { rowCount: 1, rows: [sourceCard] },
+    { rowCount: 1, rows: [updatedCard] },
+  ]);
+  const req = { body: { cardId: 7, quality: 4 }, user: { userId: 'user-1' } };
+  const res = createRes();
+  let scheduledCard = null;
+
+  await submitStudySession(req, res, db, (card, quality) => {
+    scheduledCard = card;
+    assert.equal(quality, 4);
+    return {
+      ease_factor: 2.6,
+      interval: 3,
+      next_review: nextReview,
+    };
+  });
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, { success: true, card: updatedCard });
+  assert.equal(scheduledCard, sourceCard);
+  assert.equal(db.calls.length, 2);
+  assertDuePredicate(db.calls[0].sql);
+  assertDuePredicate(db.calls[1].sql, 'cards');
 });
 
 test('POST /api/study-session returns updated scheduling metadata for successful review', async () => {
@@ -2063,7 +2138,17 @@ test('POST /api/study-session returns updated scheduling metadata for successful
     last_reviewed: '2026-05-08T12:05:00.000Z',
   };
   const db = createDb([
-    { rowCount: 1, rows: [{ id: 7, deck_id: 1, ease_factor: 2.5, interval: 2, review_count: 2 }] },
+    {
+      rowCount: 1,
+      rows: [{
+        id: 7,
+        deck_id: 1,
+        next_review: '2026-05-08T12:00:00.000Z',
+        ease_factor: 2.5,
+        interval: 2,
+        review_count: 2,
+      }],
+    },
     { rowCount: 1, rows: [updatedCard] },
   ]);
   const req = { body: { cardId: 7, quality: 4 }, user: { userId: 'user-1' } };
@@ -2078,11 +2163,13 @@ test('POST /api/study-session returns updated scheduling metadata for successful
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, { success: true, card: updatedCard });
   assert.equal(db.calls.length, 2);
+  assertDuePredicate(db.calls[0].sql);
   assert.match(db.calls[1].sql, /UPDATE\s+cards/i);
   assert.match(db.calls[1].sql, /WHERE\s+id\s+=\s+\$4/i);
   assert.match(db.calls[1].sql, /EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+decks\s+d/i);
   assert.match(db.calls[1].sql, /d\.id\s+=\s+cards\.deck_id/i);
   assert.match(db.calls[1].sql, /d\.user_id\s+=\s+\$5/i);
+  assertDuePredicate(db.calls[1].sql, 'cards');
   const returningClause = db.calls[1].sql.match(/\bRETURNING\b([\s\S]*)/i)?.[1];
   assert.ok(returningClause, 'expected UPDATE to include a RETURNING clause');
   for (const column of ['id', 'next_review', 'interval', 'ease_factor', 'review_count', 'last_reviewed']) {
@@ -2093,7 +2180,17 @@ test('POST /api/study-session returns updated scheduling metadata for successful
 
 test('POST /api/study-session returns 404 when final user-scoped update finds no card', async () => {
   const db = createDb([
-    { rowCount: 1, rows: [{ id: 7, deck_id: 1, ease_factor: 2.5, interval: 2, review_count: 2 }] },
+    {
+      rowCount: 1,
+      rows: [{
+        id: 7,
+        deck_id: 1,
+        next_review: '2026-05-08T12:00:00.000Z',
+        ease_factor: 2.5,
+        interval: 2,
+        review_count: 2,
+      }],
+    },
     { rowCount: 0, rows: [] },
   ]);
   const req = { body: { cardId: 7, quality: 4 }, user: { userId: 'user-1' } };
@@ -2109,5 +2206,6 @@ test('POST /api/study-session returns 404 when final user-scoped update finds no
   assert.deepEqual(res.body, { error: 'Card not found' });
   assert.equal(db.calls.length, 2);
   assert.match(db.calls[1].sql, /d\.user_id\s+=\s+\$5/i);
+  assertDuePredicate(db.calls[1].sql, 'cards');
   assert.deepEqual(db.calls[1].params, ['2026-05-08T12:00:00.000Z', 3, 2.6, 7, 'user-1']);
 });
