@@ -1696,14 +1696,20 @@ test('PATCH /api/cards/:cardId returns 404 for missing or unowned card with one 
 });
 
 test('DELETE /api/cards/:cardId deletes an owned card with one user-scoped query', async () => {
-  const db = createDb([{ rowCount: 1, rows: [] }]);
+  const deletedCard = {
+    id: 77,
+    front_content: 'Front',
+    back_content: 'Back',
+    next_review: '2026-05-08T12:00:00.000Z',
+  };
+  const db = createDb([{ rowCount: 1, rows: [deletedCard] }]);
   const req = { params: { cardId: '77' }, user: { userId: 'user-1' } };
   const res = createRes();
 
   await deleteCard(req, res, db);
 
   assert.equal(res.statusCode, 200);
-  assert.deepEqual(res.body, { success: true });
+  assert.deepEqual(res.body, { success: true, card: deletedCard });
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, [77, 'user-1']);
   assert.match(db.calls[0].sql, /DELETE\s+FROM\s+cards/i);
@@ -1711,6 +1717,11 @@ test('DELETE /api/cards/:cardId deletes an owned card with one user-scoped query
   assert.match(db.calls[0].sql, /EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+decks\s+d/i);
   assert.match(db.calls[0].sql, /d\.id\s+=\s+cards\.deck_id/i);
   assert.match(db.calls[0].sql, /d\.user_id\s+=\s+\$2/i);
+  assert.match(
+    db.calls[0].sql,
+    /RETURNING\s+id,\s+front_content,\s+back_content,\s+next_review/i
+  );
+  assert.doesNotMatch(db.calls[0].sql, /RETURNING\s+\*/i);
   assert.doesNotMatch(db.calls[0].sql, /SELECT[\s\S]+FROM\s+cards/i);
 });
 

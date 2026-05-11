@@ -1,3 +1,5 @@
+const { hasDeckCardMutationPayload } = require('./deckCardMutationResponse');
+
 const MALFORMED_DECK_CARD_REMOVAL_PAYLOAD_ERROR = 'Malformed deck-card removal payload';
 
 function isObjectRecord(value) {
@@ -5,7 +7,11 @@ function isObjectRecord(value) {
 }
 
 function hasDeckCardRemovalSuccessPayload(payload) {
-  return isObjectRecord(payload) && payload.success === true;
+  return (
+    isObjectRecord(payload)
+    && payload.success === true
+    && hasDeckCardMutationPayload(payload.card)
+  );
 }
 
 function parseDeckCardRemovalSuccessPayload(payload) {

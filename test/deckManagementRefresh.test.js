@@ -494,9 +494,9 @@ test('deleteCard validates successful removal payloads before updating visible s
   const authExpiredIndex = body.indexOf('if (handleAuthExpiredResponse(response, onAuthExpired))');
   const jsonIndex = body.indexOf('const data = await response.json().catch(() => ({}));');
   const responseOkIndex = body.indexOf('if (!response.ok) {');
-  const validationIndex = body.indexOf('parseDeckCardRemovalSuccessPayload(data);');
+  const validationIndex = body.indexOf('removalResult = parseDeckCardRemovalSuccessPayload(data);');
   const removeCardIndex = body.indexOf('removeLoadedCard(deckId, cardId);');
-  const decrementCountsIndex = body.indexOf('decrementDeckCardCounts(currentDecks, deckId, card)');
+  const decrementCountsIndex = body.indexOf('decrementDeckCardCounts(currentDecks, deckId, removalResult.card)');
   const clearEditFormIndex = body.indexOf('delete nextForms[cardId];');
   const clearActionIndex = body.indexOf('clearCardActionState(cardId);');
   const silentRefreshIndex = body.indexOf('void fetchDecks({ silent: true });');
@@ -515,9 +515,9 @@ test('deleteCard validates successful removal payloads before updating visible s
   assert.notEqual(authExpiredIndex, -1, 'Expected auth-expired handling to remain in deleteCard');
   assert.notEqual(jsonIndex, -1, 'Expected deleteCard to parse response JSON');
   assert.notEqual(responseOkIndex, -1, 'Expected deleteCard to keep non-2xx handling');
-  assert.notEqual(validationIndex, -1, 'Expected deleteCard to validate successful payloads');
+  assert.notEqual(validationIndex, -1, 'Expected deleteCard to validate and keep successful payloads');
   assert.notEqual(removeCardIndex, -1, 'Expected deleteCard to remove cards only after validation');
-  assert.notEqual(decrementCountsIndex, -1, 'Expected deleteCard to decrement counts only after validation');
+  assert.notEqual(decrementCountsIndex, -1, 'Expected deleteCard to decrement counts with the deleted card returned by the server');
   assert.notEqual(clearEditFormIndex, -1, 'Expected deleteCard to clear edit forms only after validation');
   assert.notEqual(clearActionIndex, -1, 'Expected deleteCard to clear action state only after validation');
   assert.notEqual(silentRefreshIndex, -1, 'Expected deleteCard to silently refresh only after validation');
@@ -568,7 +568,7 @@ test('successful mutations update visible deck state before background refresh',
   const expectations = {
     createDeck: /setDecks\(\(currentDecks\) => addCreatedDeck\(currentDecks, createdDeck, submission\.name\)\);[\s\S]*void fetchDecks\(\{\s*silent:\s*true\s*\}\);/,
     renameDeck: /setDecks\(\(currentDecks\) => mergeRenamedDeck\(currentDecks, deckId, renamedDeck, submission\.name\)\);[\s\S]*void fetchDecks\(\{\s*silent:\s*true\s*\}\);/,
-    deleteCard: /setDecks\(\(currentDecks\) => decrementDeckCardCounts\(currentDecks, deckId, card\)\);[\s\S]*void fetchDecks\(\{\s*silent:\s*true\s*\}\);/,
+    deleteCard: /setDecks\(\(currentDecks\) => decrementDeckCardCounts\(currentDecks, deckId, removalResult\.card\)\);[\s\S]*void fetchDecks\(\{\s*silent:\s*true\s*\}\);/,
     deleteDeck: /setDecks\(\(currentDecks\) => removeDeckFromList\(currentDecks, deckId\)\);[\s\S]*void fetchDecks\(\{\s*silent:\s*true\s*\}\);/,
   };
 

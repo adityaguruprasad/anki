@@ -18,6 +18,12 @@ function assertMalformed(payload) {
 test('parseDeckCardRemovalSuccessPayload preserves valid success payloads and extra fields', () => {
   const payload = {
     success: true,
+    card: {
+      id: 7,
+      front_content: 'Front',
+      back_content: 'Back',
+      next_review: '2026-05-10T12:00:00.000Z',
+    },
     requestId: 'remove-card-1',
   };
 
@@ -40,12 +46,30 @@ test('parseDeckCardRemovalSuccessPayload rejects malformed top-level payloads', 
 });
 
 test('parseDeckCardRemovalSuccessPayload rejects missing or non-true success values', () => {
+  const card = {
+    id: 7,
+    front_content: 'Front',
+    back_content: 'Back',
+  };
+
   [
     {},
-    { success: false },
-    { success: 'true' },
-    { success: 1 },
-    { success: null },
-    { success: [] },
+    { success: false, card },
+    { success: 'true', card },
+    { success: 1, card },
+    { success: null, card },
+    { success: [], card },
+  ].forEach(assertMalformed);
+});
+
+test('parseDeckCardRemovalSuccessPayload requires the authoritative deleted card payload', () => {
+  [
+    { success: true },
+    { success: true, card: null },
+    { success: true, card: [] },
+    { success: true, card: { id: 7, front_content: 'Front' } },
+    { success: true, card: { id: '', front_content: 'Front', back_content: 'Back' } },
+    { success: true, card: { id: 7, front_content: 42, back_content: 'Back' } },
+    { success: true, card: { id: 7, front_content: 'Front', back_content: null } },
   ].forEach(assertMalformed);
 });

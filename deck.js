@@ -1249,8 +1249,9 @@ const DeckManagement = ({ env, onAuthExpired }) => {
         return;
       }
 
+      let removalResult;
       try {
-        parseDeckCardRemovalSuccessPayload(data);
+        removalResult = parseDeckCardRemovalSuccessPayload(data);
       } catch {
         if (!isCurrentMutation()) {
           return;
@@ -1267,7 +1268,7 @@ const DeckManagement = ({ env, onAuthExpired }) => {
         return;
       }
       removeLoadedCard(deckId, cardId);
-      setDecks((currentDecks) => decrementDeckCardCounts(currentDecks, deckId, card));
+      setDecks((currentDecks) => decrementDeckCardCounts(currentDecks, deckId, removalResult.card));
       setCardEditForms((currentForms) => {
         const nextForms = { ...currentForms };
         delete nextForms[cardId];

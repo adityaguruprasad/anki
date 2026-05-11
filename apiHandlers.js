@@ -529,7 +529,11 @@ async function deleteCard(req, res, db) {
            FROM decks d
            WHERE d.id = cards.deck_id
              AND d.user_id = $2
-         )`,
+         )
+       RETURNING id,
+                 front_content,
+                 back_content,
+                 next_review`,
       [cardIdValidation.value, req.user.userId]
     );
 
@@ -537,7 +541,7 @@ async function deleteCard(req, res, db) {
       return res.status(404).json({ error: 'Card not found' });
     }
 
-    return res.json({ success: true });
+    return res.json({ success: true, card: deleteResult.rows[0] });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Internal server error' });
