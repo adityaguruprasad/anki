@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
 const { createAuthHandlers } = require('./auth');
+const { buildCorsOptions, handleCorsError } = require('./corsPolicy');
 const { handleMalformedJsonBody } = require('./jsonBodyError');
 const { calculateNextReview } = require('./spacedRepetition');
 const { createCard, createDeck, deleteCard, deleteDeck, getCardsByDeck, getDecks, getDueCardsByDeck, getStats, getSchedulingInsights, renameDeck, submitStudySession, updateCard } = require('./apiHandlers');
@@ -9,7 +10,8 @@ const { createCard, createDeck, deleteCard, deleteDeck, getCardsByDeck, getDecks
 const app = express();
 const port = process.env.PORT || 3001;
 
-app.use(cors());
+app.use(cors(buildCorsOptions()));
+app.use(handleCorsError);
 app.use(express.json());
 app.use(handleMalformedJsonBody);
 
