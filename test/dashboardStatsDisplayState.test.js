@@ -12,8 +12,10 @@ test('hasStatsPayload requires valid dashboard total count fields', () => {
   [
     { totalCards: 0, totalDecks: 0 },
     { totalCards: 12, totalDecks: 3 },
+    { totalCards: Number.MAX_SAFE_INTEGER, totalDecks: 3 },
     { totalCards: '12', totalDecks: '3' },
     { totalCards: ' 12 ', totalDecks: ' 0 ' },
+    { totalCards: '900719925474099312345', totalDecks: '00012' },
   ].forEach((stats) => {
     assert.equal(hasStatsPayload(stats), true);
   });
@@ -30,6 +32,7 @@ test('hasStatsPayload requires valid dashboard total count fields', () => {
     { totalCards: [], totalDecks: 1 },
     { totalCards: Number.NaN, totalDecks: 1 },
     { totalCards: Number.POSITIVE_INFINITY, totalDecks: 1 },
+    { totalCards: Number.MAX_SAFE_INTEGER + 1, totalDecks: 1 },
     { totalCards: -1, totalDecks: 1 },
     { totalCards: 1.5, totalDecks: 1 },
     { totalCards: '3.0', totalDecks: 1 },
@@ -49,16 +52,33 @@ test('hasStatsPayload requires valid dashboard total count fields', () => {
     { totalCards: 1, totalDecks: '-1' },
     { totalCards: 1, totalDecks: 'NaN' },
     { totalCards: 1, totalDecks: 'Infinity' },
+    { totalCards: 1, totalDecks: Number.MAX_SAFE_INTEGER + 1 },
   ].forEach((stats) => {
     assert.equal(hasStatsPayload(stats), false);
   });
 });
 
-test('toDisplayCount formats finite non-negative whole-number totals', () => {
+test('toDisplayCount formats valid dashboard totals without numeric string coercion', () => {
   assert.equal(toDisplayCount(4), '4');
+  assert.equal(toDisplayCount(Number.MAX_SAFE_INTEGER), '9007199254740991');
   assert.equal(toDisplayCount('5'), '5');
-  assert.equal(toDisplayCount(2.9), '2');
+  assert.equal(toDisplayCount(' 00012 '), '12');
+  assert.equal(toDisplayCount('000'), '0');
+  assert.equal(
+    toDisplayCount('900719925474099312345'),
+    '900719925474099312345'
+  );
+});
+
+test('toDisplayCount falls back for invalid dashboard totals', () => {
+  assert.equal(toDisplayCount(Number.MAX_SAFE_INTEGER + 1), '0');
+  assert.equal(toDisplayCount(2.9), '0');
   assert.equal(toDisplayCount(-3), '0');
+  assert.equal(toDisplayCount('1e3'), '0');
+  assert.equal(toDisplayCount('+3'), '0');
+  assert.equal(toDisplayCount('3.0'), '0');
+  assert.equal(toDisplayCount(' '), '0');
+  assert.equal(toDisplayCount([]), '0');
   assert.equal(toDisplayCount(Number.NaN), '0');
 });
 
@@ -107,6 +127,23 @@ test('buildDashboardStatsDisplayState keeps last known stats during a background
   assert.equal(state.totalCards.text, '12');
   assert.equal(state.totalDecks.kind, 'value');
   assert.equal(state.totalDecks.text, '3');
+});
+
+test('buildDashboardStatsDisplayState renders valid string totals exactly', () => {
+  const state = buildDashboardStatsDisplayState({
+    stats: {
+      totalCards: '900719925474099312345',
+      totalDecks: '00012',
+    },
+    isLoadingStats: false,
+    statsLoadFailed: false,
+  });
+
+  assert.equal(state.hasStats, true);
+  assert.equal(state.totalCards.kind, 'value');
+  assert.equal(state.totalCards.text, '900719925474099312345');
+  assert.equal(state.totalDecks.kind, 'value');
+  assert.equal(state.totalDecks.text, '12');
 });
 
 test('buildDashboardStatsDisplayState shows the failure alert copy without replacing known stats', () => {

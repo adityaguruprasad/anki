@@ -10,17 +10,30 @@ const DASHBOARD_STATS_COPY = Object.freeze({
 
 const DASHBOARD_STATS_COUNT_KEYS = Object.freeze(['totalCards', 'totalDecks']);
 
-function isStatsCount(value) {
+const DASHBOARD_STATS_DIGIT_COUNT_PATTERN = /^[0-9]+$/;
+
+function normalizeStatsCount(value) {
   if (typeof value === 'number') {
-    return Number.isFinite(value) && Number.isInteger(value) && value >= 0;
+    if (Number.isSafeInteger(value) && value >= 0) {
+      return String(value);
+    }
+
+    return null;
   }
 
   if (typeof value === 'string') {
     const trimmed = value.trim();
-    return /^[0-9]+$/.test(trimmed);
+
+    if (DASHBOARD_STATS_DIGIT_COUNT_PATTERN.test(trimmed)) {
+      return trimmed.replace(/^0+/, '') || '0';
+    }
   }
 
-  return false;
+  return null;
+}
+
+function isStatsCount(value) {
+  return normalizeStatsCount(value) !== null;
 }
 
 function hasStatsPayload(stats) {
@@ -36,19 +49,7 @@ function hasStatsPayload(stats) {
 }
 
 function toDisplayCount(value) {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return String(Math.max(0, Math.trunc(value)));
-  }
-
-  if (typeof value === 'string' && value.trim() !== '') {
-    const parsed = Number(value);
-
-    if (Number.isFinite(parsed)) {
-      return String(Math.max(0, Math.trunc(parsed)));
-    }
-  }
-
-  return '0';
+  return normalizeStatsCount(value) ?? '0';
 }
 
 function buildStatCardDisplay(stats, key, isLoadingStats) {
