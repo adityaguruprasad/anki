@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
 const { createAuthHandlers } = require('./auth');
+const { handleApiNotFound } = require('./apiNotFound');
 const { buildCorsOptions, handleCorsError } = require('./corsPolicy');
 const { handleJsonBodyError } = require('./jsonBodyError');
 const { calculateNextReview } = require('./spacedRepetition');
@@ -46,6 +47,8 @@ app.post('/api/study-session', (req, res) => submitStudySession(req, res, pool, 
 app.get('/api/stats', (req, res) => getStats(req, res, pool));
 
 app.get('/api/scheduling-insights', (req, res) => getSchedulingInsights(req, res, pool));
+
+app.use('/api', handleApiNotFound);
 
 if (require.main === module) {
   app.listen(port, () => {
