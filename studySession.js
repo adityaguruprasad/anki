@@ -8,6 +8,7 @@ const studySessionFeedback = require('./studySessionFeedback');
 const studySessionNotice = require('./studySessionNotice');
 const studySessionTarget = require('./studySessionTarget');
 const studySessionDueCards = require('./studySessionDueCards');
+const studySessionRequestLifecycle = require('./studySessionRequestLifecycle');
 const authHeaders = require('./authHeaders');
 const authExpiration = require('./authExpiration');
 
@@ -28,6 +29,10 @@ const {
   STUDY_SESSION_REQUESTS,
 } = studySessionTarget;
 const { selectValidatedStudySessionDueCard } = studySessionDueCards;
+const {
+  isCurrentStudySessionFetchRequest,
+  isCurrentStudySessionRouteRequest,
+} = studySessionRequestLifecycle;
 const { buildAuthHeaders } = authHeaders;
 const { handleAuthExpiredResponse } = authExpiration;
 
@@ -44,9 +49,20 @@ const StudySession = ({ env, onAuthExpired }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isSubmittingRef = useRef(false);
   const fetchRequestRef = useRef(0);
+  const mountedRef = useRef(true);
   const locationSearchRef = useRef(location.search);
   const activeDeckIdRef = useRef(null);
   locationSearchRef.current = location.search;
+
+  useEffect(() => {
+    mountedRef.current = true;
+
+    return () => {
+      mountedRef.current = false;
+      fetchRequestRef.current += 1;
+      isSubmittingRef.current = false;
+    };
+  }, []);
 
   const setSubmitInFlight = useCallback((inFlight) => {
     isSubmittingRef.current = inFlight;
@@ -54,15 +70,19 @@ const StudySession = ({ env, onAuthExpired }) => {
   }, []);
 
   const fetchNextCard = useCallback(async (requestDeckId, requestSearch, options = {}) => {
-    if (locationSearchRef.current !== requestSearch) {
+    if (!isCurrentStudySessionRouteRequest({ mountedRef, locationSearchRef, requestSearch })) {
       return;
     }
 
     const requestId = fetchRequestRef.current + 1;
     fetchRequestRef.current = requestId;
-    const isCurrentRequest = () => (
-      fetchRequestRef.current === requestId && locationSearchRef.current === requestSearch
-    );
+    const isCurrentRequest = () => isCurrentStudySessionFetchRequest({
+      mountedRef,
+      requestIdRef: fetchRequestRef,
+      requestId,
+      locationSearchRef,
+      requestSearch,
+    });
 
     try {
       setIsLoading(true);
@@ -116,6 +136,10 @@ const StudySession = ({ env, onAuthExpired }) => {
 
   const loadStudySession = useCallback(async () => {
     const requestSearch = location.search;
+    if (!isCurrentStudySessionRouteRequest({ mountedRef, locationSearchRef, requestSearch })) {
+      return;
+    }
+
     const initialRequest = getStudySessionRequest(requestSearch);
     setSubmissionFeedback(null);
 
@@ -128,9 +152,13 @@ const StudySession = ({ env, onAuthExpired }) => {
 
     const requestId = fetchRequestRef.current + 1;
     fetchRequestRef.current = requestId;
-    const isCurrentRequest = () => (
-      fetchRequestRef.current === requestId && locationSearchRef.current === requestSearch
-    );
+    const isCurrentRequest = () => isCurrentStudySessionFetchRequest({
+      mountedRef,
+      requestIdRef: fetchRequestRef,
+      requestId,
+      locationSearchRef,
+      requestSearch,
+    });
 
     try {
       activeDeckIdRef.current = null;
@@ -201,7 +229,11 @@ const StudySession = ({ env, onAuthExpired }) => {
 
     const requestDeckId = activeDeckIdRef.current;
     const requestSearch = locationSearchRef.current;
-    const isStaleSubmitRequest = () => locationSearchRef.current !== requestSearch;
+    const isCurrentSubmitRequest = () => isCurrentStudySessionRouteRequest({
+      mountedRef,
+      locationSearchRef,
+      requestSearch,
+    });
 
     try {
       setSubmitInFlight(true);
@@ -216,7 +248,7 @@ const StudySession = ({ env, onAuthExpired }) => {
         body: JSON.stringify({ cardId: currentCard.id, quality }),
       });
 
-      if (isStaleSubmitRequest()) {
+      if (!isCurrentSubmitRequest()) {
         return;
       }
 
@@ -235,7 +267,7 @@ const StudySession = ({ env, onAuthExpired }) => {
         responseText = '';
       }
 
-      if (isStaleSubmitRequest()) {
+      if (!isCurrentSubmitRequest()) {
         return;
       }
 
@@ -252,7 +284,7 @@ const StudySession = ({ env, onAuthExpired }) => {
       }));
       await fetchNextCard(requestDeckId, requestSearch);
     } catch (error) {
-      if (isStaleSubmitRequest()) {
+      if (!isCurrentSubmitRequest()) {
         return;
       }
 

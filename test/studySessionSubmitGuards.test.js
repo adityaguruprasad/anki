@@ -38,17 +38,19 @@ function requiredIndex(source, needle, message, fromIndex = 0) {
   return index;
 }
 
-test('handleAnswer guards stale submit responses before auth and generic failure handling', () => {
+const currentSubmitGuard = 'if (!isCurrentSubmitRequest()) {';
+
+test('handleAnswer guards stale or unmounted submit responses before auth and generic failure handling', () => {
   const body = extractConstFunctionBody('handleAnswer');
   const fetchIndex = requiredIndex(
     body,
     'const response = await fetch(apiRequests.submitUrl, {',
     'Expected answer submission to keep the submit fetch',
   );
-  const staleGuardIndex = requiredIndex(
+  const currentGuardIndex = requiredIndex(
     body,
-    'if (isStaleSubmitRequest()) {',
-    'Expected a stale submit guard after the submit fetch resolves',
+    currentSubmitGuard,
+    'Expected a current submit guard after the submit fetch resolves',
     fetchIndex,
   );
   const authExpiredIndex = requiredIndex(
@@ -69,30 +71,30 @@ test('handleAnswer guards stale submit responses before auth and generic failure
 
   assert.match(
     body,
-    /const isStaleSubmitRequest = \(\) => locationSearchRef\.current !== requestSearch;/,
-    'Expected stale submit checks to compare against the captured route search',
+    /const isCurrentSubmitRequest = \(\) => isCurrentStudySessionRouteRequest\(\{\s*mountedRef,\s*locationSearchRef,\s*requestSearch,\s*\}\);/,
+    'Expected submit checks to use the route lifecycle helper with the captured route search',
   );
-  assert.ok(fetchIndex < staleGuardIndex, 'Expected stale submit guard after fetch resolution');
+  assert.ok(fetchIndex < currentGuardIndex, 'Expected current submit guard after fetch resolution');
   assert.ok(
-    staleGuardIndex < authExpiredIndex,
-    'Expected stale submit guard before auth-expiration handling',
-  );
-  assert.ok(
-    staleGuardIndex < responseOkIndex,
-    'Expected stale submit guard before generic non-OK handling',
+    currentGuardIndex < authExpiredIndex,
+    'Expected stale/current submit guard before auth-expiration handling',
   );
   assert.ok(
-    staleGuardIndex < responseTextIndex,
-    'Expected stale submit guard before successful response parsing',
+    currentGuardIndex < responseOkIndex,
+    'Expected stale/current submit guard before generic non-OK handling',
+  );
+  assert.ok(
+    currentGuardIndex < responseTextIndex,
+    'Expected stale/current submit guard before successful response parsing',
   );
   assert.match(
-    body.slice(staleGuardIndex, authExpiredIndex),
+    body.slice(currentGuardIndex, authExpiredIndex),
     /return;/,
-    'Expected stale submit responses to return without response side effects',
+    'Expected stale or unmounted submit responses to return without response side effects',
   );
 });
 
-test('handleAnswer preserves current submit success behavior behind stale guards', () => {
+test('handleAnswer preserves current submit success behavior behind lifecycle guards', () => {
   const body = extractConstFunctionBody('handleAnswer');
   const authExpiredIndex = requiredIndex(
     body,
@@ -109,10 +111,10 @@ test('handleAnswer preserves current submit success behavior behind stale guards
     "let responseText = '';",
     'Expected successful answer submission to parse response text',
   );
-  const staleGuardAfterTextIndex = requiredIndex(
+  const currentGuardAfterTextIndex = requiredIndex(
     body,
-    'if (isStaleSubmitRequest()) {',
-    'Expected stale submit guard before applying parsed success state',
+    currentSubmitGuard,
+    'Expected current submit guard before applying parsed success state',
     responseTextIndex,
   );
   const parseIndex = requiredIndex(
@@ -139,10 +141,10 @@ test('handleAnswer preserves current submit success behavior behind stale guards
   assert.ok(authExpiredIndex < responseOkIndex, 'Expected auth handling before generic failures');
   assert.ok(responseOkIndex < responseTextIndex, 'Expected response text parsing only after OK');
   assert.ok(
-    responseTextIndex < staleGuardAfterTextIndex,
-    'Expected route changes during response text parsing to stay guarded',
+    responseTextIndex < currentGuardAfterTextIndex,
+    'Expected route changes or unmounts during response text parsing to stay guarded',
   );
-  assert.ok(staleGuardAfterTextIndex < parseIndex, 'Expected stale guard before parsing success data');
+  assert.ok(currentGuardAfterTextIndex < parseIndex, 'Expected lifecycle guard before parsing success data');
   assert.ok(parseIndex < validationIndex, 'Expected parsed success data before validation');
   assert.ok(validationIndex < feedbackIndex, 'Expected validated success data before feedback');
   assert.ok(feedbackIndex < nextCardIndex, 'Expected feedback before next-card fetch');
@@ -155,10 +157,10 @@ test('handleAnswer rejects malformed successful submit responses before fetching
     "let responseText = '';",
     'Expected successful answer submission to parse response text',
   );
-  const staleGuardAfterTextIndex = requiredIndex(
+  const currentGuardAfterTextIndex = requiredIndex(
     body,
-    'if (isStaleSubmitRequest()) {',
-    'Expected stale submit guard before applying parsed success state',
+    currentSubmitGuard,
+    'Expected current submit guard before applying parsed success state',
     responseTextIndex,
   );
   const validationIndex = requiredIndex(
@@ -184,8 +186,8 @@ test('handleAnswer rejects malformed successful submit responses before fetching
   );
 
   assert.ok(
-    staleGuardAfterTextIndex < validationIndex,
-    'Expected the post-body stale guard before successful response validation',
+    currentGuardAfterTextIndex < validationIndex,
+    'Expected the post-body lifecycle guard before successful response validation',
   );
   assert.ok(validationIndex < rejectionIndex, 'Expected validation before the malformed response branch');
   assert.match(
@@ -215,10 +217,10 @@ test('handleAnswer keeps retryable submit errors only on non-stale failures', ()
     '} catch (error) {',
     'Expected answer submission to keep a retryable error path',
   );
-  const catchStaleGuardIndex = requiredIndex(
+  const catchCurrentGuardIndex = requiredIndex(
     body,
-    'if (isStaleSubmitRequest()) {',
-    'Expected submit failures to skip UI updates when the route is stale',
+    currentSubmitGuard,
+    'Expected submit failures to skip UI updates when the route is stale or unmounted',
     catchIndex,
   );
   const submitErrorIndex = requiredIndex(
@@ -235,12 +237,12 @@ test('handleAnswer keeps retryable submit errors only on non-stale failures', ()
 
   assert.ok(throwIndex < catchIndex, 'Expected non-OK responses to reach catch handling');
   assert.ok(
-    catchIndex < catchStaleGuardIndex,
-    'Expected catch handling to check route staleness first',
+    catchIndex < catchCurrentGuardIndex,
+    'Expected catch handling to check route/current lifecycle first',
   );
   assert.ok(
-    catchStaleGuardIndex < submitErrorIndex,
-    'Expected stale submit failures not to show retryable submit error UI',
+    catchCurrentGuardIndex < submitErrorIndex,
+    'Expected stale or unmounted submit failures not to show retryable submit error UI',
   );
   assert.ok(submitErrorIndex < releaseIndex, 'Expected retryable error UI before guard release');
 });

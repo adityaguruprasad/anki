@@ -37,6 +37,7 @@ const FRONTEND_MODULES = Object.freeze([
   'studySessionDueCards.js',
   'studySessionFeedback.js',
   'studySessionNotice.js',
+  'studySessionRequestLifecycle.js',
   'studySessionShortcuts.js',
   'studySessionTarget.js',
 ]);
