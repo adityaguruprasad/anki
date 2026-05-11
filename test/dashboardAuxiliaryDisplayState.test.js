@@ -8,6 +8,21 @@ const {
   hasSchedulingInsightsPayload,
 } = require('../dashboardAuxiliaryDisplayState');
 
+function createSchedulingInsightsPayload(overrides = {}) {
+  return {
+    totalCards: 30,
+    overdue: 3,
+    dueToday: 2,
+    dueTomorrow: 4,
+    dueNext7Days: 12,
+    leechCandidates: 1,
+    averageEaseFactor: 2.35,
+    recommendedDailyReviewTarget: 10,
+    suggestedNewCards: 15,
+    ...overrides,
+  };
+}
+
 test('buildDeckAvailabilityDisplayState shows accessible loading and disables actions while checking decks', () => {
   const state = buildDeckAvailabilityDisplayState({
     isLoadingDecks: true,
@@ -86,8 +101,30 @@ test('buildDeckAvailabilityDisplayState does not promise study when a failed ret
   assert.equal(missingState.ctaLabel, DASHBOARD_AUXILIARY_COPY.deckAvailability.failureCta);
 });
 
-test('hasSchedulingInsightsPayload only accepts object insights payloads', () => {
-  assert.equal(hasSchedulingInsightsPayload({ dueToday: 1 }), true);
+test('hasSchedulingInsightsPayload requires the successful endpoint contract', () => {
+  assert.equal(hasSchedulingInsightsPayload(createSchedulingInsightsPayload()), true);
+  assert.equal(
+    hasSchedulingInsightsPayload(createSchedulingInsightsPayload({ averageEaseFactor: null })),
+    true,
+  );
+
+  [
+    { dueToday: 1 },
+    createSchedulingInsightsPayload({ totalCards: '30' }),
+    createSchedulingInsightsPayload({ dueToday: -1 }),
+    createSchedulingInsightsPayload({ dueTomorrow: 1.5 }),
+    createSchedulingInsightsPayload({ dueNext7Days: Number.MAX_SAFE_INTEGER + 1 }),
+    createSchedulingInsightsPayload({ averageEaseFactor: '2.35' }),
+    createSchedulingInsightsPayload({ averageEaseFactor: 0 }),
+    createSchedulingInsightsPayload({ recommendedDailyReviewTarget: Number.NaN }),
+  ].forEach((payload) => {
+    assert.equal(
+      hasSchedulingInsightsPayload(payload),
+      false,
+      `Expected ${JSON.stringify(payload)} to be rejected`,
+    );
+  });
+
   assert.equal(hasSchedulingInsightsPayload(null), false);
   assert.equal(hasSchedulingInsightsPayload(undefined), false);
   assert.equal(hasSchedulingInsightsPayload([]), false);
@@ -134,6 +171,8 @@ test('buildSchedulingInsightsDisplayState does not show summary without a valid 
     [],
     '',
     0,
+    { dueToday: 2 },
+    createSchedulingInsightsPayload({ overdue: '3' }),
   ].forEach((schedulingInsights) => {
     const state = buildSchedulingInsightsDisplayState({
       schedulingInsights,
@@ -149,7 +188,7 @@ test('buildSchedulingInsightsDisplayState does not show summary without a valid 
 
 test('buildSchedulingInsightsDisplayState keeps summaries visible during background retry', () => {
   const state = buildSchedulingInsightsDisplayState({
-    schedulingInsights: { dueToday: 2 },
+    schedulingInsights: createSchedulingInsightsPayload(),
     isLoadingSchedulingInsights: true,
     schedulingInsightsLoadFailed: true,
   });
@@ -164,7 +203,7 @@ test('buildSchedulingInsightsDisplayState keeps summaries visible during backgro
 
 test('buildSchedulingInsightsDisplayState keeps stale summaries visible after retry failure', () => {
   const state = buildSchedulingInsightsDisplayState({
-    schedulingInsights: { dueToday: 2 },
+    schedulingInsights: createSchedulingInsightsPayload(),
     isLoadingSchedulingInsights: false,
     schedulingInsightsLoadFailed: true,
   });

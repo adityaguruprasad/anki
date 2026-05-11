@@ -27,6 +27,25 @@ const DASHBOARD_AUXILIARY_COPY = Object.freeze({
   }),
 });
 
+const SCHEDULING_INSIGHTS_COUNT_KEYS = Object.freeze([
+  'totalCards',
+  'overdue',
+  'dueToday',
+  'dueTomorrow',
+  'dueNext7Days',
+  'leechCandidates',
+  'recommendedDailyReviewTarget',
+  'suggestedNewCards',
+]);
+
+function isNonNegativeSafeInteger(value) {
+  return Number.isSafeInteger(value) && value >= 0;
+}
+
+function hasSchedulingInsightsAverageEaseFactor(value) {
+  return value === null || (typeof value === 'number' && Number.isFinite(value) && value > 0);
+}
+
 function buildDeckAvailabilityDisplayState({
   studyDeckTarget = null,
   isLoadingDecks = false,
@@ -68,7 +87,13 @@ function buildDeckAvailabilityDisplayState({
 function hasSchedulingInsightsPayload(schedulingInsights) {
   return Boolean(schedulingInsights)
     && typeof schedulingInsights === 'object'
-    && !Array.isArray(schedulingInsights);
+    && !Array.isArray(schedulingInsights)
+    && SCHEDULING_INSIGHTS_COUNT_KEYS.every((key) => (
+      Object.prototype.hasOwnProperty.call(schedulingInsights, key)
+      && isNonNegativeSafeInteger(schedulingInsights[key])
+    ))
+    && Object.prototype.hasOwnProperty.call(schedulingInsights, 'averageEaseFactor')
+    && hasSchedulingInsightsAverageEaseFactor(schedulingInsights.averageEaseFactor);
 }
 
 function buildSchedulingInsightsDisplayState({
