@@ -86,8 +86,17 @@ function verifyToken(token, secret = resolveJwtSecret(), options = {}) {
   }
 
   const payload = decodeJsonPart(encodedPayload);
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error('Invalid token payload');
+  }
+
   if (!Number.isFinite(payload.exp)) {
     throw new Error('Token expiration is required');
+  }
+
+  const normalizedUserId = normalizeTokenUserId(payload.userId);
+  if (normalizedUserId == null) {
+    throw new Error('Token userId is required');
   }
 
   const now = options.now ?? Math.floor(Date.now() / 1000);
@@ -95,7 +104,29 @@ function verifyToken(token, secret = resolveJwtSecret(), options = {}) {
     throw new Error('Token expired');
   }
 
-  return payload;
+  return { ...payload, userId: normalizedUserId };
+}
+
+function normalizeTokenUserId(userId) {
+  if (typeof userId === 'number') {
+    return Number.isSafeInteger(userId) && userId > 0 ? userId : null;
+  }
+
+  if (typeof userId === 'string') {
+    const trimmed = userId.trim();
+    if (!/^\d+$/.test(trimmed)) {
+      return null;
+    }
+
+    const parsed = BigInt(trimmed);
+    if (parsed <= 0n || parsed > BigInt(Number.MAX_SAFE_INTEGER)) {
+      return null;
+    }
+
+    return Number(parsed);
+  }
+
+  return null;
 }
 
 function extractBearerToken(authHeader) {

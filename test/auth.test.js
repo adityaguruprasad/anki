@@ -296,17 +296,40 @@ test('login normalizes email before credential lookup', async () => {
 });
 
 test('signToken adds exp and verifyToken rejects expired tokens', () => {
-  const token = signToken({ userId: 'expiring-user' }, 'expiry-secret', {
+  const token = signToken({ userId: 101 }, 'expiry-secret', {
     now: 1000,
     expiresInSeconds: 60,
   });
 
   assert.deepEqual(verifyToken(token, 'expiry-secret', { now: 1059 }), {
-    userId: 'expiring-user',
+    userId: 101,
     iat: 1000,
     exp: 1060,
   });
   assert.throws(() => verifyToken(token, 'expiry-secret', { now: 1060 }), /Token expired/);
+});
+
+test('verifyToken accepts positive integer userId claims as normalized numbers', () => {
+  const validClaims = [
+    { userId: 42, expected: 42 },
+    { userId: '42', expected: 42 },
+    { userId: ' 43 ', expected: 43 },
+    { userId: String(Number.MAX_SAFE_INTEGER), expected: Number.MAX_SAFE_INTEGER },
+  ];
+
+  for (const { userId, expected } of validClaims) {
+    const token = signRawJwt(
+      { alg: 'HS256', typ: 'JWT' },
+      { userId, iat: 1000, exp: 2000 },
+      'numeric-user-secret'
+    );
+
+    assert.deepEqual(verifyToken(token, 'numeric-user-secret', { now: 1000 }), {
+      userId: expected,
+      iat: 1000,
+      exp: 2000,
+    });
+  }
 });
 
 test('authenticateToken returns 403 for expired tokens', () => {
@@ -314,7 +337,7 @@ test('authenticateToken returns 403 for expired tokens', () => {
     jwtSecret: 'expired-auth-secret',
     passwordHasher: createPasswordHasher(),
   });
-  const token = signToken({ userId: 'expired-user' }, 'expired-auth-secret', {
+  const token = signToken({ userId: 102 }, 'expired-auth-secret', {
     now: Math.floor(Date.now() / 1000) - 2,
     expiresInSeconds: 1,
   });
@@ -333,12 +356,12 @@ test('authenticateToken returns 403 for expired tokens', () => {
 test('verifyToken rejects tokens without exp and non-HS256 algorithms', () => {
   const tokenWithoutExp = signRawJwt(
     { alg: 'HS256', typ: 'JWT' },
-    { userId: 'missing-exp', iat: 1000 },
+    { userId: 103, iat: 1000 },
     'alg-secret'
   );
   const hs512Token = signRawJwt(
     { alg: 'HS512', typ: 'JWT' },
-    { userId: 'wrong-alg', iat: 1000, exp: 2000 },
+    { userId: 104, iat: 1000, exp: 2000 },
     'alg-secret'
   );
 
@@ -350,6 +373,34 @@ test('verifyToken rejects tokens without exp and non-HS256 algorithms', () => {
     () => verifyToken(hs512Token, 'alg-secret', { now: 1000 }),
     /Invalid token algorithm/
   );
+});
+
+test('verifyToken rejects signed tokens without a usable userId claim', () => {
+  const invalidPayloads = [
+    { iat: 1000, exp: 2000 },
+    { userId: null, iat: 1000, exp: 2000 },
+    { userId: '', iat: 1000, exp: 2000 },
+    { userId: '   ', iat: 1000, exp: 2000 },
+    { userId: 'not-a-number', iat: 1000, exp: 2000 },
+    { userId: '1.5', iat: 1000, exp: 2000 },
+    { userId: '0', iat: 1000, exp: 2000 },
+    { userId: 0, iat: 1000, exp: 2000 },
+    { userId: -1, iat: 1000, exp: 2000 },
+    { userId: 1.5, iat: 1000, exp: 2000 },
+    { userId: String(Number.MAX_SAFE_INTEGER + 1), iat: 1000, exp: 2000 },
+    { userId: Number.MAX_SAFE_INTEGER + 1, iat: 1000, exp: 2000 },
+    { userId: [], iat: 1000, exp: 2000 },
+    { userId: {}, iat: 1000, exp: 2000 },
+  ];
+
+  for (const payload of invalidPayloads) {
+    const token = signRawJwt({ alg: 'HS256', typ: 'JWT' }, payload, 'user-claim-secret');
+
+    assert.throws(
+      () => verifyToken(token, 'user-claim-secret', { now: 1000 }),
+      /Token userId is required/
+    );
+  }
 });
 
 test('extractBearerToken accepts only a single bearer credential', () => {
@@ -383,7 +434,7 @@ test('authenticateToken accepts tokens signed with configured and default secret
     passwordHasher,
   });
   const configuredReq = {
-    headers: { authorization: `Bearer ${signToken({ userId: 'configured-user' }, 'configured-secret')}` },
+    headers: { authorization: `Bearer ${signToken({ userId: 201 }, 'configured-secret')}` },
   };
   let configuredNextCalled = false;
 
@@ -392,14 +443,14 @@ test('authenticateToken accepts tokens signed with configured and default secret
   });
 
   assert.equal(configuredNextCalled, true);
-  assert.equal(configuredReq.user.userId, 'configured-user');
+  assert.equal(configuredReq.user.userId, 201);
 
   const defaultSecret = createAuthHandlers(createDb([]), {
     env: { NODE_ENV: 'test' },
     passwordHasher,
   });
   const defaultReq = {
-    headers: { authorization: `Bearer ${signToken({ userId: 'default-user' }, DEFAULT_DEV_JWT_SECRET)}` },
+    headers: { authorization: `Bearer ${signToken({ userId: 202 }, DEFAULT_DEV_JWT_SECRET)}` },
   };
   let defaultNextCalled = false;
 
@@ -408,11 +459,31 @@ test('authenticateToken accepts tokens signed with configured and default secret
   });
 
   assert.equal(defaultNextCalled, true);
-  assert.equal(defaultReq.user.userId, 'default-user');
+  assert.equal(defaultReq.user.userId, 202);
+});
+
+test('authenticateToken normalizes numeric string userId claims to numbers', () => {
+  const { authenticateToken } = createAuthHandlers(createDb([]), {
+    jwtSecret: 'numeric-auth-secret',
+    passwordHasher: createPasswordHasher(),
+  });
+  const req = {
+    headers: { authorization: `Bearer ${signToken({ userId: '302' }, 'numeric-auth-secret')}` },
+  };
+  const res = createRes();
+  let nextCalled = false;
+
+  authenticateToken(req, res, () => {
+    nextCalled = true;
+  });
+
+  assert.equal(nextCalled, true);
+  assert.equal(req.user.userId, 302);
+  assert.equal(typeof req.user.userId, 'number');
 });
 
 test('authenticateToken rejects malformed authorization headers before token verification', () => {
-  const signedToken = signToken({ userId: 'scheme-user' }, 'auth-scheme-secret');
+  const signedToken = signToken({ userId: 301 }, 'auth-scheme-secret');
   const { authenticateToken } = createAuthHandlers(createDb([]), {
     jwtSecret: 'auth-scheme-secret',
     passwordHasher: createPasswordHasher(),
@@ -438,6 +509,29 @@ test('authenticateToken rejects malformed authorization headers before token ver
     assert.equal(nextCalled, false);
     assert.equal(req.user, undefined);
   }
+});
+
+test('authenticateToken returns 403 for signed tokens without a usable userId claim', () => {
+  const token = signRawJwt(
+    { alg: 'HS256', typ: 'JWT' },
+    { iat: 1000, exp: Math.floor(Date.now() / 1000) + 60 },
+    'missing-user-secret'
+  );
+  const { authenticateToken } = createAuthHandlers(createDb([]), {
+    jwtSecret: 'missing-user-secret',
+    passwordHasher: createPasswordHasher(),
+  });
+  const req = { headers: { authorization: `Bearer ${token}` } };
+  const res = createRes();
+  let nextCalled = false;
+
+  authenticateToken(req, res, () => {
+    nextCalled = true;
+  });
+
+  assert.equal(res.statusCode, 403);
+  assert.equal(nextCalled, false);
+  assert.equal(req.user, undefined);
 });
 
 test('resolveJwtSecret prefers JWT_SECRET and keeps deterministic test default', () => {
