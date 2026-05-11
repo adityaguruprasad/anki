@@ -8,6 +8,7 @@ import DeckManagement from './deck';
 const authBoundaryState = require('./authBoundaryState');
 const authFormState = require('./authFormState');
 const authReturnDestination = require('./authReturnDestination');
+const authSubmissionLifecycle = require('./authSubmissionLifecycle');
 
 const {
   AUTH_LOGOUT_REASONS,
@@ -33,6 +34,13 @@ const {
   getAuthReturnDestinationFromState,
 } = authReturnDestination;
 
+const {
+  beginAuthSubmission,
+  invalidateAuthSubmissions,
+  isCurrentAuthSubmission,
+  runIfCurrentAuthSubmission,
+} = authSubmissionLifecycle;
+
 const apiEnv = Object.freeze({
   REACT_APP_API_BASE_URL: process.env.REACT_APP_API_BASE_URL,
 });
@@ -43,6 +51,8 @@ const Login = ({ setIsLoggedIn, env, authNotice, onAuthNoticeChange }) => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const mountedRef = useRef(true);
+  const authSubmissionSequenceRef = useRef(0);
   const isSubmittingRef = useRef(false);
 
   const isRegistering = mode === AUTH_MODES.REGISTER;
@@ -52,6 +62,15 @@ const Login = ({ setIsLoggedIn, env, authNotice, onAuthNoticeChange }) => {
     ? (isRegistering ? 'Creating account...' : 'Logging in...')
     : title;
   const toggleLabel = isRegistering ? 'Use existing account' : 'Create an account';
+
+  useLayoutEffect(() => {
+    mountedRef.current = true;
+
+    return () => {
+      mountedRef.current = false;
+      invalidateAuthSubmissions(authSubmissionSequenceRef);
+    };
+  }, []);
 
   const handleModeToggle = () => {
     setMode((currentMode) => getNextAuthMode(currentMode));
@@ -79,6 +98,25 @@ const Login = ({ setIsLoggedIn, env, authNotice, onAuthNoticeChange }) => {
       return;
     }
 
+    const authSubmissionSequence = beginAuthSubmission(authSubmissionSequenceRef);
+    const currentSubmissionOptions = {
+      mountedRef,
+      sequenceRef: authSubmissionSequenceRef,
+      sequence: authSubmissionSequence,
+    };
+    const isCurrentSubmission = () => isCurrentAuthSubmission(currentSubmissionOptions);
+    const completeCurrentSubmission = (callback) => runIfCurrentAuthSubmission(
+      currentSubmissionOptions,
+      () => {
+        try {
+          callback();
+        } finally {
+          isSubmittingRef.current = false;
+          setIsSubmitting(false);
+        }
+      },
+    );
+
     isSubmittingRef.current = true;
     setIsSubmitting(true);
     setError('');
@@ -93,37 +131,49 @@ const Login = ({ setIsLoggedIn, env, authNotice, onAuthNoticeChange }) => {
       });
     } catch (error) {
       console.error('Auth error:', error);
-      setError('Authentication request failed. Please try again.');
-      isSubmittingRef.current = false;
-      setIsSubmitting(false);
+      completeCurrentSubmission(() => {
+        setError('Authentication request failed. Please try again.');
+      });
       return;
     }
 
+    if (!isCurrentSubmission()) {
+      return;
+    }
+
+    let body;
+    let bodyParseError;
     try {
-      let body;
-      let bodyParseError;
-      try {
-        body = await response.json();
-      } catch (error) {
-        bodyParseError = error;
-      }
+      body = await response.json();
+    } catch (error) {
+      bodyParseError = error;
+    }
 
-      const authResponse = parseAuthResponse({
-        mode,
-        ok: response.ok,
-        body,
-        bodyParseError,
+    if (!isCurrentSubmission()) {
+      return;
+    }
+
+    const authResponse = parseAuthResponse({
+      mode,
+      ok: response.ok,
+      body,
+      bodyParseError,
+    });
+
+    if (authResponse.ok) {
+      runIfCurrentAuthSubmission(currentSubmissionOptions, () => {
+        try {
+          localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, authResponse.token);
+          setIsLoggedIn(true);
+        } finally {
+          isSubmittingRef.current = false;
+          setIsSubmitting(false);
+        }
       });
-
-      if (authResponse.ok) {
-        localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, authResponse.token);
-        setIsLoggedIn(true);
-      } else {
+    } else {
+      completeCurrentSubmission(() => {
         setError(authResponse.error);
-      }
-    } finally {
-      isSubmittingRef.current = false;
-      setIsSubmitting(false);
+      });
     }
   };
 
