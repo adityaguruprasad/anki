@@ -601,6 +601,19 @@ async function submitStudySession(req, res, db, calculateNextReview) {
       [next_review, interval, ease_factor, validCardId, req.user.userId]
     );
     if (updateResult.rowCount === 0) {
+      const ownedCardResult = await db.query(
+        `SELECT 1
+         FROM cards c
+         JOIN decks d ON d.id = c.deck_id
+         WHERE c.id = $1
+           AND d.user_id = $2`,
+        [validCardId, req.user.userId]
+      );
+
+      if (ownedCardResult.rowCount > 0) {
+        return res.status(409).json({ error: 'Card is not due' });
+      }
+
       return res.status(404).json({ error: 'Card not found' });
     }
 

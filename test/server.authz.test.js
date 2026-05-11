@@ -2248,8 +2248,10 @@ test('POST /api/study-session returns 404 when final user-scoped update finds no
         ease_factor: 2.5,
         interval: 2,
         review_count: 2,
+        __is_due: true,
       }],
     },
+    { rowCount: 0, rows: [] },
     { rowCount: 0, rows: [] },
   ]);
   const req = { body: { cardId: 7, quality: 4 }, user: { userId: 'user-1' } };
@@ -2263,8 +2265,49 @@ test('POST /api/study-session returns 404 when final user-scoped update finds no
 
   assert.equal(res.statusCode, 404);
   assert.deepEqual(res.body, { error: 'Card not found' });
-  assert.equal(db.calls.length, 2);
+  assert.equal(db.calls.length, 3);
   assert.match(db.calls[1].sql, /d\.user_id\s+=\s+\$5/i);
   assertDuePredicate(db.calls[1].sql, 'cards');
   assert.deepEqual(db.calls[1].params, ['2026-05-08T12:00:00.000Z', 3, 2.6, 7, 'user-1']);
+  assert.match(db.calls[2].sql, /SELECT\s+1\s+FROM\s+cards\s+c/i);
+  assert.match(db.calls[2].sql, /JOIN\s+decks\s+d\s+ON\s+d\.id\s+=\s+c\.deck_id/i);
+  assert.match(db.calls[2].sql, /c\.id\s+=\s+\$1/i);
+  assert.match(db.calls[2].sql, /d\.user_id\s+=\s+\$2/i);
+  assert.deepEqual(db.calls[2].params, [7, 'user-1']);
+});
+
+test('POST /api/study-session returns 409 when final due-gated update loses a stale-card race', async () => {
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [{
+        id: 7,
+        deck_id: 1,
+        next_review: '2026-05-08T12:00:00.000Z',
+        ease_factor: 2.5,
+        interval: 2,
+        review_count: 2,
+        __is_due: true,
+      }],
+    },
+    { rowCount: 0, rows: [] },
+    { rowCount: 1, rows: [{ '?column?': 1 }] },
+  ]);
+  const req = { body: { cardId: 7, quality: 4 }, user: { userId: 'user-1' } };
+  const res = createRes();
+
+  await submitStudySession(req, res, db, () => ({
+    ease_factor: 2.6,
+    interval: 3,
+    next_review: '2026-05-08T12:00:00.000Z',
+  }));
+
+  assert.equal(res.statusCode, 409);
+  assert.deepEqual(res.body, { error: 'Card is not due' });
+  assert.equal(db.calls.length, 3);
+  assertDuePredicate(db.calls[0].sql);
+  assertDuePredicate(db.calls[1].sql, 'cards');
+  assert.match(db.calls[2].sql, /SELECT\s+1\s+FROM\s+cards\s+c/i);
+  assert.doesNotMatch(db.calls[2].sql, /next_review\s+<=\s+NOW\(\)/i);
+  assert.deepEqual(db.calls[2].params, [7, 'user-1']);
 });
