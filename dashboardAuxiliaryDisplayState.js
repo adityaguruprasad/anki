@@ -1,4 +1,7 @@
 const { hasDueCards } = require('./dashboardDeckTarget');
+const {
+  hasSchedulingInsightsSummaryPayload,
+} = require('./schedulingInsightsSummary');
 
 const DASHBOARD_AUXILIARY_COPY = Object.freeze({
   deckAvailability: Object.freeze({
@@ -27,23 +30,18 @@ const DASHBOARD_AUXILIARY_COPY = Object.freeze({
   }),
 });
 
-const SCHEDULING_INSIGHTS_COUNT_KEYS = Object.freeze([
+const SCHEDULING_INSIGHTS_ENDPOINT_COUNT_KEYS = Object.freeze([
   'totalCards',
-  'overdue',
-  'dueToday',
-  'dueTomorrow',
-  'dueNext7Days',
   'leechCandidates',
-  'recommendedDailyReviewTarget',
   'suggestedNewCards',
 ]);
 
-function isNonNegativeSafeInteger(value) {
-  return Number.isSafeInteger(value) && value >= 0;
+function hasOwn(object, key) {
+  return Object.prototype.hasOwnProperty.call(object, key);
 }
 
-function hasSchedulingInsightsAverageEaseFactor(value) {
-  return value === null || (typeof value === 'number' && Number.isFinite(value) && value > 0);
+function isNonNegativeSafeInteger(value) {
+  return Number.isSafeInteger(value) && value >= 0;
 }
 
 function buildDeckAvailabilityDisplayState({
@@ -85,15 +83,11 @@ function buildDeckAvailabilityDisplayState({
 }
 
 function hasSchedulingInsightsPayload(schedulingInsights) {
-  return Boolean(schedulingInsights)
-    && typeof schedulingInsights === 'object'
-    && !Array.isArray(schedulingInsights)
-    && SCHEDULING_INSIGHTS_COUNT_KEYS.every((key) => (
-      Object.prototype.hasOwnProperty.call(schedulingInsights, key)
+  return hasSchedulingInsightsSummaryPayload(schedulingInsights)
+    && SCHEDULING_INSIGHTS_ENDPOINT_COUNT_KEYS.every((key) => (
+      hasOwn(schedulingInsights, key)
       && isNonNegativeSafeInteger(schedulingInsights[key])
-    ))
-    && Object.prototype.hasOwnProperty.call(schedulingInsights, 'averageEaseFactor')
-    && hasSchedulingInsightsAverageEaseFactor(schedulingInsights.averageEaseFactor);
+    ));
 }
 
 function buildSchedulingInsightsDisplayState({

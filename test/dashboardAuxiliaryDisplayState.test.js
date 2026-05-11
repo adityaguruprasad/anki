@@ -7,6 +7,10 @@ const {
   buildSchedulingInsightsDisplayState,
   hasSchedulingInsightsPayload,
 } = require('../dashboardAuxiliaryDisplayState');
+const {
+  buildSchedulingInsightsSummary,
+  hasSchedulingInsightsSummaryPayload,
+} = require('../schedulingInsightsSummary');
 
 function createSchedulingInsightsPayload(overrides = {}) {
   return {
@@ -111,12 +115,8 @@ test('hasSchedulingInsightsPayload requires the successful endpoint contract', (
   [
     { dueToday: 1 },
     createSchedulingInsightsPayload({ totalCards: '30' }),
-    createSchedulingInsightsPayload({ dueToday: -1 }),
-    createSchedulingInsightsPayload({ dueTomorrow: 1.5 }),
-    createSchedulingInsightsPayload({ dueNext7Days: Number.MAX_SAFE_INTEGER + 1 }),
-    createSchedulingInsightsPayload({ averageEaseFactor: '2.35' }),
-    createSchedulingInsightsPayload({ averageEaseFactor: 0 }),
-    createSchedulingInsightsPayload({ recommendedDailyReviewTarget: Number.NaN }),
+    createSchedulingInsightsPayload({ leechCandidates: Number.MAX_SAFE_INTEGER + 1 }),
+    createSchedulingInsightsPayload({ suggestedNewCards: Number.NaN }),
   ].forEach((payload) => {
     assert.equal(
       hasSchedulingInsightsPayload(payload),
@@ -182,6 +182,40 @@ test('buildSchedulingInsightsDisplayState does not show summary without a valid 
 
     assert.equal(state.hasInsights, false);
     assert.equal(state.showLoadingBody, false);
+    assert.equal(state.showSummary, false);
+  });
+});
+
+test('buildSchedulingInsightsDisplayState hides payloads rejected by the summary mapper', () => {
+  [
+    null,
+    undefined,
+    [],
+    '',
+    0,
+    createSchedulingInsightsPayload({ dueToday: '2' }),
+    createSchedulingInsightsPayload({ overdue: -1 }),
+    createSchedulingInsightsPayload({ dueTomorrow: 1.5 }),
+    createSchedulingInsightsPayload({ dueNext7Days: Number.MAX_SAFE_INTEGER + 1 }),
+    createSchedulingInsightsPayload({ recommendedDailyReviewTarget: Number.NaN }),
+    createSchedulingInsightsPayload({ recommendedDailyReviewTarget: '10' }),
+    createSchedulingInsightsPayload({ averageEaseFactor: '2.35' }),
+    createSchedulingInsightsPayload({ averageEaseFactor: 0 }),
+    createSchedulingInsightsPayload({ averageEaseFactor: -1 }),
+  ].forEach((schedulingInsights) => {
+    assert.equal(hasSchedulingInsightsSummaryPayload(schedulingInsights), false);
+    assert.throws(
+      () => buildSchedulingInsightsSummary(schedulingInsights),
+      /Malformed scheduling insights payload/,
+    );
+
+    const state = buildSchedulingInsightsDisplayState({
+      schedulingInsights,
+      isLoadingSchedulingInsights: false,
+      schedulingInsightsLoadFailed: false,
+    });
+
+    assert.equal(state.hasInsights, false);
     assert.equal(state.showSummary, false);
   });
 });

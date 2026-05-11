@@ -297,7 +297,6 @@ const Dashboard = ({ env, onAuthExpired }) => {
     fetchSchedulingInsights();
   };
 
-  const schedulingSummary = buildSchedulingInsightsSummary(schedulingInsights);
   const reviewActivityDisplay = buildDashboardReviewActivityDisplayState({
     stats,
     isLoadingStats,
@@ -318,6 +317,9 @@ const Dashboard = ({ env, onAuthExpired }) => {
     isLoadingSchedulingInsights,
     schedulingInsightsLoadFailed,
   });
+  const schedulingSummary = schedulingInsightsDisplay.showSummary
+    ? buildSchedulingInsightsSummary(schedulingInsights)
+    : null;
 
   return (
     <div className="max-w-4xl mx-auto mt-10">

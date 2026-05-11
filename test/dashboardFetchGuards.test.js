@@ -164,6 +164,29 @@ test('fetchSchedulingInsights rejects malformed successful payloads before stori
   );
 });
 
+test('dashboard builds scheduling summary only after the display gate allows it', () => {
+  const displayStateIndex = dashboardSource.indexOf(
+    'const schedulingInsightsDisplay = buildSchedulingInsightsDisplayState({'
+  );
+  const summaryIndex = dashboardSource.indexOf(
+    'const schedulingSummary = schedulingInsightsDisplay.showSummary'
+  );
+  const returnIndex = dashboardSource.indexOf('return (', summaryIndex);
+
+  assert.notEqual(displayStateIndex, -1, 'Expected Dashboard to build scheduling display state');
+  assert.notEqual(summaryIndex, -1, 'Expected Dashboard to gate scheduling summary construction');
+  assert.notEqual(returnIndex, -1, 'Expected Dashboard render body after summary setup');
+  assert.ok(
+    displayStateIndex < summaryIndex,
+    'Expected scheduling display state to be available before building the summary'
+  );
+  assert.match(
+    dashboardSource.slice(summaryIndex, returnIndex),
+    /const schedulingSummary = schedulingInsightsDisplay\.showSummary\s*\?\s*buildSchedulingInsightsSummary\(schedulingInsights\)\s*:\s*null;/,
+    'Expected Dashboard to call the summary mapper only for valid display-ready insights'
+  );
+});
+
 test('fetchStats rejects malformed successful payloads after stale guards before storing them', () => {
   const body = extractConstFunctionBody('fetchStats');
   const jsonIndex = body.indexOf('const data = await response.json();');

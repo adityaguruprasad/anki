@@ -1,62 +1,86 @@
-function toNumber(value) {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value;
-  }
+const MALFORMED_SCHEDULING_INSIGHTS_PAYLOAD = 'Malformed scheduling insights payload';
 
-  if (typeof value === 'string' && value.trim() !== '') {
-    const parsed = Number(value);
+const SCHEDULING_INSIGHTS_SUMMARY_COUNT_KEYS = Object.freeze([
+  'dueToday',
+  'overdue',
+  'dueTomorrow',
+  'dueNext7Days',
+  'recommendedDailyReviewTarget',
+]);
 
-    if (Number.isFinite(parsed)) {
-      return parsed;
-    }
-  }
+function hasOwn(object, key) {
+  return Object.prototype.hasOwnProperty.call(object, key);
+}
 
-  return null;
+function isNonNegativeSafeInteger(value) {
+  return Number.isSafeInteger(value) && value >= 0;
+}
+
+function hasSchedulingInsightsAverageEaseFactor(value) {
+  return value === null || (typeof value === 'number' && Number.isFinite(value) && value > 0);
 }
 
 function toCount(value) {
-  const number = toNumber(value);
-
-  if (number === null) {
-    return 0;
+  if (!isNonNegativeSafeInteger(value)) {
+    throw new Error(MALFORMED_SCHEDULING_INSIGHTS_PAYLOAD);
   }
 
-  return Math.max(0, Math.trunc(number));
+  return value;
 }
 
 function formatDecimal(value, digits = 2) {
-  const number = toNumber(value);
-
-  if (number === null) {
+  if (value === null) {
     return 'Unavailable';
   }
 
-  return number.toFixed(digits);
+  if (!hasSchedulingInsightsAverageEaseFactor(value)) {
+    throw new Error(MALFORMED_SCHEDULING_INSIGHTS_PAYLOAD);
+  }
+
+  return value.toFixed(digits);
+}
+
+function hasSchedulingInsightsSummaryPayload(insights) {
+  return Boolean(insights)
+    && typeof insights === 'object'
+    && !Array.isArray(insights)
+    && SCHEDULING_INSIGHTS_SUMMARY_COUNT_KEYS.every((key) => (
+      hasOwn(insights, key) && isNonNegativeSafeInteger(insights[key])
+    ))
+    && hasOwn(insights, 'averageEaseFactor')
+    && hasSchedulingInsightsAverageEaseFactor(insights.averageEaseFactor);
 }
 
 function buildSchedulingInsightsSummary(insights) {
-  const source = insights && typeof insights === 'object' ? insights : {};
+  if (!hasSchedulingInsightsSummaryPayload(insights)) {
+    throw new Error(MALFORMED_SCHEDULING_INSIGHTS_PAYLOAD);
+  }
+
+  const dueToday = toCount(insights.dueToday);
+  const overdue = toCount(insights.overdue);
+  const dueTomorrow = toCount(insights.dueTomorrow);
+  const dueNext7Days = toCount(insights.dueNext7Days);
 
   return {
-    dueToday: toCount(source.dueToday),
-    overdue: toCount(source.overdue),
-    recommendedDailyReviewTarget: toCount(source.recommendedDailyReviewTarget),
-    averageEaseFactorLabel: formatDecimal(source.averageEaseFactor),
+    dueToday,
+    overdue,
+    recommendedDailyReviewTarget: toCount(insights.recommendedDailyReviewTarget),
+    averageEaseFactorLabel: formatDecimal(insights.averageEaseFactor),
     upcomingBuckets: [
       {
         key: 'dueToday',
         label: 'Today',
-        value: toCount(source.dueToday),
+        value: dueToday,
       },
       {
         key: 'dueTomorrow',
         label: 'Tomorrow',
-        value: toCount(source.dueTomorrow),
+        value: dueTomorrow,
       },
       {
         key: 'dueNext7Days',
         label: 'Next 7 days',
-        value: toCount(source.dueNext7Days),
+        value: dueNext7Days,
       },
     ],
   };
@@ -65,5 +89,6 @@ function buildSchedulingInsightsSummary(insights) {
 module.exports = {
   buildSchedulingInsightsSummary,
   formatDecimal,
+  hasSchedulingInsightsSummaryPayload,
   toCount,
 };
