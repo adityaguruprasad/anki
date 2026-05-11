@@ -6,16 +6,38 @@ function hasPositiveSafeIntegerCount(deck, key) {
   return hasNonNegativeSafeIntegerCount(deck, key) && deck[key] > 0;
 }
 
+const MAX_SAFE_INTEGER_STRING = String(Number.MAX_SAFE_INTEGER);
+
+function normalizeStudyDeckId(value) {
+  if (typeof value === 'number') {
+    return Number.isSafeInteger(value) && value > 0 ? String(value) : null;
+  }
+
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  const normalized = trimmed.replace(/^0+/, '');
+  const candidate = normalized || '0';
+
+  if (
+    !/^\d+$/.test(trimmed)
+    || candidate === '0'
+    || candidate.length > MAX_SAFE_INTEGER_STRING.length
+    || (
+      candidate.length === MAX_SAFE_INTEGER_STRING.length
+      && candidate > MAX_SAFE_INTEGER_STRING
+    )
+  ) {
+    return null;
+  }
+
+  return candidate;
+}
+
 function hasUsableDeckId(deck) {
-  if (!deck) {
-    return false;
-  }
-
-  if (typeof deck.id === 'string') {
-    return deck.id.trim().length > 0;
-  }
-
-  return typeof deck.id === 'number' && Number.isFinite(deck.id);
+  return Boolean(deck) && normalizeStudyDeckId(deck.id) !== null;
 }
 
 function hasDashboardDeckListPayload(decks) {
@@ -40,15 +62,20 @@ function selectStudyDeckTarget(decks) {
   }
 
   return (
-    decks.find(hasDueCards) ||
-    decks.find((deck) => hasPositiveSafeIntegerCount(deck, 'totalCards')) ||
+    decks.find((deck) => hasUsableDeckId(deck) && hasDueCards(deck)) ||
+    decks.find((deck) => (
+      hasUsableDeckId(deck)
+      && hasPositiveSafeIntegerCount(deck, 'totalCards')
+    )) ||
     null
   );
 }
 
 function getStudyDeckTargetPath(deck) {
-  if (hasDueCards(deck)) {
-    return `/study?deckId=${encodeURIComponent(deck.id)}`;
+  const deckId = deck ? normalizeStudyDeckId(deck.id) : null;
+
+  if (deckId && hasDueCards(deck)) {
+    return `/study?deckId=${encodeURIComponent(deckId)}`;
   }
 
   return '/decks';

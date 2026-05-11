@@ -12,7 +12,7 @@ test('hasDashboardDeckListPayload accepts arrays of deck-like objects with usabl
   assert.equal(hasDashboardDeckListPayload([]), true);
   assert.equal(hasDashboardDeckListPayload([
     { id: 1, name: 'Math', totalCards: 20, dueCards: 0 },
-    { id: 'science deck', name: 'Science', totalCards: Number.MAX_SAFE_INTEGER, dueCards: 2 },
+    { id: ' 42 ', name: 'Science', totalCards: Number.MAX_SAFE_INTEGER, dueCards: 2 },
   ]), true);
 });
 
@@ -38,17 +38,35 @@ test('hasDashboardDeckListPayload rejects non-integer, negative, and unsafe coun
   });
 });
 
-test('hasDashboardDeckListPayload rejects blank string ids while preserving finite numeric ids', () => {
+test('hasDashboardDeckListPayload rejects deck ids that cannot round-trip through study routes', () => {
   assert.equal(hasDashboardDeckListPayload([
     { id: 7, name: 'Numeric id', totalCards: 1, dueCards: 0 },
   ]), true);
   assert.equal(hasDashboardDeckListPayload([
-    { id: ' science deck ', name: 'String id', totalCards: 1, dueCards: 0 },
+    { id: ' 42 ', name: 'Numeric string id', totalCards: 1, dueCards: 0 },
   ]), true);
 
-  ['', '   ', '\n\t'].forEach((id) => {
+  [
+    '',
+    '   ',
+    '\n\t',
+    'science deck',
+    '42abc',
+    '1.2',
+    '1e2',
+    '0',
+    '-1',
+    String(Number.MAX_SAFE_INTEGER + 1),
+    '9007199254740993',
+    0,
+    -1,
+    1.5,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    Number.MAX_SAFE_INTEGER + 1,
+  ].forEach((id) => {
     assert.equal(
-      hasDashboardDeckListPayload([{ id, name: 'Blank id', totalCards: 1, dueCards: 0 }]),
+      hasDashboardDeckListPayload([{ id, name: 'Invalid id', totalCards: 1, dueCards: 0 }]),
       false,
       `Expected id=${JSON.stringify(id)} to be rejected`
     );
@@ -128,6 +146,17 @@ test('selectStudyDeckTarget ignores invalid counts', () => {
   ]), numericDeck);
 });
 
+test('selectStudyDeckTarget ignores decks with unusable study route ids', () => {
+  const validDueDeck = { id: ' 42 ', name: 'Biology', totalCards: 2, dueCards: 1 };
+
+  assert.equal(selectStudyDeckTarget([
+    { id: 'science deck', name: 'String id', totalCards: 5, dueCards: 4 },
+    { id: 0, name: 'Zero id', totalCards: 5, dueCards: 3 },
+    { id: 1.5, name: 'Decimal id', totalCards: 5, dueCards: 2 },
+    validDueDeck,
+  ]), validDueDeck);
+});
+
 test('selectStudyDeckTarget returns null when there is no study target', () => {
   assert.equal(selectStudyDeckTarget([
     { id: 1, name: 'Empty', totalCards: 0, dueCards: 0 },
@@ -145,9 +174,10 @@ test('hasDueCards distinguishes due targets from fallback targets', () => {
 
 test('getStudyDeckTargetPath only routes due targets to study sessions', () => {
   assert.equal(
-    getStudyDeckTargetPath({ id: 'science deck', totalCards: 5, dueCards: 2 }),
-    '/study?deckId=science%20deck',
+    getStudyDeckTargetPath({ id: ' 42 ', totalCards: 5, dueCards: 2 }),
+    '/study?deckId=42',
   );
+  assert.equal(getStudyDeckTargetPath({ id: 'science deck', totalCards: 5, dueCards: 2 }), '/decks');
   assert.equal(getStudyDeckTargetPath({ id: 3, totalCards: 5, dueCards: 0 }), '/decks');
   assert.equal(getStudyDeckTargetPath(null), '/decks');
 });

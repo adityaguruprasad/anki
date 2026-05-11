@@ -106,6 +106,7 @@ test('getValidatedStudySessionDeckListRequest rejects malformed deck lists inste
     {},
     { id: 1, totalCards: 2, dueCards: 1 },
     [{ id: 1, name: 'Missing total', dueCards: 1 }],
+    [{ id: 'science deck', name: 'Unrouteable id', totalCards: 2, dueCards: 1 }],
   ].forEach((payload) => {
     assert.throws(
       () => getValidatedStudySessionDeckListRequest('', payload),
