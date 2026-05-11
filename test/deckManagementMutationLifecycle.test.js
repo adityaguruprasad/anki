@@ -191,8 +191,14 @@ test('DeckManagement mutation handlers guard awaited completions and cleanup', (
     const successGuardIndex = body.lastIndexOf('if (!isCurrentMutation()) {', successIndex);
     const catchIndex = body.indexOf('} catch (error) {');
     const catchGuardIndex = body.indexOf('if (!isCurrentMutation()) {', catchIndex);
+    const catchCompletionGuardIndex = body.indexOf('getCardCreateNetworkFailureCompletion({', catchIndex);
     const finallyIndex = body.indexOf('} finally {');
     const finallyGuardIndex = body.indexOf('if (isCurrentMutation()) {', finallyIndex);
+    const finallyCompletionGuardIndex = body.indexOf(
+      'shouldRunCardCreateFinallyCleanup({ isCurrent: isCurrentMutation() })',
+      finallyIndex,
+    );
+    const usesCardCreateCompletionGuard = functionName === 'addCard';
 
     assert.match(
       body,
@@ -208,16 +214,40 @@ test('DeckManagement mutation handlers guard awaited completions and cleanup', (
     assert.notEqual(successIndex, -1, `Expected ${functionName} to keep successful UI updates`);
     assert.notEqual(successGuardIndex, -1, `Expected ${functionName} to guard successful UI updates`);
     assert.notEqual(catchIndex, -1, `Expected ${functionName} to keep catch handling`);
-    assert.notEqual(catchGuardIndex, -1, `Expected ${functionName} to guard catch UI updates`);
     assert.notEqual(finallyIndex, -1, `Expected ${functionName} to keep finally cleanup`);
-    assert.notEqual(finallyGuardIndex, -1, `Expected ${functionName} to guard finally cleanup`);
+    if (usesCardCreateCompletionGuard) {
+      assert.notEqual(
+        catchCompletionGuardIndex,
+        -1,
+        `Expected ${functionName} to guard catch UI updates through the card-create helper`,
+      );
+      assert.notEqual(
+        finallyCompletionGuardIndex,
+        -1,
+        `Expected ${functionName} to guard finally cleanup through the card-create helper`,
+      );
+    } else {
+      assert.notEqual(catchGuardIndex, -1, `Expected ${functionName} to guard catch UI updates`);
+      assert.notEqual(finallyGuardIndex, -1, `Expected ${functionName} to guard finally cleanup`);
+    }
     assert.ok(fetchIndex < postFetchGuardIndex, `Expected ${functionName} guard after fetch`);
     assert.ok(postFetchGuardIndex < authExpiredIndex, `Expected ${functionName} to skip stale auth side effects`);
     assert.ok(authExpiredIndex < jsonIndex, `Expected ${functionName} auth handling before body parsing`);
     assert.ok(jsonIndex < postJsonGuardIndex, `Expected ${functionName} guard after body parsing`);
     assert.ok(postJsonGuardIndex < nonOkIndex, `Expected ${functionName} to skip stale non-OK handling`);
     assert.ok(successGuardIndex < successIndex, `Expected ${functionName} to guard before success state mutation`);
-    assert.ok(catchIndex < catchGuardIndex, `Expected ${functionName} to guard catch side effects`);
-    assert.ok(finallyIndex < finallyGuardIndex, `Expected ${functionName} to guard finally cleanup`);
+    if (usesCardCreateCompletionGuard) {
+      assert.ok(
+        catchIndex < catchCompletionGuardIndex,
+        `Expected ${functionName} to guard catch side effects`,
+      );
+      assert.ok(
+        finallyIndex < finallyCompletionGuardIndex,
+        `Expected ${functionName} to guard finally cleanup`,
+      );
+    } else {
+      assert.ok(catchIndex < catchGuardIndex, `Expected ${functionName} to guard catch side effects`);
+      assert.ok(finallyIndex < finallyGuardIndex, `Expected ${functionName} to guard finally cleanup`);
+    }
   }
 });

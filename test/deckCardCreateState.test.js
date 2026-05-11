@@ -2,9 +2,14 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  CARD_CREATE_COMPLETION_TYPES,
   CARD_CREATE_MESSAGES,
   MAX_CARD_CONTENT_LENGTH,
   createCardSubmission,
+  getCardCreateNetworkFailureCompletion,
+  getCardCreateResponseCompletion,
+  getCreateCardFailureMessage,
+  shouldRunCardCreateFinallyCleanup,
 } = require('../deckCardCreateState');
 
 test('createCardSubmission returns trimmed content for valid input', () => {
@@ -121,4 +126,119 @@ test('createCardSubmission blocks valid content while a submission is in flight'
       blocked: true,
     },
   );
+});
+
+test('card-create response completion ignores stale responses before parsing payloads', () => {
+  let parseCalls = 0;
+  const completion = getCardCreateResponseCompletion({
+    isCurrent: false,
+    responseOk: true,
+    payload: {
+      id: 10,
+      front_content: 'Front',
+      back_content: 'Back',
+    },
+    parseCreatedCard() {
+      parseCalls += 1;
+      return {};
+    },
+  });
+
+  assert.deepEqual(completion, {
+    type: CARD_CREATE_COMPLETION_TYPES.IGNORED,
+    ignored: true,
+  });
+  assert.equal(parseCalls, 0);
+});
+
+test('card-create response completion ignores stale server failures before UI error plans', () => {
+  const completion = getCardCreateResponseCompletion({
+    isCurrent: false,
+    responseOk: false,
+    payload: { error: 'Token expired' },
+  });
+
+  assert.deepEqual(completion, {
+    type: CARD_CREATE_COMPLETION_TYPES.IGNORED,
+    ignored: true,
+  });
+});
+
+test('card-create response completion preserves current non-OK error behavior', () => {
+  let parseCalls = 0;
+  assert.deepEqual(
+    getCardCreateResponseCompletion({
+      isCurrent: true,
+      responseOk: false,
+      payload: { error: 'Deck not found' },
+      parseCreatedCard() {
+        parseCalls += 1;
+        return {};
+      },
+    }),
+    {
+      type: CARD_CREATE_COMPLETION_TYPES.SERVER_ERROR,
+      ignored: false,
+      error: 'Deck not found',
+    },
+  );
+  assert.equal(parseCalls, 0);
+  assert.equal(getCreateCardFailureMessage({}), CARD_CREATE_MESSAGES.createFailed);
+});
+
+test('card-create response completion returns current validated success plans', () => {
+  const createdCard = {
+    id: 11,
+    front_content: 'Front',
+    back_content: 'Back',
+  };
+
+  assert.deepEqual(
+    getCardCreateResponseCompletion({
+      isCurrent: true,
+      responseOk: true,
+      payload: createdCard,
+    }),
+    {
+      type: CARD_CREATE_COMPLETION_TYPES.SUCCESS,
+      ignored: false,
+      createdCard,
+      success: CARD_CREATE_MESSAGES.success,
+    },
+  );
+});
+
+test('card-create response completion converts malformed current successes to generic error plans', () => {
+  assert.deepEqual(
+    getCardCreateResponseCompletion({
+      isCurrent: true,
+      responseOk: true,
+      payload: { id: 11, front_content: 'Front' },
+    }),
+    {
+      type: CARD_CREATE_COMPLETION_TYPES.INVALID_RESPONSE,
+      ignored: false,
+      error: CARD_CREATE_MESSAGES.createFailed,
+    },
+  );
+});
+
+test('card-create network and finally completions honor the current guard', () => {
+  assert.deepEqual(
+    getCardCreateNetworkFailureCompletion({ isCurrent: false }),
+    {
+      type: CARD_CREATE_COMPLETION_TYPES.IGNORED,
+      ignored: true,
+    },
+  );
+  assert.deepEqual(
+    getCardCreateNetworkFailureCompletion({ isCurrent: true }),
+    {
+      type: CARD_CREATE_COMPLETION_TYPES.NETWORK_ERROR,
+      ignored: false,
+      error: CARD_CREATE_MESSAGES.networkFailed,
+    },
+  );
+  assert.equal(shouldRunCardCreateFinallyCleanup({ isCurrent: false }), false);
+  assert.equal(shouldRunCardCreateFinallyCleanup({ isCurrent: true }), true);
 });

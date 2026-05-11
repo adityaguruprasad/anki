@@ -86,7 +86,13 @@ const {
   clearDeckRemoval,
   isDeckRemovalInFlight,
 } = deckRemovalInFlightState;
-const { createCardSubmission } = deckCardCreateState;
+const {
+  CARD_CREATE_COMPLETION_TYPES,
+  createCardSubmission,
+  getCardCreateNetworkFailureCompletion,
+  getCardCreateResponseCompletion,
+  shouldRunCardCreateFinallyCleanup,
+} = deckCardCreateState;
 const {
   beginDeckManagementMutation,
   invalidateDeckManagementMutations,
@@ -1011,22 +1017,32 @@ const DeckManagement = ({ env, onAuthExpired }) => {
       }
 
       if (!response.ok) {
+        const completion = getCardCreateResponseCompletion({
+          isCurrent: isCurrentMutation(),
+          responseOk: response.ok,
+          payload: data,
+        });
+        if (completion.ignored) {
+          return;
+        }
         setCardFormStatus(deckId, {
-          error: data.error || 'Unable to add card.',
+          error: completion.error,
           success: '',
         });
         return;
       }
 
-      let createdCard;
-      try {
-        createdCard = parseDeckCardMutationResponsePayload(data);
-      } catch {
-        if (!isCurrentMutation()) {
-          return;
-        }
+      const completion = getCardCreateResponseCompletion({
+        isCurrent: isCurrentMutation(),
+        responseOk: response.ok,
+        payload: data,
+      });
+      if (completion.ignored) {
+        return;
+      }
+      if (completion.type === CARD_CREATE_COMPLETION_TYPES.INVALID_RESPONSE) {
         setCardFormStatus(deckId, {
-          error: 'Unable to add card.',
+          error: completion.error,
           success: '',
         });
         return;
@@ -1035,6 +1051,7 @@ const DeckManagement = ({ env, onAuthExpired }) => {
       if (!isCurrentMutation()) {
         return;
       }
+      const { createdCard } = completion;
       setCardForms((currentForms) => ({
         ...currentForms,
         [deckId]: {
@@ -1042,22 +1059,25 @@ const DeckManagement = ({ env, onAuthExpired }) => {
           backContent: '',
           creating: false,
           error: '',
-          success: 'Card added.',
+          success: completion.success,
         },
       }));
       setDecks((currentDecks) => incrementDeckCardCounts(currentDecks, deckId, createdCard));
       setDeckCards((currentCards) => addCreatedCardToLoadedDeckCards(currentCards, deckId, createdCard));
     } catch (error) {
-      if (!isCurrentMutation()) {
+      const completion = getCardCreateNetworkFailureCompletion({
+        isCurrent: isCurrentMutation(),
+      });
+      if (completion.ignored) {
         return;
       }
       console.error('Error creating card:', error);
       setCardFormStatus(deckId, {
-        error: 'Network error. Please try again.',
+        error: completion.error,
         success: '',
       });
     } finally {
-      if (isCurrentMutation()) {
+      if (shouldRunCardCreateFinallyCleanup({ isCurrent: isCurrentMutation() })) {
         delete cardCreateInFlightRef.current[deckId];
         setCardFormStatus(deckId, {
           creating: false,

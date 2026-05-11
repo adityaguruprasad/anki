@@ -266,7 +266,19 @@ test('card mutations validate successful payloads before updating visible state'
   const addAuthExpiredIndex = addBody.indexOf('if (handleAuthExpiredResponse(response, onAuthExpired))');
   const addJsonIndex = addBody.indexOf('const data = await response.json().catch(() => ({}));');
   const addResponseOkIndex = addBody.indexOf('if (!response.ok) {');
-  const addValidationIndex = addBody.indexOf('createdCard = parseDeckCardMutationResponsePayload(data);');
+  const addNonOkCompletionIndex = addBody.indexOf(
+    'const completion = getCardCreateResponseCompletion({',
+    addResponseOkIndex,
+  );
+  const addValidationIndex = addBody.indexOf(
+    'const completion = getCardCreateResponseCompletion({',
+    addNonOkCompletionIndex + 1,
+  );
+  const addInvalidResponseIndex = addBody.indexOf(
+    'completion.type === CARD_CREATE_COMPLETION_TYPES.INVALID_RESPONSE',
+    addValidationIndex,
+  );
+  const addCreatedCardIndex = addBody.indexOf('const { createdCard } = completion;', addValidationIndex);
   const addClearFormIndex = addBody.indexOf('setCardForms((currentForms) => ({');
   const addIncrementIndex = addBody.indexOf('incrementDeckCardCounts(currentDecks, deckId, createdCard)');
   const addLocalCardIndex = addBody.indexOf('addCreatedCardToLoadedDeckCards(currentCards, deckId, createdCard)');
@@ -291,24 +303,30 @@ test('card mutations validate successful payloads before updating visible state'
   assert.notEqual(addAuthExpiredIndex, -1, 'Expected auth-expired handling to remain in addCard');
   assert.notEqual(addJsonIndex, -1, 'Expected addCard to parse response JSON');
   assert.notEqual(addResponseOkIndex, -1, 'Expected addCard to keep non-2xx handling');
+  assert.notEqual(addNonOkCompletionIndex, -1, 'Expected addCard non-2xx handling to use the card-create helper');
   assert.notEqual(addValidationIndex, -1, 'Expected addCard to validate successful payloads');
+  assert.notEqual(addInvalidResponseIndex, -1, 'Expected addCard to keep malformed-success handling');
+  assert.notEqual(addCreatedCardIndex, -1, 'Expected addCard to use the helper-validated card');
   assert.notEqual(addClearFormIndex, -1, 'Expected addCard to clear the form only after validation');
   assert.notEqual(addIncrementIndex, -1, 'Expected addCard to increment counts using the parsed card');
   assert.notEqual(addLocalCardIndex, -1, 'Expected addCard to add the parsed card locally');
   assert.ok(addAuthExpiredIndex < addJsonIndex, 'Expected addCard auth expiration before JSON parsing');
   assert.ok(addJsonIndex < addResponseOkIndex, 'Expected addCard non-2xx handling after JSON parsing');
   assert.ok(addResponseOkIndex < addValidationIndex, 'Expected addCard validation after non-2xx handling');
+  assert.ok(addValidationIndex < addInvalidResponseIndex, 'Expected addCard validation before malformed-success handling');
+  assert.ok(addValidationIndex < addCreatedCardIndex, 'Expected addCard to read created cards from the validation helper');
+  assert.ok(addCreatedCardIndex < addClearFormIndex, 'Expected addCard to derive created cards before clearing the form');
   assert.ok(addValidationIndex < addClearFormIndex, 'Expected addCard validation before clearing the form');
   assert.ok(addValidationIndex < addIncrementIndex, 'Expected addCard validation before count updates');
   assert.ok(addValidationIndex < addLocalCardIndex, 'Expected addCard validation before local card insertion');
   assert.match(
     addBody.slice(addResponseOkIndex, addValidationIndex),
-    /error: data\.error \|\| 'Unable to add card\.'/,
+    /error: completion\.error,/,
     'Expected addCard non-2xx responses to keep backend error copy behavior',
   );
   assert.match(
     addBody.slice(addValidationIndex, addClearFormIndex),
-    /error: 'Unable to add card\.'/,
+    /error: completion\.error,/,
     'Expected malformed successful creates to use safe add-card failure copy',
   );
 
