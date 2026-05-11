@@ -8,6 +8,7 @@ const dashboardDeckTarget = require('./dashboardDeckTarget');
 const dashboardReviewActivityDisplayState = require('./dashboardReviewActivityDisplayState');
 const dashboardStatsDisplayState = require('./dashboardStatsDisplayState');
 const dashboardAuxiliaryDisplayState = require('./dashboardAuxiliaryDisplayState');
+const dashboardRequestInFlightState = require('./dashboardRequestInFlightState');
 const schedulingInsightsSummary = require('./schedulingInsightsSummary');
 const authHeaders = require('./authHeaders');
 const authExpiration = require('./authExpiration');
@@ -21,6 +22,11 @@ const {
   buildSchedulingInsightsDisplayState,
   hasSchedulingInsightsPayload,
 } = dashboardAuxiliaryDisplayState;
+const {
+  DASHBOARD_REQUEST_DOMAINS,
+  beginDashboardRequest,
+  completeDashboardRequest,
+} = dashboardRequestInFlightState;
 const { buildSchedulingInsightsSummary } = schedulingInsightsSummary;
 const { buildAuthHeaders } = authHeaders;
 const { handleAuthExpiredResponse } = authExpiration;
@@ -29,6 +35,7 @@ const Dashboard = ({ env, onAuthExpired }) => {
   const history = useHistory();
   const apiRequests = useMemo(() => getDashboardApiRequests(env), [env]);
   const isMountedRef = useRef(true);
+  const dashboardRequestsInFlightRef = useRef({});
   const latestStatsUrlRef = useRef(apiRequests.statsUrl);
   const statsRequestSequenceRef = useRef(0);
   const latestDeckListUrlRef = useRef(apiRequests.deckListUrl);
@@ -66,6 +73,16 @@ const Dashboard = ({ env, onAuthExpired }) => {
     );
 
     if (shouldSkipRequest()) {
+      return;
+    }
+
+    const requestGuard = beginDashboardRequest(
+      dashboardRequestsInFlightRef.current,
+      DASHBOARD_REQUEST_DOMAINS.STATS,
+      statsUrl
+    );
+
+    if (!requestGuard) {
       return;
     }
 
@@ -107,6 +124,7 @@ const Dashboard = ({ env, onAuthExpired }) => {
       console.error('Error fetching stats:', error);
       setStatsLoadFailed(true);
     } finally {
+      completeDashboardRequest(dashboardRequestsInFlightRef.current, requestGuard);
       if (!shouldSkipUpdate()) {
         setIsLoadingStats(false);
       }
@@ -122,6 +140,16 @@ const Dashboard = ({ env, onAuthExpired }) => {
     );
 
     if (shouldSkipRequest()) {
+      return;
+    }
+
+    const requestGuard = beginDashboardRequest(
+      dashboardRequestsInFlightRef.current,
+      DASHBOARD_REQUEST_DOMAINS.DECK_LIST,
+      deckListUrl
+    );
+
+    if (!requestGuard) {
       return;
     }
 
@@ -163,6 +191,7 @@ const Dashboard = ({ env, onAuthExpired }) => {
       console.error('Error fetching decks:', error);
       setDeckLoadFailed(true);
     } finally {
+      completeDashboardRequest(dashboardRequestsInFlightRef.current, requestGuard);
       if (!shouldSkipUpdate()) {
         setIsLoadingDecks(false);
       }
@@ -178,6 +207,16 @@ const Dashboard = ({ env, onAuthExpired }) => {
     );
 
     if (shouldSkipRequest()) {
+      return;
+    }
+
+    const requestGuard = beginDashboardRequest(
+      dashboardRequestsInFlightRef.current,
+      DASHBOARD_REQUEST_DOMAINS.SCHEDULING_INSIGHTS,
+      schedulingInsightsUrl
+    );
+
+    if (!requestGuard) {
       return;
     }
 
@@ -219,6 +258,7 @@ const Dashboard = ({ env, onAuthExpired }) => {
       console.error('Error fetching scheduling insights:', error);
       setSchedulingInsightsLoadFailed(true);
     } finally {
+      completeDashboardRequest(dashboardRequestsInFlightRef.current, requestGuard);
       if (!shouldSkipUpdate()) {
         setIsLoadingSchedulingInsights(false);
       }

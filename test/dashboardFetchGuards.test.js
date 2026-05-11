@@ -39,28 +39,38 @@ test('dashboard fetch helpers skip before claiming a new request sequence', () =
       requestUrlName: 'statsUrl',
       latestUrlRefName: 'latestStatsUrlRef',
       sequenceRefName: 'statsRequestSequenceRef',
+      requestDomainName: 'STATS',
     },
     {
       functionName: 'fetchDecks',
       requestUrlName: 'deckListUrl',
       latestUrlRefName: 'latestDeckListUrlRef',
       sequenceRefName: 'deckRequestSequenceRef',
+      requestDomainName: 'DECK_LIST',
     },
     {
       functionName: 'fetchSchedulingInsights',
       requestUrlName: 'schedulingInsightsUrl',
       latestUrlRefName: 'latestSchedulingInsightsUrlRef',
       sequenceRefName: 'schedulingInsightsRequestSequenceRef',
+      requestDomainName: 'SCHEDULING_INSIGHTS',
     },
   ].forEach(({
     functionName,
     requestUrlName,
     latestUrlRefName,
     sequenceRefName,
+    requestDomainName,
   }) => {
     const body = extractConstFunctionBody(functionName);
     const skipGuardIndex = body.indexOf('if (shouldSkipRequest()) {');
+    const inFlightBeginIndex = body.indexOf('const requestGuard = beginDashboardRequest(');
+    const inFlightSkipIndex = body.indexOf('if (!requestGuard) {');
     const sequenceClaimIndex = body.indexOf(`${sequenceRefName}.current = requestSequence;`);
+    const fetchIndex = body.indexOf(`const response = await fetch(${requestUrlName},`);
+    const staleGuardIndex = body.indexOf('if (shouldSkipUpdate()) {', fetchIndex);
+    const authExpiredIndex = body.indexOf('if (handleAuthExpiredResponse(response, onAuthExpired))', fetchIndex);
+    const completionIndex = body.indexOf('completeDashboardRequest(dashboardRequestsInFlightRef.current, requestGuard);');
 
     assert.match(
       body,
@@ -70,10 +80,43 @@ test('dashboard fetch helpers skip before claiming a new request sequence', () =
       `Expected ${functionName} to keep unmounted, ignored, and stale URL pre-flight guards`
     );
     assert.notEqual(skipGuardIndex, -1, `Expected ${functionName} to check shouldSkipRequest`);
+    assert.notEqual(inFlightBeginIndex, -1, `Expected ${functionName} to begin an in-flight request guard`);
+    assert.notEqual(inFlightSkipIndex, -1, `Expected ${functionName} to skip duplicate in-flight requests`);
     assert.notEqual(sequenceClaimIndex, -1, `Expected ${functionName} to claim a request sequence`);
+    assert.notEqual(fetchIndex, -1, `Expected ${functionName} to fetch the current URL`);
+    assert.notEqual(staleGuardIndex, -1, `Expected ${functionName} to guard stale responses before auth handling`);
+    assert.notEqual(authExpiredIndex, -1, `Expected ${functionName} to keep auth-expiration handling`);
+    assert.notEqual(completionIndex, -1, `Expected ${functionName} to release its in-flight request guard`);
+    assert.match(
+      body,
+      new RegExp(
+        `beginDashboardRequest\\([\\s\\S]*dashboardRequestsInFlightRef\\.current,[\\s\\S]*DASHBOARD_REQUEST_DOMAINS\\.${requestDomainName},[\\s\\S]*${requestUrlName}[\\s\\S]*\\);`
+      ),
+      `Expected ${functionName} to guard by Dashboard request domain and current URL`
+    );
     assert.ok(
       skipGuardIndex < sequenceClaimIndex,
       `Expected ${functionName} to skip ignored calls before invalidating in-flight requests`
+    );
+    assert.ok(
+      skipGuardIndex < inFlightBeginIndex,
+      `Expected ${functionName} to keep stale/unmounted pre-flight checks before the in-flight guard`
+    );
+    assert.ok(
+      inFlightBeginIndex < sequenceClaimIndex,
+      `Expected ${functionName} to skip duplicate in-flight requests before claiming a sequence`
+    );
+    assert.ok(
+      inFlightSkipIndex < fetchIndex,
+      `Expected ${functionName} to skip duplicate in-flight requests before fetch`
+    );
+    assert.ok(
+      staleGuardIndex < authExpiredIndex,
+      `Expected ${functionName} to preserve stale/current guard before auth-expiration handling`
+    );
+    assert.ok(
+      fetchIndex < completionIndex,
+      `Expected ${functionName} to release its in-flight guard after the fetch attempt starts`
     );
     assert.match(
       body,
@@ -86,6 +129,21 @@ test('dashboard fetch helpers skip before claiming a new request sequence', () =
       `Expected ${functionName} to keep URL stale-response protection`
     );
   });
+});
+
+test('dashboard imports request in-flight guards for all fetch helpers', () => {
+  assert.match(
+    dashboardSource,
+    /const dashboardRequestInFlightState = require\('\.\/dashboardRequestInFlightState'\);/
+  );
+  assert.match(
+    dashboardSource,
+    /const \{\s*DASHBOARD_REQUEST_DOMAINS,\s*beginDashboardRequest,\s*completeDashboardRequest,\s*\} = dashboardRequestInFlightState;/
+  );
+  assert.match(
+    dashboardSource,
+    /const dashboardRequestsInFlightRef = useRef\(\{\}\);/
+  );
 });
 
 test('fetchSchedulingInsights rejects malformed successful payloads before storing them', () => {

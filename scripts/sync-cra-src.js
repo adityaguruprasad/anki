@@ -15,6 +15,7 @@ const FRONTEND_MODULES = Object.freeze([
   'dashboardApiRequests.js',
   'dashboardAuxiliaryDisplayState.js',
   'dashboardDeckTarget.js',
+  'dashboardRequestInFlightState.js',
   'dashboardReviewActivityDisplayState.js',
   'dashboardStatsDisplayState.js',
   'schedulingInsightsSummary.js',
