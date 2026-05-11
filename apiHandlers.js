@@ -848,18 +848,27 @@ async function getSchedulingInsights(req, res, db, now = new Date()) {
     const { rows } = await db.query(
       `SELECT
          COUNT(c.id) AS "totalCards",
-         COUNT(c.id) FILTER (WHERE c.next_review < $2) AS "overdue",
          COUNT(c.id) FILTER (
-           WHERE c.next_review >= $2
-             AND c.next_review < $3
+           WHERE c.next_review IS NOT NULL
+             AND c.next_review < $2
+         ) AS "overdue",
+         COUNT(c.id) FILTER (
+           WHERE c.next_review IS NULL
+              OR (
+                c.next_review >= $2
+                AND c.next_review < $3
+              )
          ) AS "dueToday",
          COUNT(c.id) FILTER (
            WHERE c.next_review >= $3
              AND c.next_review < $4
          ) AS "dueTomorrow",
          COUNT(c.id) FILTER (
-           WHERE c.next_review >= $2
-             AND c.next_review < $5
+           WHERE c.next_review IS NULL
+              OR (
+                c.next_review >= $2
+                AND c.next_review < $5
+              )
          ) AS "dueNext7Days",
          COUNT(c.id) FILTER (
            WHERE c.ease_factor > 0

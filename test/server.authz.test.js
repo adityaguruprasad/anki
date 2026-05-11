@@ -1944,13 +1944,56 @@ test('GET /api/scheduling-insights returns expected shape from one aggregate que
   ]);
   assert.match(db.calls[0].sql, /COUNT\(c\.id\)/);
   assert.match(db.calls[0].sql, /WHERE d\.user_id = \$1/);
-  assert.match(db.calls[0].sql, /c\.next_review < \$2/);
-  assert.match(db.calls[0].sql, /c\.next_review >= \$2\s+AND c\.next_review < \$3/);
+  assert.match(db.calls[0].sql, /c\.next_review IS NOT NULL\s+AND c\.next_review < \$2/);
+  assert.match(db.calls[0].sql, /c\.next_review IS NULL\s+OR\s+\(\s+c\.next_review >= \$2\s+AND c\.next_review < \$3\s+\)/);
   assert.match(db.calls[0].sql, /c\.next_review >= \$3\s+AND c\.next_review < \$4/);
-  assert.match(db.calls[0].sql, /c\.next_review >= \$2\s+AND c\.next_review < \$5/);
+  assert.match(db.calls[0].sql, /c\.next_review IS NULL\s+OR\s+\(\s+c\.next_review >= \$2\s+AND c\.next_review < \$5\s+\)/);
   assert.doesNotMatch(db.calls[0].sql, /\bCURRENT_DATE\b/i);
   assert.doesNotMatch(db.calls[0].sql, /SELECT\s+c\.id\b/i);
   assert.doesNotMatch(db.calls[0].sql, /\bc\.next_review,\s*c\.ease_factor,\s*c\.review_count\b/i);
+});
+
+test('GET /api/scheduling-insights treats null next_review as due today load', async () => {
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [
+        {
+          totalCards: '12',
+          overdue: '1',
+          dueToday: '9',
+          dueTomorrow: '2',
+          dueNext7Days: '11',
+          leechCandidates: '0',
+          averageEaseFactor: '2.5',
+        },
+      ],
+    },
+  ]);
+  const req = { user: { userId: 'user-1' } };
+  const res = createRes();
+
+  await getSchedulingInsights(req, res, db, new Date(2026, 4, 8, 15, 45, 12, 345));
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, {
+    totalCards: 12,
+    overdue: 1,
+    dueToday: 9,
+    dueTomorrow: 2,
+    dueNext7Days: 11,
+    leechCandidates: 0,
+    averageEaseFactor: 2.5,
+    recommendedDailyReviewTarget: 12,
+    suggestedNewCards: 10,
+  });
+  assert.equal(db.calls.length, 1);
+
+  const nullDuePredicates = db.calls[0].sql.match(/c\.next_review IS NULL/g) ?? [];
+  assert.equal(nullDuePredicates.length, 2);
+  assert.match(db.calls[0].sql, /c\.next_review IS NOT NULL\s+AND c\.next_review < \$2/);
+  assert.match(db.calls[0].sql, /c\.next_review IS NULL\s+OR\s+\(\s+c\.next_review >= \$2\s+AND c\.next_review < \$3\s+\)\s+\)\s+AS "dueToday"/);
+  assert.match(db.calls[0].sql, /c\.next_review IS NULL\s+OR\s+\(\s+c\.next_review >= \$2\s+AND c\.next_review < \$5\s+\)\s+\)\s+AS "dueNext7Days"/);
 });
 
 test('GET /api/scheduling-insights keeps null averageEaseFactor when no positive ease factors exist', async () => {
