@@ -26,6 +26,7 @@ const { getStudySessionNotice, STUDY_SESSION_NOTICE_TYPES } = studySessionNotice
 const {
   getStudySessionRequest,
   getValidatedStudySessionDeckListRequest,
+  shouldShowNoDueNoticeForInitialStudySessionRequest,
   STUDY_SESSION_REQUESTS,
 } = studySessionTarget;
 const { selectValidatedStudySessionDueCard } = studySessionDueCards;
@@ -145,7 +146,7 @@ const StudySession = ({ env, onAuthExpired }) => {
 
     if (initialRequest.type === STUDY_SESSION_REQUESTS.LOAD_CARDS) {
       await fetchNextCard(initialRequest.deckId, requestSearch, {
-        showNoDueNotice: initialRequest.source === 'explicit',
+        showNoDueNotice: shouldShowNoDueNoticeForInitialStudySessionRequest(initialRequest),
       });
       return;
     }
@@ -190,7 +191,9 @@ const StudySession = ({ env, onAuthExpired }) => {
       const selectedRequest = getValidatedStudySessionDeckListRequest(requestSearch, decks);
 
       if (selectedRequest.type === STUDY_SESSION_REQUESTS.LOAD_CARDS) {
-        await fetchNextCard(selectedRequest.deckId, requestSearch);
+        await fetchNextCard(selectedRequest.deckId, requestSearch, {
+          showNoDueNotice: shouldShowNoDueNoticeForInitialStudySessionRequest(selectedRequest),
+        });
         return;
       }
 

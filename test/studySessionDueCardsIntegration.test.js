@@ -56,6 +56,29 @@ test('StudySession validates due-card JSON before storing or branching on cards'
   );
 });
 
+test('StudySession shows actionable no-due notices for initial deck loads only', () => {
+  assert.match(
+    studySessionSource,
+    /shouldShowNoDueNoticeForInitialStudySessionRequest/,
+    'StudySession should import the initial no-due notice policy helper',
+  );
+  assert.match(
+    studySessionSource,
+    /await fetchNextCard\(initialRequest\.deckId,\s*requestSearch,\s*\{\s*showNoDueNotice: shouldShowNoDueNoticeForInitialStudySessionRequest\(initialRequest\),\s*\}\);/,
+    'Expected explicit initial deck sessions to use the no-due notice policy',
+  );
+  assert.match(
+    studySessionSource,
+    /await fetchNextCard\(selectedRequest\.deckId,\s*requestSearch,\s*\{\s*showNoDueNotice: shouldShowNoDueNoticeForInitialStudySessionRequest\(selectedRequest\),\s*\}\);/,
+    'Expected auto-selected initial deck sessions to use the no-due notice policy',
+  );
+  assert.match(
+    studySessionSource,
+    /await fetchNextCard\(requestDeckId,\s*requestSearch\);/,
+    'Expected post-answer next-card fetches to keep the existing terminal-session behavior',
+  );
+});
+
 test('CRA source sync mirrors the due-card validation helper', () => {
   assert.ok(
     FRONTEND_MODULES.includes('studySessionDueCards.js'),

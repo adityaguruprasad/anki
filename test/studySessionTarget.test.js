@@ -6,6 +6,7 @@ const {
   getStudySessionRequest,
   getValidatedStudySessionDeckListRequest,
   parseDeckId,
+  shouldShowNoDueNoticeForInitialStudySessionRequest,
 } = require('../studySessionTarget');
 
 test('parseDeckId returns a positive safe integer deck id from the route', () => {
@@ -139,4 +140,44 @@ test('getValidatedStudySessionDeckListRequest preserves valid deck selection beh
     getValidatedStudySessionDeckListRequest('', []),
     getStudySessionRequest('', []),
   );
+});
+
+test('shouldShowNoDueNoticeForInitialStudySessionRequest covers initial deck loads only', () => {
+  assert.equal(
+    shouldShowNoDueNoticeForInitialStudySessionRequest({
+      type: STUDY_SESSION_REQUESTS.LOAD_CARDS,
+      deckId: 1,
+      source: 'explicit',
+    }),
+    true,
+  );
+  assert.equal(
+    shouldShowNoDueNoticeForInitialStudySessionRequest({
+      type: STUDY_SESSION_REQUESTS.LOAD_CARDS,
+      deckId: 2,
+      source: 'selected',
+    }),
+    true,
+  );
+  assert.equal(
+    shouldShowNoDueNoticeForInitialStudySessionRequest({
+      type: STUDY_SESSION_REQUESTS.LOAD_CARDS,
+      deckId: 3,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldShowNoDueNoticeForInitialStudySessionRequest({
+      type: STUDY_SESSION_REQUESTS.LOAD_DECKS,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldShowNoDueNoticeForInitialStudySessionRequest({
+      type: STUDY_SESSION_REQUESTS.NO_DUE_DECK,
+      deck: null,
+    }),
+    false,
+  );
+  assert.equal(shouldShowNoDueNoticeForInitialStudySessionRequest(null), false);
 });

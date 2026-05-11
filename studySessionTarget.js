@@ -61,9 +61,15 @@ function getValidatedStudySessionDeckListRequest(search, decks) {
   return getStudySessionRequest(search, decks);
 }
 
+function shouldShowNoDueNoticeForInitialStudySessionRequest(request) {
+  return request?.type === STUDY_SESSION_REQUESTS.LOAD_CARDS
+    && (request.source === 'explicit' || request.source === 'selected');
+}
+
 module.exports = {
   STUDY_SESSION_REQUESTS,
   getStudySessionRequest,
   getValidatedStudySessionDeckListRequest,
   parseDeckId,
+  shouldShowNoDueNoticeForInitialStudySessionRequest,
 };
