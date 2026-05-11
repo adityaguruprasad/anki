@@ -9,6 +9,7 @@ const deckRenameState = require('./deckRenameState');
 const deckManagementApiRequests = require('./deckManagementApiRequests');
 const deckManagementDeckListPayload = require('./deckManagementDeckListPayload');
 const deckMutationResponse = require('./deckMutationResponse');
+const deckRemovalResponse = require('./deckRemovalResponse');
 const deckCollectionState = require('./deckCollectionState');
 const deckCardState = require('./deckCardState');
 const deckCardBrowseResponse = require('./deckCardBrowseResponse');
@@ -43,6 +44,7 @@ const {
 const { getDeckManagementApiRequests } = deckManagementApiRequests;
 const { parseDeckManagementDeckListPayload } = deckManagementDeckListPayload;
 const { parseDeckMutationResponsePayload } = deckMutationResponse;
+const { parseDeckRemovalSuccessPayload } = deckRemovalResponse;
 const {
   addCreatedDeck,
   mergeRenamedDeck,
@@ -1159,6 +1161,16 @@ const DeckManagement = ({ env, onAuthExpired }) => {
         setDeleteErrors((currentErrors) => ({
           ...currentErrors,
           [deckId]: data.error || 'Unable to delete deck.',
+        }));
+        return;
+      }
+
+      try {
+        parseDeckRemovalSuccessPayload(data);
+      } catch {
+        setDeleteErrors((currentErrors) => ({
+          ...currentErrors,
+          [deckId]: 'Unable to delete deck.',
         }));
         return;
       }

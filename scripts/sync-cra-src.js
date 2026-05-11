@@ -30,6 +30,7 @@ const FRONTEND_MODULES = Object.freeze([
   'deckManagementApiRequests.js',
   'deckManagementDeckListPayload.js',
   'deckMutationResponse.js',
+  'deckRemovalResponse.js',
   'deckNameValidation.js',
   'deckRemovalInFlightState.js',
   'deckRenameState.js',

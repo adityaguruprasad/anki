@@ -422,6 +422,55 @@ test('deck mutations validate successful payloads before updating visible state'
   );
 });
 
+test('deleteDeck validates successful removal payloads before updating visible state', () => {
+  const body = extractConstFunctionBody('deleteDeck');
+  const authExpiredIndex = body.indexOf('if (handleAuthExpiredResponse(response, onAuthExpired))');
+  const jsonIndex = body.indexOf('const data = await response.json().catch(() => ({}));');
+  const responseOkIndex = body.indexOf('if (!response.ok) {');
+  const validationIndex = body.indexOf('parseDeckRemovalSuccessPayload(data);');
+  const clearErrorIndex = body.indexOf('delete nextErrors[deckId];', validationIndex);
+  const removeDeckIndex = body.indexOf('removeDeckFromList(currentDecks, deckId)');
+  const removeCardsIndex = body.indexOf('delete nextCards[deckId];');
+  const silentRefreshIndex = body.indexOf('void fetchDecks({ silent: true });');
+
+  assert.match(
+    deckSource,
+    /require\(['"]\.\/deckRemovalResponse['"]\)/,
+    'Expected deck.js to import the deck-removal response validator',
+  );
+  assert.match(
+    deckSource,
+    /const \{ parseDeckRemovalSuccessPayload \} = deckRemovalResponse;/,
+    'Expected deck.js to destructure the deck-removal response parser',
+  );
+
+  assert.notEqual(authExpiredIndex, -1, 'Expected auth-expired handling to remain in deleteDeck');
+  assert.notEqual(jsonIndex, -1, 'Expected deleteDeck to parse response JSON');
+  assert.notEqual(responseOkIndex, -1, 'Expected deleteDeck to keep non-2xx handling');
+  assert.notEqual(validationIndex, -1, 'Expected deleteDeck to validate successful payloads');
+  assert.notEqual(clearErrorIndex, -1, 'Expected deleteDeck to clear errors only after validation');
+  assert.notEqual(removeDeckIndex, -1, 'Expected deleteDeck to remove the deck only after validation');
+  assert.notEqual(removeCardsIndex, -1, 'Expected deleteDeck to remove deck cards only after validation');
+  assert.notEqual(silentRefreshIndex, -1, 'Expected deleteDeck to silently refresh only after validation');
+  assert.ok(authExpiredIndex < jsonIndex, 'Expected deleteDeck auth expiration before JSON parsing');
+  assert.ok(jsonIndex < responseOkIndex, 'Expected deleteDeck non-2xx handling after JSON parsing');
+  assert.ok(responseOkIndex < validationIndex, 'Expected deleteDeck validation after non-2xx handling');
+  assert.ok(validationIndex < clearErrorIndex, 'Expected deleteDeck validation before clearing errors');
+  assert.ok(validationIndex < removeDeckIndex, 'Expected deleteDeck validation before local deck removal');
+  assert.ok(validationIndex < removeCardsIndex, 'Expected deleteDeck validation before local card cleanup');
+  assert.ok(validationIndex < silentRefreshIndex, 'Expected deleteDeck validation before silent refresh');
+  assert.match(
+    body.slice(responseOkIndex, validationIndex),
+    /\[deckId\]: data\.error \|\| 'Unable to delete deck\.',/,
+    'Expected deleteDeck non-2xx responses to keep backend error copy behavior',
+  );
+  assert.match(
+    body.slice(validationIndex, clearErrorIndex),
+    /\[deckId\]: 'Unable to delete deck\.',/,
+    'Expected malformed successful deletes to use safe delete-deck failure copy',
+  );
+});
+
 test('CRA source sync mirrors deck-management response validators', () => {
   assert.ok(
     FRONTEND_MODULES.includes('deckCardBrowseResponse.js'),
@@ -434,6 +483,10 @@ test('CRA source sync mirrors deck-management response validators', () => {
   assert.ok(
     FRONTEND_MODULES.includes('deckMutationResponse.js'),
     'Expected deckMutationResponse.js to be mirrored into CRA src',
+  );
+  assert.ok(
+    FRONTEND_MODULES.includes('deckRemovalResponse.js'),
+    'Expected deckRemovalResponse.js to be mirrored into CRA src',
   );
 });
 
