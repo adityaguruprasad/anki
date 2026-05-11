@@ -128,6 +128,40 @@ test('silent fetch terminal failures clear loading without showing prominent loa
   );
 });
 
+test('fetchDecks ignores stale deck-list responses before auth-expiration side effects', () => {
+  const body = extractConstFunctionBody('fetchDecks');
+  const fetchIndex = body.indexOf('const response = await fetch(apiRequests.deckListUrl, {');
+  const currentGuardIndex = body.indexOf('if (!isCurrentDeckListResponse()) {', fetchIndex);
+  const authExpiredIndex = body.indexOf('if (handleAuthExpiredResponse(response, onAuthExpired))');
+  const nonOkIndex = body.indexOf('if (!response.ok) {');
+
+  assert.match(
+    deckSource,
+    /getDeckListLoadFailureMessage,\s*isCurrentDeckListRequest,/,
+    'Expected deck.js to import the deck-list request lifecycle helper',
+  );
+  assert.match(
+    body,
+    /const isCurrentDeckListResponse = \(\) => isCurrentDeckListRequest\(\{\s*isMountedRef: isDeckListMountedRef,\s*requestIdRef: deckListRequestIdRef,\s*requestId,\s*\}\);/,
+    'Expected deck-list responses to be checked through the pure lifecycle helper',
+  );
+  assert.notEqual(fetchIndex, -1, 'Expected fetchDecks to keep the deck-list fetch');
+  assert.notEqual(currentGuardIndex, -1, 'Expected fetchDecks to guard after fetch resolution');
+  assert.notEqual(authExpiredIndex, -1, 'Expected fetchDecks to keep auth-expiration handling');
+  assert.notEqual(nonOkIndex, -1, 'Expected fetchDecks to keep non-OK handling');
+  assert.ok(fetchIndex < currentGuardIndex, 'Expected current guard after fetch resolution');
+  assert.ok(
+    currentGuardIndex < authExpiredIndex,
+    'Expected stale responses to return before auth-expiration handling',
+  );
+  assert.ok(currentGuardIndex < nonOkIndex, 'Expected stale responses to return before generic failures');
+  assert.match(
+    body.slice(currentGuardIndex, authExpiredIndex),
+    /return false;/,
+    'Expected stale deck-list responses to avoid response side effects',
+  );
+});
+
 test('fetchDeckCards validates successful browse payloads before storing them', () => {
   const body = extractConstFunctionBody('fetchDeckCards');
   const authExpiredIndex = body.indexOf('if (handleAuthExpiredResponse(response, onAuthExpired))');

@@ -33,6 +33,7 @@ const {
   finishDeckListSilentFailure,
   finishDeckListLoadSuccess,
   getDeckListLoadFailureMessage,
+  isCurrentDeckListRequest,
 } = deckListLoadState;
 const {
   RENAME_DECK_MESSAGES,
@@ -135,9 +136,11 @@ const DeckManagement = ({ env, onAuthExpired }) => {
       setDeckListLoadState(beginDeckListLoad());
     }
 
-    const isCurrentDeckListRequest = () => (
-      isDeckListMountedRef.current && deckListRequestIdRef.current === requestId
-    );
+    const isCurrentDeckListResponse = () => isCurrentDeckListRequest({
+      isMountedRef: isDeckListMountedRef,
+      requestIdRef: deckListRequestIdRef,
+      requestId,
+    });
 
     const finishSilentDeckListFailure = () => {
       setDeckListLoadState((currentState) => finishDeckListSilentFailure(currentState));
@@ -148,13 +151,17 @@ const DeckManagement = ({ env, onAuthExpired }) => {
         headers: buildAuthHeaders(localStorage)
       });
 
+      if (!isCurrentDeckListResponse()) {
+        return false;
+      }
+
       if (handleAuthExpiredResponse(response, onAuthExpired)) {
         return false;
       }
 
       if (!response.ok) {
         const errorPayload = await response.json().catch(() => ({}));
-        if (isCurrentDeckListRequest()) {
+        if (isCurrentDeckListResponse()) {
           if (silent) {
             finishSilentDeckListFailure();
           } else {
@@ -167,7 +174,7 @@ const DeckManagement = ({ env, onAuthExpired }) => {
       }
 
       const data = await response.json();
-      if (!isCurrentDeckListRequest()) {
+      if (!isCurrentDeckListResponse()) {
         return false;
       }
 
@@ -191,7 +198,7 @@ const DeckManagement = ({ env, onAuthExpired }) => {
       return true;
     } catch (error) {
       console.error('Error fetching decks:', error);
-      if (isCurrentDeckListRequest()) {
+      if (isCurrentDeckListResponse()) {
         if (silent) {
           finishSilentDeckListFailure();
         } else {

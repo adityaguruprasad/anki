@@ -50,6 +50,14 @@ function getDeckListLoadFailureMessage(payload) {
   return DECK_LIST_LOAD_MESSAGES.loadFailed;
 }
 
+function isCurrentDeckListRequest(options = {}) {
+  const { isMountedRef, requestIdRef, requestId } = options;
+
+  return Boolean(isMountedRef?.current)
+    && Boolean(requestIdRef)
+    && requestIdRef.current === requestId;
+}
+
 module.exports = {
   DECK_LIST_LOAD_MESSAGES,
   beginDeckListLoad,
@@ -58,4 +66,5 @@ module.exports = {
   finishDeckListSilentFailure,
   finishDeckListLoadSuccess,
   getDeckListLoadFailureMessage,
+  isCurrentDeckListRequest,
 };
