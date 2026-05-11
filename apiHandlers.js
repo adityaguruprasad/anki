@@ -558,12 +558,12 @@ async function submitStudySession(req, res, db, calculateNextReview) {
     }
 
     const cardResult = await db.query(
-      `SELECT c.*
+      `SELECT c.*,
+              ${getDueCardPredicate('c')} AS "__is_due"
        FROM cards c
        JOIN decks d ON d.id = c.deck_id
        WHERE c.id = $1
-         AND d.user_id = $2
-         AND ${getDueCardPredicate('c')}`,
+         AND d.user_id = $2`,
       [validCardId, req.user.userId]
     );
     if (cardResult.rowCount === 0) {
@@ -571,6 +571,10 @@ async function submitStudySession(req, res, db, calculateNextReview) {
     }
 
     const card = cardResult.rows[0];
+    if (card.__is_due === false) {
+      return res.status(409).json({ error: 'Card is not due' });
+    }
+
     const { ease_factor, interval, next_review } = calculateNextReview(card, quality);
 
     const updateResult = await db.query(

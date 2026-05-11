@@ -2106,11 +2106,25 @@ test('POST /api/study-session returns 404 when card is not in user decks', async
   assert.deepEqual(res.body, { error: 'Card not found' });
   assert.equal(db.calls.length, 1);
   assertDuePredicate(db.calls[0].sql);
+  assert.match(db.calls[0].sql, /AS "__is_due"/);
 });
 
-test('POST /api/study-session returns 404 and skips scheduling when the due-gated lookup finds no card', async () => {
+test('POST /api/study-session returns 409 and skips scheduling when an owned card is not due', async () => {
   let schedulerCalled = false;
-  const db = createDb([{ rowCount: 0, rows: [] }]);
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [{
+        id: 7,
+        deck_id: 1,
+        next_review: '2026-05-20T12:00:00.000Z',
+        ease_factor: 2.5,
+        interval: 2,
+        review_count: 2,
+        __is_due: false,
+      }],
+    },
+  ]);
   const req = { body: { cardId: 7, quality: 4 }, user: { userId: 'user-1' } };
   const res = createRes();
 
@@ -2119,11 +2133,13 @@ test('POST /api/study-session returns 404 and skips scheduling when the due-gate
     return {};
   });
 
-  assert.equal(res.statusCode, 404);
-  assert.deepEqual(res.body, { error: 'Card not found' });
+  assert.equal(res.statusCode, 409);
+  assert.deepEqual(res.body, { error: 'Card is not due' });
   assert.equal(schedulerCalled, false);
   assert.equal(db.calls.length, 1);
   assertDuePredicate(db.calls[0].sql);
+  assert.match(db.calls[0].sql, /AS "__is_due"/);
+  assert.doesNotMatch(db.calls[0].sql, /AND\s+\(\s*c\.next_review IS NULL\s+OR\s+c\.next_review <= NOW\(\)\s+\)/i);
 });
 
 test('POST /api/study-session treats unscheduled owned cards as due for review', async () => {
