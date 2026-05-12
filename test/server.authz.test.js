@@ -1,7 +1,5 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 
 const {
   createCard,
@@ -19,6 +17,7 @@ const {
   validatePositiveIntegerIdentifier,
   updateCard,
 } = require('../apiHandlers');
+const { getVarcharColumnLength, readAnkiSchema } = require('./schemaHelpers');
 
 function createRes() {
   return {
@@ -74,12 +73,17 @@ function assertDuePredicate(sql, tableAlias = 'c') {
 }
 
 test('POST /api/decks returns 400 for invalid deck name and skips db query', async () => {
+  const deckNameColumnLength = getVarcharColumnLength('decks', 'name');
   const invalidCases = [
     [undefined, 'Invalid deck name: must be a string'],
     [null, 'Invalid deck name: must be a string'],
     [42, 'Invalid deck name: must be a string'],
     ['', 'Invalid deck name: cannot be blank'],
     ['   ', 'Invalid deck name: cannot be blank'],
+    [
+      'a'.repeat(deckNameColumnLength + 1),
+      `Invalid deck name: must be at most ${deckNameColumnLength} characters`,
+    ],
   ];
 
   for (const [name, error] of invalidCases) {
@@ -166,12 +170,17 @@ test('PATCH /api/decks/:deckId returns 400 for invalid deckId and skips db query
 });
 
 test('PATCH /api/decks/:deckId returns 400 for invalid deck name and skips db query', async () => {
+  const deckNameColumnLength = getVarcharColumnLength('decks', 'name');
   const invalidCases = [
     [undefined, 'Invalid deck name: must be a string'],
     [null, 'Invalid deck name: must be a string'],
     [42, 'Invalid deck name: must be a string'],
     ['', 'Invalid deck name: cannot be blank'],
     ['   ', 'Invalid deck name: cannot be blank'],
+    [
+      'a'.repeat(deckNameColumnLength + 1),
+      `Invalid deck name: must be at most ${deckNameColumnLength} characters`,
+    ],
   ];
 
   for (const [name, error] of invalidCases) {
@@ -253,7 +262,7 @@ test('PATCH /api/decks/:deckId returns 409 for duplicate normalized deck name', 
 });
 
 test('anki.db enforces unique normalized deck names per user', () => {
-  const schema = fs.readFileSync(path.join(__dirname, '..', 'anki.db'), 'utf8');
+  const schema = readAnkiSchema();
 
   assert.match(schema, /CREATE\s+UNIQUE\s+INDEX\s+\S+\s+ON\s+decks\s*\(\s*user_id\s*,\s*\(\s*LOWER\(TRIM\(name\)\)\s*\)\s*\)/i);
 });

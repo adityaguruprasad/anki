@@ -1,9 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
+const { readAnkiSchema } = require('./schemaHelpers');
 
-const schema = fs.readFileSync(path.join(__dirname, '..', 'anki.db'), 'utf8');
+const schema = readAnkiSchema();
 
 test('anki.db declares indexes for authenticated API hot paths', () => {
   assert.match(

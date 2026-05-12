@@ -7,6 +7,7 @@ const {
   MAX_DECK_NAME_LENGTH,
   validateDeckName,
 } = require('../deckNameValidation');
+const { getVarcharColumnLength } = require('./schemaHelpers');
 
 function createRes() {
   return {
@@ -70,6 +71,18 @@ test('validateDeckName rejects over-length names', () => {
     ok: false,
     code: DECK_NAME_VALIDATION_ERROR_CODES.TOO_LONG,
     error: `Invalid deck name: must be at most ${MAX_DECK_NAME_LENGTH} characters`,
+  });
+});
+
+test('validateDeckName stays aligned with the decks.name column length', () => {
+  const columnLength = getVarcharColumnLength('decks', 'name');
+
+  assert.equal(MAX_DECK_NAME_LENGTH, columnLength);
+  assert.equal(validateDeckName('a'.repeat(columnLength)).ok, true);
+  assert.deepEqual(validateDeckName('a'.repeat(columnLength + 1)), {
+    ok: false,
+    code: DECK_NAME_VALIDATION_ERROR_CODES.TOO_LONG,
+    error: `Invalid deck name: must be at most ${columnLength} characters`,
   });
 });
 

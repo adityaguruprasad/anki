@@ -1,4 +1,5 @@
-const MAX_DECK_NAME_LENGTH = 120;
+// Keep aligned with anki.db decks.name VARCHAR(100).
+const MAX_DECK_NAME_LENGTH = 100;
 
 const DECK_NAME_VALIDATION_ERROR_CODES = Object.freeze({
   NON_STRING: 'deck_name_non_string',
