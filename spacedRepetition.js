@@ -33,8 +33,8 @@ const calculateNextReview = (card, quality) => {
     interval = 1;
   }
 
-  // Update ease factor
-  if (quality === 0) {
+  // Low-quality answers should make future reviews more conservative.
+  if (quality < 3) {
     ease_factor = Math.max(MIN_EASE_FACTOR, ease_factor - 0.2);
   } else if (quality === 5) {
     ease_factor += 0.15;

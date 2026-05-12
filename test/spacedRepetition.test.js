@@ -28,11 +28,27 @@ test('calculateNextReview sanitizes NaN and negative persisted scheduling values
   assert.equal(result.ease_factor, 2.5);
 });
 
-test('calculateNextReview enforces low-quality reset semantics', () => {
+test('calculateNextReview enforces low-quality reset and ease penalty semantics', () => {
   const result = calculateNextReview({ interval: 12, ease_factor: 2.2 }, 2);
 
   assertValidSchedule(result);
   assert.equal(result.interval, 1);
+  assert.equal(result.ease_factor, 2);
+});
+
+test('calculateNextReview applies the visible Hard answer ease penalty', () => {
+  const result = calculateNextReview({ interval: 12, ease_factor: 2.2 }, 1);
+
+  assertValidSchedule(result);
+  assert.equal(result.interval, 1);
+  assert.equal(result.ease_factor, 2);
+});
+
+test('calculateNextReview treats quality 3 as passing without low-quality ease penalty', () => {
+  const result = calculateNextReview({ interval: 12, ease_factor: 2.2 }, 3);
+
+  assertValidSchedule(result);
+  assert.equal(result.interval, 26);
   assert.equal(result.ease_factor, 2.2);
 });
 
