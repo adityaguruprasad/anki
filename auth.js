@@ -236,7 +236,10 @@ function createAuthHandlers(db, options = {}) {
     }
 
     try {
-      const result = await db.query('SELECT * FROM users WHERE email = $1', [normalizedEmail]);
+      const result = await db.query(
+        'SELECT id, email, password_hash FROM users WHERE email = $1',
+        [normalizedEmail]
+      );
       if (result.rows.length === 0) {
         return res.status(401).json({ error: 'Invalid credentials' });
       }

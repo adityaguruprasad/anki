@@ -299,7 +299,8 @@ test('login uses injected db for credential lookup', async () => {
 
   assert.equal(res.statusCode, 200);
   assert.equal(db.calls.length, 1);
-  assert.match(db.calls[0].sql, /SELECT \* FROM users WHERE email = \$1/i);
+  assert.equal(db.calls[0].sql, 'SELECT id, email, password_hash FROM users WHERE email = $1');
+  assert.doesNotMatch(db.calls[0].sql, /SELECT\s+\*/i);
   assert.deepEqual(db.calls[0].params, ['grace@example.com']);
   assert.deepEqual(passwordHasher.compareCalls, [
     { password: 's3cret', passwordHash: 'stored-hash' },
