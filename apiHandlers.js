@@ -4,6 +4,7 @@ const BROWSE_CARDS_DEFAULT_LIMIT = 50;
 const BROWSE_CARDS_MAX_LIMIT = 100;
 const BROWSE_CARDS_MAX_SEARCH_LENGTH = 200;
 const MAX_CARD_CONTENT_LENGTH = 10000;
+const MAX_SAFE_INTEGER_TEXT = String(Number.MAX_SAFE_INTEGER);
 const CARD_READ_FIELDS = Object.freeze([
   'id',
   'deck_id',
@@ -34,10 +35,22 @@ function validatePositiveIntegerIdentifier(value, fieldName) {
 
   if (typeof value === 'string') {
     const trimmed = value.trim();
+    if (trimmed.length > MAX_SAFE_INTEGER_TEXT.length) {
+      return { ok: false, error: `Invalid ${fieldName}: must be a positive integer` };
+    }
+
     if (/^\d+$/.test(trimmed)) {
-      const parsed = BigInt(trimmed);
-      if (parsed > 0n && parsed <= BigInt(Number.MAX_SAFE_INTEGER)) {
-        return { ok: true, value: Number(parsed) };
+      const normalizedDigits = trimmed.replace(/^0+/, '');
+      const isWithinSafeIntegerRange = (
+        normalizedDigits.length < MAX_SAFE_INTEGER_TEXT.length
+        || (
+          normalizedDigits.length === MAX_SAFE_INTEGER_TEXT.length
+          && normalizedDigits <= MAX_SAFE_INTEGER_TEXT
+        )
+      );
+
+      if (normalizedDigits.length > 0 && isWithinSafeIntegerRange) {
+        return { ok: true, value: Number(normalizedDigits) };
       }
     }
   }

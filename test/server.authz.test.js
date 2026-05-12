@@ -566,6 +566,10 @@ test('validatePositiveIntegerIdentifier accepts only positive integer-like value
     validatePositiveIntegerIdentifier(` ${Number.MAX_SAFE_INTEGER} `, 'deckId'),
     { ok: true, value: Number.MAX_SAFE_INTEGER }
   );
+  assert.deepEqual(
+    validatePositiveIntegerIdentifier('00042', 'deckId'),
+    { ok: true, value: 42 }
+  );
 
   const invalidValues = [
     undefined,
@@ -580,7 +584,9 @@ test('validatePositiveIntegerIdentifier accepts only positive integer-like value
     1.5,
     Number.MAX_SAFE_INTEGER + 1,
     `${Number.MAX_SAFE_INTEGER + 1}`,
+    '10000000000000000',
     '9007199254740993',
+    '9'.repeat(1000),
   ];
   for (const value of invalidValues) {
     assert.deepEqual(
