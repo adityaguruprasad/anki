@@ -47,7 +47,15 @@ const normalizeReviewDate = (value) => {
   return reviewDate;
 };
 
+const assertValidQuality = (quality) => {
+  if (!Number.isInteger(quality) || quality < 0 || quality > 5) {
+    throw new TypeError('Invalid review quality: expected an integer from 0 through 5');
+  }
+};
+
 const calculateNextReview = (card, quality, reviewedAt) => {
+  assertValidQuality(quality);
+
   let ease_factor = normalizeEaseFactor(card?.ease_factor);
   const storedInterval = normalizeInterval(card?.interval);
   let interval;

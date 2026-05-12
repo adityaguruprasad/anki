@@ -47,6 +47,43 @@ function assertTimezoneObservesDst(timezone, startDate, endDate, expectedOffsets
   );
 }
 
+test('calculateNextReview rejects invalid answer qualities', () => {
+  const invalidQualities = [
+    undefined,
+    null,
+    '3',
+    '',
+    2.5,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    Number.NEGATIVE_INFINITY,
+    true,
+    false,
+    -1,
+    6,
+  ];
+
+  for (const quality of invalidQualities) {
+    assert.throws(
+      () => calculateNextReview({ interval: 2, ease_factor: 2 }, quality),
+      {
+        name: 'TypeError',
+        message: 'Invalid review quality: expected an integer from 0 through 5',
+      },
+    );
+  }
+});
+
+test('calculateNextReview produces safe schedules for all valid answer qualities', () => {
+  const reviewedAt = new Date('2026-05-10T14:30:00.000Z');
+
+  for (const quality of [0, 1, 2, 3, 4, 5]) {
+    const result = calculateNextReview({ interval: 2, ease_factor: 2 }, quality, reviewedAt);
+
+    assertValidSchedule(result);
+  }
+});
+
 test('calculateNextReview returns safe defaults for missing persisted values', () => {
   const result = calculateNextReview({}, 4);
 
