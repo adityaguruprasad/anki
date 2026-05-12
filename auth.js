@@ -9,6 +9,8 @@ const {
 
 const DEFAULT_DEV_JWT_SECRET = 'your_secret_key';
 const DEFAULT_JWT_EXPIRES_IN_SECONDS = 60 * 60 * 24;
+const JWT_SECRET_EMPTY_ERROR = 'JWT_SECRET must not be empty';
+const JWT_SECRET_TYPE_ERROR = 'JWT_SECRET must be a string';
 const JWT_EXPIRES_IN_SECONDS_ERROR =
   'JWT_EXPIRES_IN_SECONDS must be a positive integer not greater than Number.MAX_SAFE_INTEGER';
 // Keep these aligned with anki.db users.username VARCHAR(50) and users.email VARCHAR(100).
@@ -25,8 +27,17 @@ function base64UrlJson(value) {
 }
 
 function resolveJwtSecret(env = process.env) {
-  if (env.JWT_SECRET) {
-    return env.JWT_SECRET;
+  if (env.JWT_SECRET !== undefined) {
+    if (typeof env.JWT_SECRET !== 'string') {
+      throw new TypeError(JWT_SECRET_TYPE_ERROR);
+    }
+
+    const jwtSecret = env.JWT_SECRET.trim();
+    if (jwtSecret === '') {
+      throw new Error(JWT_SECRET_EMPTY_ERROR);
+    }
+
+    return jwtSecret;
   }
 
   if (env.NODE_ENV === 'production') {

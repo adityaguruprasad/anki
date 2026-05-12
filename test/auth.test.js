@@ -679,9 +679,43 @@ test('authenticateToken returns 403 for signed tokens without a usable userId cl
   assert.equal(req.user, undefined);
 });
 
-test('resolveJwtSecret prefers JWT_SECRET and keeps deterministic test default', () => {
-  assert.equal(resolveJwtSecret({ JWT_SECRET: 'from-env', NODE_ENV: 'test' }), 'from-env');
+test('resolveJwtSecret trims JWT_SECRET and returns the canonical secret', () => {
+  assert.equal(resolveJwtSecret({ JWT_SECRET: '  from-env\n\t', NODE_ENV: 'test' }), 'from-env');
+});
+
+test('resolveJwtSecret rejects non-string injected JWT_SECRET values with a type error', () => {
+  assert.throws(
+    () => resolveJwtSecret({ JWT_SECRET: 12345, NODE_ENV: 'test' }),
+    { name: 'TypeError', message: 'JWT_SECRET must be a string' }
+  );
+});
+
+test('resolveJwtSecret rejects whitespace-only JWT_SECRET in every environment', () => {
+  for (const NODE_ENV of ['test', 'development', 'production', undefined]) {
+    assert.throws(
+      () => resolveJwtSecret({ JWT_SECRET: ' \n\t ', NODE_ENV }),
+      /JWT_SECRET must not be empty/,
+      NODE_ENV || 'unset'
+    );
+  }
+
+  assert.throws(
+    () => resolveJwtSecret({ JWT_SECRET: '', NODE_ENV: 'test' }),
+    /JWT_SECRET must not be empty/
+  );
+});
+
+test('resolveJwtSecret requires JWT_SECRET in production', () => {
+  assert.throws(
+    () => resolveJwtSecret({ NODE_ENV: 'production' }),
+    /JWT_SECRET must be set in production/
+  );
+});
+
+test('resolveJwtSecret falls back to the deterministic dev secret outside production', () => {
   assert.equal(resolveJwtSecret({ NODE_ENV: 'test' }), DEFAULT_DEV_JWT_SECRET);
+  assert.equal(resolveJwtSecret({ NODE_ENV: 'development' }), DEFAULT_DEV_JWT_SECRET);
+  assert.equal(resolveJwtSecret({}), DEFAULT_DEV_JWT_SECRET);
 });
 
 test('resolveJwtExpiresInSeconds supports a configurable positive integer default', () => {
