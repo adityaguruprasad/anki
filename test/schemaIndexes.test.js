@@ -12,7 +12,7 @@ test('anki.db declares indexes for authenticated API hot paths', () => {
 
   assert.match(
     schema,
-    /CREATE\s+INDEX\s+cards_deck_id_next_review_idx\s+ON\s+cards\s*\(\s*deck_id\s*,\s*next_review\s*,\s*id\s*\)\s*;/i
+    /CREATE\s+INDEX\s+cards_deck_id_next_review_idx\s+ON\s+cards\s*\(\s*deck_id\s*,\s*next_review\s+ASC\s+NULLS\s+FIRST\s*,\s*id\s+ASC\s*\)\s*;/i
   );
 
   assert.match(

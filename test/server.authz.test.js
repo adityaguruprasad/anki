@@ -1358,8 +1358,35 @@ test('GET /api/cards/:deckId returns due and unscheduled cards for owned deck wh
   assert.match(db.calls[0].sql, /LEFT JOIN cards c/);
   assertDuePredicate(db.calls[0].sql);
   assert.match(db.calls[0].sql, /WHERE d\.id = \$1 AND d\.user_id = \$2/);
-  assert.match(db.calls[0].sql, /ORDER BY c\.next_review ASC,\s*c\.id ASC/);
+  assert.match(db.calls[0].sql, /ORDER BY c\.next_review ASC NULLS FIRST,\s*c\.id ASC/);
   assert.doesNotMatch(db.calls[0].sql, /\bLIMIT\b/);
+});
+
+test('GET /api/cards/:deckId prioritizes unscheduled due cards when limiting study fetches', async () => {
+  const unscheduledCard = { id: 9, next_review: null };
+  const scheduledDueCard = { id: 10, next_review: '2026-05-08T12:00:00.000Z' };
+  const dueCards = [unscheduledCard, scheduledDueCard];
+  const db = createDb([
+    {
+      rowCount: 2,
+      rows: dueCards.map((card) => ({ ...card, __owned_deck_id: 42 })),
+    },
+  ]);
+  const req = {
+    params: { deckId: '42' },
+    query: { limit: '2' },
+    user: { userId: 'user-1' },
+  };
+  const res = createRes();
+
+  await getDueCardsByDeck(req, res, db);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, dueCards);
+  assert.equal(res.body[0].next_review, null);
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [42, 'user-1', 2]);
+  assert.match(db.calls[0].sql, /ORDER BY c\.next_review ASC NULLS FIRST,\s*c\.id ASC\s+LIMIT \$3/);
 });
 
 test('GET /api/cards/:deckId accepts boundary limit with a parameterized limit', async () => {
@@ -1384,7 +1411,7 @@ test('GET /api/cards/:deckId accepts boundary limit with a parameterized limit',
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, [42, 'user-1', 100]);
   assertDuePredicate(db.calls[0].sql);
-  assert.match(db.calls[0].sql, /ORDER BY c\.next_review ASC,\s*c\.id ASC\s+LIMIT \$3/);
+  assert.match(db.calls[0].sql, /ORDER BY c\.next_review ASC NULLS FIRST,\s*c\.id ASC\s+LIMIT \$3/);
   assert.doesNotMatch(db.calls[0].sql, /LIMIT\s+100/);
 });
 

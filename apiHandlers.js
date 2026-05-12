@@ -315,7 +315,7 @@ async function getDueCardsByDeck(req, res, db) {
          ON c.deck_id = d.id
         AND ${getDueCardPredicate('c')}
        WHERE d.id = $1 AND d.user_id = $2
-       ORDER BY c.next_review ASC, c.id ASC${limitClause}`,
+       ORDER BY c.next_review ASC NULLS FIRST, c.id ASC${limitClause}`,
       params
     );
 
