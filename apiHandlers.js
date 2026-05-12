@@ -644,7 +644,18 @@ async function deleteCard(req, res, db) {
 }
 
 async function submitStudySession(req, res, db, calculateNextReview) {
+  let client = db;
+  let shouldReleaseClient = false;
+  let transactionStarted = false;
+
   try {
+    const rollbackTransaction = async () => {
+      if (transactionStarted) {
+        await client.query('ROLLBACK');
+        transactionStarted = false;
+      }
+    };
+
     const { cardId, quality } = req.body;
     const cardIdValidation = validatePositiveIntegerIdentifier(cardId, 'cardId');
     if (!cardIdValidation.ok) {
@@ -656,21 +667,31 @@ async function submitStudySession(req, res, db, calculateNextReview) {
       return res.status(400).json({ error: 'Invalid quality: must be an integer between 0 and 5' });
     }
 
-    const cardResult = await db.query(
-      `SELECT c.*,
+    if (typeof db.connect === 'function') {
+      client = await db.connect();
+      shouldReleaseClient = true;
+      await client.query('BEGIN');
+      transactionStarted = true;
+    }
+
+    const cardResult = await client.query(
+      `SELECT ${CARD_READ_SELECT_LIST},
               ${getDueCardPredicate('c')} AS "__is_due"
        FROM cards c
        JOIN decks d ON d.id = c.deck_id
        WHERE c.id = $1
-         AND d.user_id = $2`,
+         AND d.user_id = $2
+       FOR UPDATE OF c`,
       [validCardId, req.user.userId]
     );
     if (cardResult.rowCount === 0) {
+      await rollbackTransaction();
       return res.status(404).json({ error: 'Card not found' });
     }
 
     const card = cardResult.rows[0];
     if (card.__is_due === false) {
+      await rollbackTransaction();
       return res.status(409).json({ error: 'Card is not due' });
     }
 
@@ -678,7 +699,7 @@ async function submitStudySession(req, res, db, calculateNextReview) {
     const { ease_factor, interval, next_review } = calculateNextReview(card, quality, reviewedAt);
 
     // CTE contract: no row -> missing/unowned 404; updated row -> success; target-only sentinel -> owned but no longer due 409.
-    const updateResult = await db.query(
+    const updateResult = await client.query(
       `WITH target AS (
          SELECT c.id
          FROM cards c
@@ -730,20 +751,42 @@ async function submitStudySession(req, res, db, calculateNextReview) {
       [reviewedAt, next_review, interval, ease_factor, validCardId, req.user.userId]
     );
     if (updateResult.rowCount === 0) {
+      await rollbackTransaction();
       return res.status(404).json({ error: 'Card not found' });
     }
 
     const updatedCard = updateResult.rows[0];
     if (updatedCard.__updated === false) {
+      await rollbackTransaction();
       return res.status(409).json({ error: 'Card is not due' });
     }
 
     const responseCard = { ...updatedCard };
     delete responseCard.__updated;
+    if (transactionStarted) {
+      await client.query('COMMIT');
+      transactionStarted = false;
+    }
     return res.json({ success: true, card: responseCard });
   } catch (err) {
+    if (transactionStarted) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackErr) {
+        console.error(rollbackErr);
+      }
+      transactionStarted = false;
+    }
     console.error(err);
     return res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    if (shouldReleaseClient) {
+      try {
+        await client.release();
+      } catch (releaseErr) {
+        console.error(releaseErr);
+      }
+    }
   }
 }
 

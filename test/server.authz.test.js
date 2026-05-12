@@ -49,6 +49,39 @@ function createDb(results) {
   };
 }
 
+function createTransactionDb(results) {
+  let index = 0;
+  const calls = [];
+  const client = {
+    released: false,
+    async query(sql, params) {
+      calls.push({ sql, params });
+      if (/^\s*(BEGIN|COMMIT|ROLLBACK)\s*$/i.test(sql)) {
+        return { rowCount: 0, rows: [] };
+      }
+
+      const next = results[index++];
+      if (next instanceof Error) {
+        throw next;
+      }
+      return next;
+    },
+    release() {
+      this.released = true;
+    },
+  };
+
+  return {
+    calls,
+    client,
+    connectCalls: 0,
+    async connect() {
+      this.connectCalls += 1;
+      return client;
+    },
+  };
+}
+
 function addUnexpectedConnect(db) {
   db.connectCalls = 0;
   db.connect = async () => {
@@ -97,13 +130,28 @@ function assertDuePredicate(sql, tableAlias = 'c') {
 }
 
 function assertStudySessionCardReadSql(sql) {
-  assert.match(sql, /SELECT\s+c\.\*,/i);
+  const selectMatch = /\bSELECT\b/i.exec(sql);
+  const fromMatch = /\bFROM\s+cards\s+c\b/i.exec(sql);
+  assert.ok(selectMatch, 'expected study-session card read SQL to contain SELECT');
+  assert.ok(fromMatch, 'expected study-session card read SQL to read from cards c');
+
+  const selectClause = sql.slice(selectMatch.index + selectMatch[0].length, fromMatch.index);
+  assert.doesNotMatch(selectClause, /\bc\.\*/i);
+  for (const field of EXPECTED_PUBLIC_CARD_READ_FIELDS) {
+    assert.match(
+      selectClause,
+      new RegExp(`(?:^|,)\\s*c\\.${field}\\s*(?:,|$)`, 'i'),
+      `expected study-session card read SELECT to include explicit c.${field}`,
+    );
+  }
+
   assert.match(sql, /AS "__is_due"/);
-  assert.match(sql, /FROM\s+cards\s+c/i);
   assert.match(sql, /JOIN\s+decks\s+d\s+ON\s+d\.id\s+=\s+c\.deck_id/i);
   assert.match(sql, /WHERE\s+c\.id\s+=\s+\$1/i);
   assert.match(sql, /d\.user_id\s+=\s+\$2/i);
+  assert.match(sql, /FOR\s+UPDATE\s+OF\s+c/i);
   assertDuePredicate(sql);
+  assert.doesNotMatch(sql, /\bSELECT\s+c\.\*/i);
 }
 
 function assertStudySessionUpdateSql(sql) {
@@ -2274,17 +2322,71 @@ test('POST /api/study-session returns 404 when card does not exist', async () =>
 });
 
 test('POST /api/study-session returns 404 when card is not in user decks', async () => {
+  let schedulerCalled = false;
   const db = createDb([{ rowCount: 0, rows: [] }]);
   const req = { body: { cardId: 5, quality: 3 }, user: { userId: 'user-1' } };
   const res = createRes();
 
-  await submitStudySession(req, res, db, () => ({}));
+  await submitStudySession(req, res, db, () => {
+    schedulerCalled = true;
+    return {};
+  });
 
   assert.equal(res.statusCode, 404);
   assert.deepEqual(res.body, { error: 'Card not found' });
+  assert.equal(schedulerCalled, false);
   assert.equal(db.calls.length, 1);
   assertStudySessionCardReadSql(db.calls[0].sql);
   assert.deepEqual(db.calls[0].params, [5, 'user-1']);
+});
+
+test('POST /api/study-session rolls back and releases transaction client on missing card', async () => {
+  let schedulerCalled = false;
+  const db = createTransactionDb([{ rowCount: 0, rows: [] }]);
+  const req = { body: { cardId: 5, quality: 3 }, user: { userId: 'user-1' } };
+  const res = createRes();
+
+  await submitStudySession(req, res, db, () => {
+    schedulerCalled = true;
+    return {};
+  });
+
+  assert.equal(res.statusCode, 404);
+  assert.deepEqual(res.body, { error: 'Card not found' });
+  assert.equal(schedulerCalled, false);
+  assert.equal(db.connectCalls, 1);
+  assert.equal(db.client.released, true);
+  assert.equal(db.calls.length, 3);
+  assert.match(db.calls[0].sql, /^\s*BEGIN\s*$/i);
+  assertStudySessionCardReadSql(db.calls[1].sql);
+  assert.deepEqual(db.calls[1].params, [5, 'user-1']);
+  assert.match(db.calls[2].sql, /^\s*ROLLBACK\s*$/i);
+  assert.doesNotMatch(db.calls.map(({ sql }) => sql).join('\n'), /^\s*COMMIT\s*$/im);
+});
+
+test('POST /api/study-session rolls back and releases transaction client on thrown error', async () => {
+  const db = createTransactionDb([new Error('read failed')]);
+  const req = { body: { cardId: 5, quality: 3 }, user: { userId: 'user-1' } };
+  const res = createRes();
+  const originalError = console.error;
+  console.error = () => {};
+
+  try {
+    await submitStudySession(req, res, db, () => ({}));
+  } finally {
+    console.error = originalError;
+  }
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Internal server error' });
+  assert.equal(db.connectCalls, 1);
+  assert.equal(db.client.released, true);
+  assert.equal(db.calls.length, 3);
+  assert.match(db.calls[0].sql, /^\s*BEGIN\s*$/i);
+  assertStudySessionCardReadSql(db.calls[1].sql);
+  assert.deepEqual(db.calls[1].params, [5, 'user-1']);
+  assert.match(db.calls[2].sql, /^\s*ROLLBACK\s*$/i);
+  assert.doesNotMatch(db.calls.map(({ sql }) => sql).join('\n'), /^\s*COMMIT\s*$/im);
 });
 
 test('POST /api/study-session returns 409 and skips scheduling when an owned card is not due', async () => {
@@ -2318,6 +2420,67 @@ test('POST /api/study-session returns 409 and skips scheduling when an owned car
   assertStudySessionCardReadSql(db.calls[0].sql);
   assert.deepEqual(db.calls[0].params, [7, 'user-1']);
   assert.doesNotMatch(db.calls[0].sql, /AND\s+\(\s*c\.next_review IS NULL\s+OR\s+c\.next_review <= NOW\(\)\s+\)/i);
+});
+
+test('POST /api/study-session locks an owned due card before scheduling and updating', async () => {
+  const nextReview = '2026-05-08T12:00:00.000Z';
+  const sourceCard = {
+    id: 7,
+    deck_id: 1,
+    front_content: 'Front',
+    back_content: 'Back',
+    created_at: '2026-05-01T12:00:00.000Z',
+    last_reviewed: null,
+    next_review: '2026-05-08T12:00:00.000Z',
+    ease_factor: 2.5,
+    interval: 2,
+    review_count: 2,
+    __is_due: true,
+  };
+  const updatedCard = {
+    id: 7,
+    next_review: nextReview,
+    interval: 3,
+    ease_factor: 2.6,
+    review_count: 3,
+    last_reviewed: '2026-05-08T12:05:00.000Z',
+  };
+  const db = createTransactionDb([
+    { rowCount: 1, rows: [sourceCard] },
+    { rowCount: 1, rows: [{ ...updatedCard, __updated: true }] },
+  ]);
+  const req = { body: { cardId: 7, quality: 4 }, user: { userId: 'user-1' } };
+  const res = createRes();
+  let scheduledCard = null;
+  let scheduledReviewedAt = null;
+
+  await submitStudySession(req, res, db, (card, quality, reviewedAt) => {
+    scheduledCard = card;
+    scheduledReviewedAt = reviewedAt;
+    assert.equal(quality, 4);
+    return {
+      ease_factor: 2.6,
+      interval: 3,
+      next_review: nextReview,
+    };
+  });
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, { success: true, card: updatedCard });
+  assert.equal(db.connectCalls, 1);
+  assert.equal(db.client.released, true);
+  assert.match(db.calls[0].sql, /^\s*BEGIN\s*$/i);
+  assertStudySessionCardReadSql(db.calls[1].sql);
+  assertStudySessionUpdateSql(db.calls[2].sql);
+  assert.match(db.calls[3].sql, /^\s*COMMIT\s*$/i);
+  assert.equal(scheduledCard, sourceCard);
+  assert.equal(scheduledReviewedAt instanceof Date, true);
+  assert.equal(db.calls[2].params[0], scheduledReviewedAt);
+  assert.deepEqual(db.calls[2].params.slice(1), [nextReview, 3, 2.6, 7, 'user-1']);
+  assert.doesNotMatch(
+    db.calls.slice(0, 3).map(({ sql }) => sql).join('\n'),
+    /\bSELECT\s+c\.\*/i,
+  );
 });
 
 test('POST /api/study-session treats unscheduled owned cards as due for review', async () => {
