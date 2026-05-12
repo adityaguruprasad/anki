@@ -8,6 +8,7 @@ function hasPositiveSafeIntegerCount(deck, key) {
 
 const MAX_SAFE_INTEGER_STRING = String(Number.MAX_SAFE_INTEGER);
 
+// Returns the canonical positive safe-integer deck id string used in study routes.
 function normalizeStudyDeckId(value) {
   if (typeof value === 'number') {
     return Number.isSafeInteger(value) && value > 0 ? String(value) : null;
@@ -101,5 +102,6 @@ module.exports = {
   getStudyDeckTargetPath,
   hasDashboardDeckListPayload,
   hasDueCards,
+  normalizeStudyDeckId,
   selectStudyDeckTarget,
 };

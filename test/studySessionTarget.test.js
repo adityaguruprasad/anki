@@ -11,6 +11,8 @@ const {
 
 test('parseDeckId returns a positive safe integer deck id from the route', () => {
   assert.equal(parseDeckId('?deckId=123'), 123);
+  assert.equal(parseDeckId('?deckId=00042'), 42);
+  assert.equal(parseDeckId('?deckId=%2042%20'), null);
   assert.equal(parseDeckId('?deckId=0'), null);
   assert.equal(parseDeckId('?deckId=-1'), null);
   assert.equal(parseDeckId('?deckId=abc'), null);
@@ -42,6 +44,22 @@ test('getStudySessionRequest selects the due deck with the largest backlog after
       source: 'selected',
     },
   );
+});
+
+test('getStudySessionRequest preserves an unrouteable due deck instead of loading cards', () => {
+  const fallbackDeck = { id: 7, name: 'Math', totalCards: 10, dueCards: 0 };
+  const unrouteableDueDeck = { id: 'science deck', name: 'Science', totalCards: 5, dueCards: 4 };
+  const request = getStudySessionRequest('', [
+    fallbackDeck,
+    unrouteableDueDeck,
+  ]);
+
+  assert.notEqual(request.type, STUDY_SESSION_REQUESTS.LOAD_CARDS);
+  assert.deepEqual(request, {
+    type: STUDY_SESSION_REQUESTS.NO_DUE_DECK,
+    deck: unrouteableDueDeck,
+  });
+  assert.equal(request.deck, unrouteableDueDeck);
 });
 
 test('getStudySessionRequest reports no due deck instead of selecting a non-due fallback for study', () => {
@@ -140,6 +158,24 @@ test('getValidatedStudySessionDeckListRequest preserves valid deck selection beh
     getValidatedStudySessionDeckListRequest('', []),
     getStudySessionRequest('', []),
   );
+});
+
+test('getValidatedStudySessionDeckListRequest normalizes automatically selected string deck ids', () => {
+  const selectedDeck = { id: ' 00042 ', name: 'Biology', totalCards: 5, dueCards: 3 };
+  const decks = [
+    { id: 7, name: 'Math', totalCards: 10, dueCards: 1 },
+    selectedDeck,
+  ];
+  const request = getValidatedStudySessionDeckListRequest('', decks);
+
+  assert.deepEqual(request, {
+    type: STUDY_SESSION_REQUESTS.LOAD_CARDS,
+    deckId: 42,
+    deck: selectedDeck,
+    source: 'selected',
+  });
+  assert.equal(request.deck, selectedDeck);
+  assert.equal(typeof request.deckId, 'number');
 });
 
 test('shouldShowNoDueNoticeForInitialStudySessionRequest covers initial deck loads only', () => {

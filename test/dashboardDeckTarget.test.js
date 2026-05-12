@@ -5,8 +5,51 @@ const {
   getStudyDeckTargetPath,
   hasDashboardDeckListPayload,
   hasDueCards,
+  normalizeStudyDeckId,
   selectStudyDeckTarget,
 } = require('../dashboardDeckTarget');
+
+test('normalizeStudyDeckId canonicalizes route-safe deck ids', () => {
+  assert.equal(normalizeStudyDeckId(42), '42');
+  assert.equal(normalizeStudyDeckId(Number.MAX_SAFE_INTEGER), String(Number.MAX_SAFE_INTEGER));
+  assert.equal(normalizeStudyDeckId(' 00042 '), '42');
+  assert.equal(
+    normalizeStudyDeckId(`\t000${Number.MAX_SAFE_INTEGER}\n`),
+    String(Number.MAX_SAFE_INTEGER),
+  );
+});
+
+test('normalizeStudyDeckId rejects ids outside the study route contract', () => {
+  [
+    '',
+    '   ',
+    '0',
+    '000',
+    '-1',
+    '1.2',
+    '1e2',
+    '42abc',
+    '9007199254740992',
+    '90071992547409910',
+    0,
+    -1,
+    1.5,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    Number.MAX_SAFE_INTEGER + 1,
+    null,
+    undefined,
+    true,
+    {},
+    [],
+  ].forEach((id) => {
+    assert.equal(
+      normalizeStudyDeckId(id),
+      null,
+      `Expected id=${String(id)} to be rejected`,
+    );
+  });
+});
 
 test('hasDashboardDeckListPayload accepts arrays of deck-like objects with usable ids and non-negative safe integer counts', () => {
   assert.equal(hasDashboardDeckListPayload([]), true);
