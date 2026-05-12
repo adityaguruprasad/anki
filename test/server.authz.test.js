@@ -1408,7 +1408,7 @@ test('POST /api/cards creates a card in an owned deck with one atomic insert-sel
     ease_factor: 2.5,
     review_count: 0,
   };
-  const db = createDb([{ rowCount: 1, rows: [createdCard] }]);
+  const db = createDb([{ rowCount: 1, rows: [{ ...createdCard, private_note: 'do not expose' }] }]);
   const req = {
     body: {
       deckId: '42',
@@ -1430,7 +1430,11 @@ test('POST /api/cards creates a card in an owned deck with one atomic insert-sel
   assert.match(db.calls[0].sql, /SELECT\s+d\.id,\s*\$3,\s*\$4,\s*NOW\(\),\s*1,\s*2\.5,\s*0/i);
   assert.match(db.calls[0].sql, /FROM\s+decks\s+d/i);
   assert.match(db.calls[0].sql, /WHERE\s+d\.id\s+=\s+\$1\s+AND\s+d\.user_id\s+=\s+\$2/i);
-  assert.match(db.calls[0].sql, /RETURNING\s+\*/i);
+  assert.match(
+    db.calls[0].sql,
+    /RETURNING\s+id,\s+deck_id,\s+front_content,\s+back_content,\s+next_review,\s+interval,\s+ease_factor,\s+review_count/i
+  );
+  assert.doesNotMatch(db.calls[0].sql, /RETURNING\s+\*/i);
   assert.doesNotMatch(db.calls[0].sql, /INSERT[\s\S]+VALUES/i);
 });
 
@@ -1645,7 +1649,7 @@ test('PATCH /api/cards/:cardId updates an owned card with one user-scoped query'
     ease_factor: 2.5,
     review_count: 0,
   };
-  const db = createDb([{ rowCount: 1, rows: [updatedCard] }]);
+  const db = createDb([{ rowCount: 1, rows: [{ ...updatedCard, private_note: 'do not expose' }] }]);
   const req = {
     params: { cardId: '77' },
     body: {
@@ -1668,7 +1672,11 @@ test('PATCH /api/cards/:cardId updates an owned card with one user-scoped query'
   assert.match(db.calls[0].sql, /EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+decks\s+d/i);
   assert.match(db.calls[0].sql, /d\.id\s+=\s+cards\.deck_id/i);
   assert.match(db.calls[0].sql, /d\.user_id\s+=\s+\$2/i);
-  assert.match(db.calls[0].sql, /RETURNING\s+\*/i);
+  assert.match(
+    db.calls[0].sql,
+    /RETURNING\s+id,\s+deck_id,\s+front_content,\s+back_content,\s+next_review,\s+interval,\s+ease_factor,\s+review_count/i
+  );
+  assert.doesNotMatch(db.calls[0].sql, /RETURNING\s+\*/i);
   assert.doesNotMatch(db.calls[0].sql, /SELECT[\s\S]+FROM\s+cards/i);
 });
 

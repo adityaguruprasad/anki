@@ -65,6 +65,19 @@ function validateCardContent(value, fieldName) {
   return { ok: true, value: trimmed };
 }
 
+function toCardMutationPayload(row) {
+  return {
+    id: row.id,
+    deck_id: row.deck_id,
+    front_content: row.front_content,
+    back_content: row.back_content,
+    next_review: row.next_review,
+    interval: row.interval,
+    ease_factor: row.ease_factor,
+    review_count: row.review_count,
+  };
+}
+
 function validateBrowseCardsLimit(value) {
   if (value === undefined) {
     return { ok: true, value: BROWSE_CARDS_DEFAULT_LIMIT };
@@ -446,7 +459,14 @@ async function createCard(req, res, db) {
        SELECT d.id, $3, $4, NOW(), 1, 2.5, 0
        FROM decks d
        WHERE d.id = $1 AND d.user_id = $2
-       RETURNING *`,
+       RETURNING id,
+                 deck_id,
+                 front_content,
+                 back_content,
+                 next_review,
+                 interval,
+                 ease_factor,
+                 review_count`,
       [
         deckIdValidation.value,
         req.user.userId,
@@ -459,7 +479,7 @@ async function createCard(req, res, db) {
       return res.status(404).json({ error: 'Deck not found' });
     }
 
-    return res.status(201).json(rows[0]);
+    return res.status(201).json(toCardMutationPayload(rows[0]));
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Internal server error' });
@@ -494,7 +514,14 @@ async function updateCard(req, res, db) {
            WHERE d.id = cards.deck_id
              AND d.user_id = $2
          )
-       RETURNING *`,
+       RETURNING id,
+                 deck_id,
+                 front_content,
+                 back_content,
+                 next_review,
+                 interval,
+                 ease_factor,
+                 review_count`,
       [
         cardIdValidation.value,
         req.user.userId,
@@ -507,7 +534,7 @@ async function updateCard(req, res, db) {
       return res.status(404).json({ error: 'Card not found' });
     }
 
-    return res.json(rows[0]);
+    return res.json(toCardMutationPayload(rows[0]));
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Internal server error' });
