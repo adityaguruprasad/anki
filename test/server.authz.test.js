@@ -1995,6 +1995,68 @@ test('GET /api/stats uses app-local review windows for aggregate counts', async 
   });
 });
 
+test('GET /api/stats preserves exact large PostgreSQL count strings', async () => {
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [
+        {
+          totalCards: '900719925474099312345',
+          totalDecks: '000900719925474099300001',
+          todayReviews: '9007199254740993',
+          weekReviews: ' 00042 ',
+          monthReviews: '000',
+        },
+      ],
+    },
+  ]);
+  const req = { user: { userId: 'user-1' } };
+  const res = createRes();
+
+  await getStats(req, res, db);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, {
+    totalCards: '900719925474099312345',
+    totalDecks: '900719925474099300001',
+    todayReviews: '9007199254740993',
+    weekReviews: 42,
+    monthReviews: 0,
+  });
+});
+
+test('GET /api/stats handles aggregate count safe integer boundaries', async () => {
+  const maxSafeAggregate = String(Number.MAX_SAFE_INTEGER);
+  const oneAboveMaxSafeAggregate = String(BigInt(Number.MAX_SAFE_INTEGER) + 1n);
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [
+        {
+          totalCards: maxSafeAggregate,
+          totalDecks: oneAboveMaxSafeAggregate,
+          todayReviews: BigInt(oneAboveMaxSafeAggregate),
+          weekReviews: BigInt(maxSafeAggregate),
+          monthReviews: '0',
+        },
+      ],
+    },
+  ]);
+  const req = { user: { userId: 'user-1' } };
+  const res = createRes();
+
+  await getStats(req, res, db);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, {
+    totalCards: Number.MAX_SAFE_INTEGER,
+    totalDecks: oneAboveMaxSafeAggregate,
+    todayReviews: oneAboveMaxSafeAggregate,
+    weekReviews: Number.MAX_SAFE_INTEGER,
+    monthReviews: 0,
+  });
+});
+
 test('GET /api/stats returns zero for null and empty aggregate values', async () => {
   const db = createDb([
     {
@@ -2031,6 +2093,36 @@ test('GET /api/stats returns zero for null and empty aggregate values', async ()
     assert.ok(param instanceof Date);
   });
   assert.match(db.calls[0].sql, /WHERE d\.user_id = \$1/);
+});
+
+test('GET /api/stats falls back to zero for malformed aggregate values', async () => {
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [
+        {
+          totalCards: '1e3',
+          totalDecks: '-1',
+          todayReviews: Number.MAX_SAFE_INTEGER + 1,
+          weekReviews: 1.5,
+          monthReviews: [],
+        },
+      ],
+    },
+  ]);
+  const req = { user: { userId: 'user-1' } };
+  const res = createRes();
+
+  await getStats(req, res, db);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, {
+    totalCards: 0,
+    totalDecks: 0,
+    todayReviews: 0,
+    weekReviews: 0,
+    monthReviews: 0,
+  });
 });
 
 test('GET /api/scheduling-insights returns expected shape from one aggregate query', async () => {

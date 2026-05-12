@@ -63,6 +63,43 @@ function toAggregateCount(value) {
   return Number.isFinite(count) ? count : 0;
 }
 
+function toStatsAggregateCount(value) {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+
+    if (/^\d+$/.test(trimmed)) {
+      const normalizedDigits = trimmed.replace(/^0+/, '') || '0';
+      const isWithinSafeIntegerRange = (
+        normalizedDigits.length < MAX_SAFE_INTEGER_TEXT.length
+        || (
+          normalizedDigits.length === MAX_SAFE_INTEGER_TEXT.length
+          && normalizedDigits <= MAX_SAFE_INTEGER_TEXT
+        )
+      );
+
+      if (isWithinSafeIntegerRange) {
+        return Number(normalizedDigits);
+      }
+
+      return normalizedDigits;
+    }
+  }
+
+  if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) {
+    return value;
+  }
+
+  if (typeof value === 'bigint' && value >= 0n) {
+    if (value <= BigInt(Number.MAX_SAFE_INTEGER)) {
+      return Number(value);
+    }
+
+    return String(value);
+  }
+
+  return 0;
+}
+
 function toNullableAggregateNumber(value) {
   if (value === null || value === undefined || value === '') {
     return null;
@@ -927,11 +964,11 @@ async function getStats(req, res, db, now = new Date()) {
 
     const stats = rows[0] ?? {};
     return res.json({
-      totalCards: toAggregateCount(stats.totalCards),
-      totalDecks: toAggregateCount(stats.totalDecks),
-      todayReviews: toAggregateCount(stats.todayReviews),
-      weekReviews: toAggregateCount(stats.weekReviews),
-      monthReviews: toAggregateCount(stats.monthReviews),
+      totalCards: toStatsAggregateCount(stats.totalCards),
+      totalDecks: toStatsAggregateCount(stats.totalDecks),
+      todayReviews: toStatsAggregateCount(stats.todayReviews),
+      weekReviews: toStatsAggregateCount(stats.weekReviews),
+      monthReviews: toStatsAggregateCount(stats.monthReviews),
     });
   } catch (err) {
     console.error(err);
