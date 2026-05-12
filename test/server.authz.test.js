@@ -65,6 +65,37 @@ function createConnectedDb(poolResults, clientResults) {
   return db;
 }
 
+const EXPECTED_PUBLIC_CARD_READ_FIELDS = Object.freeze([
+  'id',
+  'deck_id',
+  'front_content',
+  'back_content',
+  'created_at',
+  'last_reviewed',
+  'next_review',
+  'interval',
+  'review_count',
+  'ease_factor',
+]);
+
+function assertExplicitPublicCardReadSelect(sql) {
+  const selectMatch = /\bSELECT\b/i.exec(sql);
+  const fromMatch = /\bFROM\s+decks\s+d\b/i.exec(sql);
+  assert.ok(selectMatch, 'expected SQL to contain SELECT');
+  assert.ok(fromMatch, 'expected card read SQL to select from decks d');
+
+  const selectClause = sql.slice(selectMatch.index + selectMatch[0].length, fromMatch.index);
+  assert.doesNotMatch(selectClause, /\bc\.\*/i);
+
+  for (const field of EXPECTED_PUBLIC_CARD_READ_FIELDS) {
+    assert.match(
+      selectClause,
+      new RegExp(`(?:^|,)\\s*c\\.${field}\\s*(?:,|$)`, 'i'),
+      `expected card read SELECT to include explicit c.${field}`,
+    );
+  }
+}
+
 function assertDuePredicate(sql, tableAlias = 'c') {
   assert.match(
     sql,
@@ -670,6 +701,7 @@ test('GET /api/decks/:deckId/cards returns default-limited owned deck cards newe
       rowCount: 2,
       rows: cards.map((card) => ({
         ...card,
+        private_note: 'do not expose',
         __cursor_created_at: card.created_at.replace('.000Z', '.000000Z'),
         __owned_deck_id: 42,
       })),
@@ -684,6 +716,7 @@ test('GET /api/decks/:deckId/cards returns default-limited owned deck cards newe
   assert.deepEqual(res.body, { cards, nextCursor: null });
   assert.equal(Object.hasOwn(res.body.cards[0], '__owned_deck_id'), false);
   assert.equal(Object.hasOwn(res.body.cards[0], '__cursor_created_at'), false);
+  assert.equal(Object.hasOwn(res.body.cards[0], 'private_note'), false);
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, [42, 'user-1', 51]);
 });
@@ -697,6 +730,7 @@ test('GET /api/decks/:deckId/cards uses one user-scoped ordered browse query wit
 
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, [42, 'user-1', 51]);
+  assertExplicitPublicCardReadSelect(db.calls[0].sql);
   assert.match(db.calls[0].sql, /to_char\(c\.created_at,\s*'YYYY-MM-DD"T"HH24:MI:SS\.US"Z"'\)\s+AS\s+"__cursor_created_at"/);
   assert.match(db.calls[0].sql, /FROM decks d\s+LEFT JOIN cards c/i);
   assert.match(db.calls[0].sql, /ON c\.deck_id = d\.id/i);
@@ -1342,7 +1376,11 @@ test('GET /api/cards/:deckId returns due and unscheduled cards for owned deck wh
   const db = createDb([
     {
       rowCount: 2,
-      rows: dueCards.map((card) => ({ ...card, __owned_deck_id: 42 })),
+      rows: dueCards.map((card) => ({
+        ...card,
+        private_note: 'do not expose',
+        __owned_deck_id: 42,
+      })),
     },
   ]);
   const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
@@ -1353,8 +1391,10 @@ test('GET /api/cards/:deckId returns due and unscheduled cards for owned deck wh
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, dueCards);
   assert.equal(Object.hasOwn(res.body[0], '__owned_deck_id'), false);
+  assert.equal(Object.hasOwn(res.body[0], 'private_note'), false);
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, [42, 'user-1']);
+  assertExplicitPublicCardReadSelect(db.calls[0].sql);
   assert.match(db.calls[0].sql, /LEFT JOIN cards c/);
   assertDuePredicate(db.calls[0].sql);
   assert.match(db.calls[0].sql, /WHERE d\.id = \$1 AND d\.user_id = \$2/);

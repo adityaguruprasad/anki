@@ -4,6 +4,21 @@ const BROWSE_CARDS_DEFAULT_LIMIT = 50;
 const BROWSE_CARDS_MAX_LIMIT = 100;
 const BROWSE_CARDS_MAX_SEARCH_LENGTH = 200;
 const MAX_CARD_CONTENT_LENGTH = 10000;
+const CARD_READ_FIELDS = Object.freeze([
+  'id',
+  'deck_id',
+  'front_content',
+  'back_content',
+  'created_at',
+  'last_reviewed',
+  'next_review',
+  'interval',
+  'review_count',
+  'ease_factor',
+]);
+const CARD_READ_SELECT_LIST = CARD_READ_FIELDS
+  .map((field) => `c.${field}`)
+  .join(',\n              ');
 
 function isValidQuality(quality) {
   return Number.isInteger(quality) && quality >= 0 && quality <= 5;
@@ -76,6 +91,18 @@ function toCardMutationPayload(row) {
     ease_factor: row.ease_factor,
     review_count: row.review_count,
   };
+}
+
+function toCardReadPayload(row) {
+  const card = {};
+
+  for (const field of CARD_READ_FIELDS) {
+    if (Object.hasOwn(row, field)) {
+      card[field] = row[field];
+    }
+  }
+
+  return card;
 }
 
 function validateBrowseCardsLimit(value) {
@@ -309,7 +336,8 @@ async function getDueCardsByDeck(req, res, db) {
     }
 
     const { rows } = await db.query(
-      `SELECT c.*, d.id AS "__owned_deck_id"
+      `SELECT ${CARD_READ_SELECT_LIST},
+              d.id AS "__owned_deck_id"
        FROM decks d
        LEFT JOIN cards c
          ON c.deck_id = d.id
@@ -325,11 +353,7 @@ async function getDueCardsByDeck(req, res, db) {
 
     const dueCards = rows
       .filter((row) => row.id !== null)
-      .map((row) => {
-        const card = { ...row };
-        delete card.__owned_deck_id;
-        return card;
-      });
+      .map(toCardReadPayload);
     return res.json(dueCards);
   } catch (err) {
     console.error(err);
@@ -385,7 +409,7 @@ async function getCardsByDeck(req, res, db) {
     const limitPlaceholder = `$${params.length}`;
 
     const { rows } = await db.query(
-      `SELECT c.*,
+      `SELECT ${CARD_READ_SELECT_LIST},
               to_char(c.created_at, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "__cursor_created_at",
               d.id AS "__owned_deck_id"
        FROM decks d
@@ -404,13 +428,7 @@ async function getCardsByDeck(req, res, db) {
     const cardRows = rows.filter((row) => row.id !== null);
     const hasNextPage = cardRows.length > limitValidation.value;
     const pageRows = cardRows.slice(0, limitValidation.value);
-    const cards = pageRows
-      .map((row) => {
-        const card = { ...row };
-        delete card.__owned_deck_id;
-        delete card.__cursor_created_at;
-        return card;
-      });
+    const cards = pageRows.map(toCardReadPayload);
 
     const lastPageRow = pageRows.at(-1);
     const nextCursor = hasNextPage && lastPageRow
