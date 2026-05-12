@@ -103,6 +103,40 @@ function assertDuePredicate(sql, tableAlias = 'c') {
   );
 }
 
+function assertStudySessionCardReadSql(sql) {
+  assert.match(sql, /SELECT\s+c\.\*,/i);
+  assert.match(sql, /AS "__is_due"/);
+  assert.match(sql, /FROM\s+cards\s+c/i);
+  assert.match(sql, /JOIN\s+decks\s+d\s+ON\s+d\.id\s+=\s+c\.deck_id/i);
+  assert.match(sql, /WHERE\s+c\.id\s+=\s+\$1/i);
+  assert.match(sql, /d\.user_id\s+=\s+\$2/i);
+  assertDuePredicate(sql);
+}
+
+function assertStudySessionUpdateSql(sql) {
+  assert.match(sql, /WITH\s+target\s+AS\s*\(/i);
+  assert.match(sql, /SELECT\s+c\.id\s+FROM\s+cards\s+c/i);
+  assert.match(sql, /JOIN\s+decks\s+d\s+ON\s+d\.id\s+=\s+c\.deck_id/i);
+  assert.match(sql, /WHERE\s+c\.id\s+=\s+\$5/i);
+  assert.match(sql, /d\.user_id\s+=\s+\$6/i);
+  assert.match(sql, /FOR\s+UPDATE\s+OF\s+c/i);
+  assert.match(sql, /updated\s+AS\s*\(\s*UPDATE\s+cards/i);
+  assert.match(sql, /last_reviewed\s+=\s+\$1/i);
+  assert.match(sql, /next_review\s+=\s+\$2/i);
+  assert.match(sql, /interval\s+=\s+\$3/i);
+  assert.match(sql, /ease_factor\s+=\s+\$4/i);
+  assert.match(sql, /review_count\s+=\s+COALESCE\s*\(\s*review_count\s*,\s*0\s*\)\s*\+\s*1/i);
+  assert.match(sql, /WHERE\s+id\s+=\s+\$5/i);
+  assert.match(sql, /EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+target/i);
+  assert.match(sql, /target\.id\s+=\s+cards\.id/i);
+  assertDuePredicate(sql, 'cards');
+  assert.match(sql, /TRUE\s+AS\s+"__updated"/i);
+  assert.match(sql, /UNION\s+ALL/i);
+  assert.match(sql, /UNION\s+ALL\s+SELECT\s+NULL\s+AS\s+id[\s\S]*?NULL\s+AS\s+last_reviewed[\s\S]*?FALSE\s+AS\s+"__updated"[\s\S]*?FROM\s+target/i);
+  assert.match(sql, /FALSE\s+AS\s+"__updated"/i);
+  assert.match(sql, /WHERE\s+NOT\s+EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+updated\s*\)/i);
+}
+
 test('POST /api/decks returns 400 for invalid deck name and skips db query', async () => {
   const deckNameColumnLength = getVarcharColumnLength('decks', 'name');
   const invalidCases = [
@@ -2194,6 +2228,8 @@ test('POST /api/study-session returns 404 when card does not exist', async () =>
   assert.equal(res.statusCode, 404);
   assert.deepEqual(res.body, { error: 'Card not found' });
   assert.equal(db.calls.length, 1);
+  assertStudySessionCardReadSql(db.calls[0].sql);
+  assert.deepEqual(db.calls[0].params, [999, 'user-1']);
 });
 
 test('POST /api/study-session returns 404 when card is not in user decks', async () => {
@@ -2206,8 +2242,8 @@ test('POST /api/study-session returns 404 when card is not in user decks', async
   assert.equal(res.statusCode, 404);
   assert.deepEqual(res.body, { error: 'Card not found' });
   assert.equal(db.calls.length, 1);
-  assertDuePredicate(db.calls[0].sql);
-  assert.match(db.calls[0].sql, /AS "__is_due"/);
+  assertStudySessionCardReadSql(db.calls[0].sql);
+  assert.deepEqual(db.calls[0].params, [5, 'user-1']);
 });
 
 test('POST /api/study-session returns 409 and skips scheduling when an owned card is not due', async () => {
@@ -2238,8 +2274,8 @@ test('POST /api/study-session returns 409 and skips scheduling when an owned car
   assert.deepEqual(res.body, { error: 'Card is not due' });
   assert.equal(schedulerCalled, false);
   assert.equal(db.calls.length, 1);
-  assertDuePredicate(db.calls[0].sql);
-  assert.match(db.calls[0].sql, /AS "__is_due"/);
+  assertStudySessionCardReadSql(db.calls[0].sql);
+  assert.deepEqual(db.calls[0].params, [7, 'user-1']);
   assert.doesNotMatch(db.calls[0].sql, /AND\s+\(\s*c\.next_review IS NULL\s+OR\s+c\.next_review <= NOW\(\)\s+\)/i);
 });
 
@@ -2286,8 +2322,8 @@ test('POST /api/study-session treats unscheduled owned cards as due for review',
   assert.equal(scheduledCard, sourceCard);
   assert.equal(scheduledReviewedAt instanceof Date, true);
   assert.equal(db.calls.length, 2);
-  assertDuePredicate(db.calls[0].sql);
-  assertDuePredicate(db.calls[1].sql, 'cards');
+  assertStudySessionCardReadSql(db.calls[0].sql);
+  assertStudySessionUpdateSql(db.calls[1].sql);
   assert.equal(db.calls[1].params[0], scheduledReviewedAt);
 });
 
@@ -2333,24 +2369,15 @@ test('POST /api/study-session returns updated scheduling metadata for successful
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, { success: true, card: updatedCard });
   assert.equal(db.calls.length, 2);
-  assertDuePredicate(db.calls[0].sql);
-  assert.match(db.calls[1].sql, /UPDATE\s+cards/i);
-  assert.match(db.calls[1].sql, /last_reviewed\s+=\s+\$1/i);
-  assert.match(db.calls[1].sql, /next_review\s+=\s+\$2/i);
-  assert.match(db.calls[1].sql, /interval\s+=\s+\$3/i);
-  assert.match(db.calls[1].sql, /ease_factor\s+=\s+\$4/i);
-  assert.match(db.calls[1].sql, /review_count\s+=\s+COALESCE\s*\(\s*review_count\s*,\s*0\s*\)\s*\+\s*1/i);
-  assert.match(db.calls[1].sql, /WHERE\s+id\s+=\s+\$5/i);
-  assert.match(db.calls[1].sql, /EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+decks\s+d/i);
-  assert.match(db.calls[1].sql, /d\.id\s+=\s+cards\.deck_id/i);
-  assert.match(db.calls[1].sql, /d\.user_id\s+=\s+\$6/i);
+  assertStudySessionCardReadSql(db.calls[0].sql);
+  assertStudySessionUpdateSql(db.calls[1].sql);
   assert.doesNotMatch(db.calls[1].sql, /last_reviewed\s+=\s+NOW\(\)/i);
-  assertDuePredicate(db.calls[1].sql, 'cards');
-  const returningClause = db.calls[1].sql.match(/\bRETURNING\b([\s\S]*)/i)?.[1];
+  const returningClause = db.calls[1].sql.match(/\bRETURNING\b([\s\S]*?)\bSELECT\b/i)?.[1];
   assert.ok(returningClause, 'expected UPDATE to include a RETURNING clause');
   for (const column of ['id', 'next_review', 'interval', 'ease_factor', 'review_count', 'last_reviewed']) {
     assert.match(returningClause, new RegExp(`\\b${column}\\b`, 'i'));
   }
+  assert.match(returningClause, /"__updated"/i);
   assert.equal(scheduledReviewedAt instanceof Date, true);
   assert.equal(db.calls[1].params[0], scheduledReviewedAt);
   assert.deepEqual(db.calls[1].params.slice(1), [nextReview, 3, 2.6, 7, 'user-1']);
@@ -2371,7 +2398,6 @@ test('POST /api/study-session returns 404 when final user-scoped update finds no
       }],
     },
     { rowCount: 0, rows: [] },
-    { rowCount: 0, rows: [] },
   ]);
   const req = { body: { cardId: 7, quality: 4 }, user: { userId: 'user-1' } };
   const res = createRes();
@@ -2388,16 +2414,11 @@ test('POST /api/study-session returns 404 when final user-scoped update finds no
 
   assert.equal(res.statusCode, 404);
   assert.deepEqual(res.body, { error: 'Card not found' });
-  assert.equal(db.calls.length, 3);
-  assert.match(db.calls[1].sql, /d\.user_id\s+=\s+\$6/i);
-  assertDuePredicate(db.calls[1].sql, 'cards');
+  assert.equal(db.calls.length, 2);
+  assertStudySessionCardReadSql(db.calls[0].sql);
+  assertStudySessionUpdateSql(db.calls[1].sql);
   assert.equal(db.calls[1].params[0], scheduledReviewedAt);
   assert.deepEqual(db.calls[1].params.slice(1), ['2026-05-08T12:00:00.000Z', 3, 2.6, 7, 'user-1']);
-  assert.match(db.calls[2].sql, /SELECT\s+1\s+FROM\s+cards\s+c/i);
-  assert.match(db.calls[2].sql, /JOIN\s+decks\s+d\s+ON\s+d\.id\s+=\s+c\.deck_id/i);
-  assert.match(db.calls[2].sql, /c\.id\s+=\s+\$1/i);
-  assert.match(db.calls[2].sql, /d\.user_id\s+=\s+\$2/i);
-  assert.deepEqual(db.calls[2].params, [7, 'user-1']);
 });
 
 test('POST /api/study-session returns 409 when final due-gated update loses a stale-card race', async () => {
@@ -2414,8 +2435,7 @@ test('POST /api/study-session returns 409 when final due-gated update loses a st
         __is_due: true,
       }],
     },
-    { rowCount: 0, rows: [] },
-    { rowCount: 1, rows: [{ '?column?': 1 }] },
+    { rowCount: 1, rows: [{ __updated: false }] },
   ]);
   const req = { body: { cardId: 7, quality: 4 }, user: { userId: 'user-1' } };
   const res = createRes();
@@ -2428,10 +2448,8 @@ test('POST /api/study-session returns 409 when final due-gated update loses a st
 
   assert.equal(res.statusCode, 409);
   assert.deepEqual(res.body, { error: 'Card is not due' });
-  assert.equal(db.calls.length, 3);
-  assertDuePredicate(db.calls[0].sql);
-  assertDuePredicate(db.calls[1].sql, 'cards');
-  assert.match(db.calls[2].sql, /SELECT\s+1\s+FROM\s+cards\s+c/i);
-  assert.doesNotMatch(db.calls[2].sql, /next_review\s+<=\s+NOW\(\)/i);
-  assert.deepEqual(db.calls[2].params, [7, 'user-1']);
+  assert.equal(db.calls.length, 2);
+  assertStudySessionCardReadSql(db.calls[0].sql);
+  assertStudySessionUpdateSql(db.calls[1].sql);
+  assert.deepEqual(db.calls[1].params.slice(1), ['2026-05-08T12:00:00.000Z', 3, 2.6, 7, 'user-1']);
 });

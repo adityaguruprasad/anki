@@ -640,47 +640,70 @@ async function submitStudySession(req, res, db, calculateNextReview) {
     const reviewedAt = new Date();
     const { ease_factor, interval, next_review } = calculateNextReview(card, quality, reviewedAt);
 
+    // CTE contract: no row -> missing/unowned 404; updated row -> success; target-only sentinel -> owned but no longer due 409.
     const updateResult = await db.query(
-      `UPDATE cards
-       SET last_reviewed = $1,
-           next_review = $2,
-           interval = $3,
-           ease_factor = $4,
-           review_count = COALESCE(review_count, 0) + 1
-       WHERE id = $5
-         AND EXISTS (
-           SELECT 1
-           FROM decks d
-           WHERE d.id = cards.deck_id
-             AND d.user_id = $6
-         )
-         AND ${getDueCardPredicate('cards')}
-       RETURNING id,
-                 next_review,
-                 interval,
-                 ease_factor,
-                 review_count,
-                 last_reviewed`,
+      `WITH target AS (
+         SELECT c.id
+         FROM cards c
+         JOIN decks d ON d.id = c.deck_id
+         WHERE c.id = $5
+           AND d.user_id = $6
+         FOR UPDATE OF c
+       ),
+       updated AS (
+         UPDATE cards
+         SET last_reviewed = $1,
+             next_review = $2,
+             interval = $3,
+             ease_factor = $4,
+             review_count = COALESCE(review_count, 0) + 1
+         WHERE id = $5
+           AND EXISTS (
+             SELECT 1
+             FROM target
+             WHERE target.id = cards.id
+           )
+           AND ${getDueCardPredicate('cards')}
+         RETURNING id,
+                   next_review,
+                   interval,
+                   ease_factor,
+                   review_count,
+                   last_reviewed,
+                   TRUE AS "__updated"
+       )
+       SELECT id,
+              next_review,
+              interval,
+              ease_factor,
+              review_count,
+              last_reviewed,
+              "__updated"
+       FROM updated
+       UNION ALL
+       SELECT NULL AS id,
+              NULL AS next_review,
+              NULL AS interval,
+              NULL AS ease_factor,
+              NULL AS review_count,
+              NULL AS last_reviewed,
+              FALSE AS "__updated"
+       FROM target
+       WHERE NOT EXISTS (SELECT 1 FROM updated)`,
       [reviewedAt, next_review, interval, ease_factor, validCardId, req.user.userId]
     );
     if (updateResult.rowCount === 0) {
-      const ownedCardResult = await db.query(
-        `SELECT 1
-         FROM cards c
-         JOIN decks d ON d.id = c.deck_id
-         WHERE c.id = $1
-           AND d.user_id = $2`,
-        [validCardId, req.user.userId]
-      );
-
-      if (ownedCardResult.rowCount > 0) {
-        return res.status(409).json({ error: 'Card is not due' });
-      }
-
       return res.status(404).json({ error: 'Card not found' });
     }
 
-    return res.json({ success: true, card: updateResult.rows[0] });
+    const updatedCard = updateResult.rows[0];
+    if (updatedCard.__updated === false) {
+      return res.status(409).json({ error: 'Card is not due' });
+    }
+
+    const responseCard = { ...updatedCard };
+    delete responseCard.__updated;
+    return res.json({ success: true, card: responseCard });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Internal server error' });
