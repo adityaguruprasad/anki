@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const {
   AUTH_EMAIL_MAX_LENGTH,
   AUTH_MODES,
+  AUTH_PASSWORD_MAX_BYTES,
   AUTH_USERNAME_MAX_LENGTH,
   AUTH_TOKEN_STORAGE_KEY,
   cleanupStoredAuthTokenIfNeeded,
@@ -323,6 +324,59 @@ test('validateAuthInput requires at least 8 password characters for registration
   assert.equal(
     validateAuthInput({ mode: AUTH_MODES.REGISTER, email: 'ada@example.com', password: '12345678' }).ok,
     true
+  );
+});
+
+test('validateAuthInput accepts over-limit login passwords for legacy bcrypt compatibility', () => {
+  const legacyPassword = `${'a'.repeat(AUTH_PASSWORD_MAX_BYTES)}🙂`;
+
+  assert.equal(Buffer.byteLength(legacyPassword, 'utf8'), AUTH_PASSWORD_MAX_BYTES + 4);
+  assert.deepEqual(
+    validateAuthInput({
+      mode: AUTH_MODES.LOGIN,
+      email: 'ada@example.com',
+      password: legacyPassword,
+    }),
+    {
+      ok: true,
+      value: {
+        mode: AUTH_MODES.LOGIN,
+        email: 'ada@example.com',
+        password: legacyPassword,
+      },
+    }
+  );
+});
+
+test('validateAuthInput enforces the registration bcrypt password byte cap at the boundary', () => {
+  const boundaryPassword = 'a'.repeat(AUTH_PASSWORD_MAX_BYTES);
+  const tooLongMultibytePassword = `${'a'.repeat(AUTH_PASSWORD_MAX_BYTES - 3)}🙂`;
+  const tooLongError = `Password must be ${AUTH_PASSWORD_MAX_BYTES} UTF-8 bytes or fewer`;
+
+  assert.equal(Buffer.byteLength(boundaryPassword, 'utf8'), AUTH_PASSWORD_MAX_BYTES);
+  assert.equal(Buffer.byteLength(tooLongMultibytePassword, 'utf8'), AUTH_PASSWORD_MAX_BYTES + 1);
+  assert.deepEqual(
+    validateAuthInput({
+      mode: AUTH_MODES.REGISTER,
+      email: 'ada@example.com',
+      password: boundaryPassword,
+    }),
+    {
+      ok: true,
+      value: {
+        mode: AUTH_MODES.REGISTER,
+        email: 'ada@example.com',
+        password: boundaryPassword,
+      },
+    }
+  );
+  assert.deepEqual(
+    validateAuthInput({
+      mode: AUTH_MODES.REGISTER,
+      email: 'ada@example.com',
+      password: tooLongMultibytePassword,
+    }),
+    { ok: false, error: tooLongError }
   );
 });
 

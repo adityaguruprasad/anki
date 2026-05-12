@@ -1,3 +1,10 @@
+const {
+  AUTH_PASSWORD_MAX_BYTES,
+  AUTH_PASSWORD_MIN_LENGTH,
+  validateLoginPassword,
+  validateRegistrationPassword,
+} = require('./authPasswordValidation');
+
 const AUTH_MODES = Object.freeze({
   LOGIN: 'login',
   REGISTER: 'register',
@@ -188,8 +195,11 @@ function validateAuthInput({ mode, email, password }) {
     return { ok: false, error: 'Password is required' };
   }
 
-  if (authMode === AUTH_MODES.REGISTER && password.length < 8) {
-    return { ok: false, error: 'Password must be at least 8 characters' };
+  const passwordValidation = authMode === AUTH_MODES.REGISTER
+    ? validateRegistrationPassword(password)
+    : validateLoginPassword(password);
+  if (!passwordValidation.ok) {
+    return { ok: false, error: passwordValidation.error };
   }
 
   return {
@@ -197,7 +207,7 @@ function validateAuthInput({ mode, email, password }) {
     value: {
       mode: authMode,
       email: trimmedEmail,
-      password,
+      password: passwordValidation.value,
     },
   };
 }
@@ -247,6 +257,8 @@ function createAuthSubmission({ mode, email, password, isSubmitting, env }) {
 module.exports = {
   AUTH_MODES,
   AUTH_EMAIL_MAX_LENGTH,
+  AUTH_PASSWORD_MAX_BYTES,
+  AUTH_PASSWORD_MIN_LENGTH,
   AUTH_USERNAME_MAX_LENGTH,
   AUTH_TOKEN_STORAGE_KEY,
   cleanupStoredAuthTokenIfNeeded,

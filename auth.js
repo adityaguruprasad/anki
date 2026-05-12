@@ -1,5 +1,11 @@
 // auth.js
 const crypto = require('node:crypto');
+const {
+  AUTH_PASSWORD_MAX_BYTES,
+  AUTH_PASSWORD_MIN_LENGTH,
+  validateLoginPassword,
+  validateRegistrationPassword,
+} = require('./authPasswordValidation');
 
 const DEFAULT_DEV_JWT_SECRET = 'your_secret_key';
 const DEFAULT_JWT_EXPIRES_IN_SECONDS = 60 * 60 * 24;
@@ -197,12 +203,13 @@ function createAuthHandlers(db, options = {}) {
         .status(400)
         .json({ error: `Email must be ${AUTH_EMAIL_MAX_LENGTH} characters or fewer` });
     }
-    if (typeof password !== 'string' || password.length < 8) {
-      return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    const passwordValidation = validateRegistrationPassword(password);
+    if (!passwordValidation.ok) {
+      return res.status(400).json({ error: passwordValidation.error });
     }
 
     try {
-      const hashedPassword = await passwordHasher.hash(password, 10);
+      const hashedPassword = await passwordHasher.hash(passwordValidation.value, 10);
       const result = await db.query(
         'INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3) RETURNING id',
         [trimmedUsername, normalizedEmail, hashedPassword]
@@ -231,8 +238,9 @@ function createAuthHandlers(db, options = {}) {
         .status(400)
         .json({ error: `Email must be ${AUTH_EMAIL_MAX_LENGTH} characters or fewer` });
     }
-    if (typeof password !== 'string' || password.length === 0) {
-      return res.status(400).json({ error: 'Password is required' });
+    const passwordValidation = validateLoginPassword(password);
+    if (!passwordValidation.ok) {
+      return res.status(400).json({ error: passwordValidation.error });
     }
 
     try {
@@ -275,6 +283,8 @@ function createAuthHandlers(db, options = {}) {
 
 module.exports = {
   AUTH_EMAIL_MAX_LENGTH,
+  AUTH_PASSWORD_MAX_BYTES,
+  AUTH_PASSWORD_MIN_LENGTH,
   AUTH_USERNAME_MAX_LENGTH,
   DEFAULT_JWT_EXPIRES_IN_SECONDS,
   DEFAULT_DEV_JWT_SECRET,

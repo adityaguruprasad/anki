@@ -36,6 +36,7 @@ test('CRA entry imports and renders the existing App mirror', () => {
 test('CRA source sync keeps the root App and its component closure in the build', () => {
   [
     'main.js',
+    'authPasswordValidation.js',
     'dashboard.js',
     'dashboardRequestInFlightState.js',
     'deck.js',

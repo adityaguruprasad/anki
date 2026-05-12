@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 
 const {
   AUTH_EMAIL_MAX_LENGTH,
+  AUTH_PASSWORD_MAX_BYTES,
   AUTH_USERNAME_MAX_LENGTH,
   DEFAULT_JWT_EXPIRES_IN_SECONDS,
   DEFAULT_DEV_JWT_SECRET,
@@ -162,6 +163,11 @@ test('register rejects invalid input before hashing or querying', async (t) => {
       body: { username: 'ada', email: 'ada@example.com', password: 'short' },
       error: 'Password must be at least 8 characters',
     },
+    {
+      name: 'password beyond bcrypt byte limit',
+      body: { username: 'ada', email: 'ada@example.com', password: 'é'.repeat(37) },
+      error: `Password must be ${AUTH_PASSWORD_MAX_BYTES} UTF-8 bytes or fewer`,
+    },
   ];
 
   for (const { name, body, error } of cases) {
@@ -182,6 +188,29 @@ test('register rejects invalid input before hashing or querying', async (t) => {
       assert.deepEqual(db.calls, []);
     });
   }
+});
+
+test('register accepts a password exactly at the bcrypt byte limit', async () => {
+  const password = 'a'.repeat(AUTH_PASSWORD_MAX_BYTES);
+  const db = createDb([{ rowCount: 1, rows: [{ id: 44 }] }]);
+  const passwordHasher = createPasswordHasher();
+  const { register } = createAuthHandlers(db, {
+    jwtSecret: 'boundary-register-secret',
+    passwordHasher,
+  });
+  const res = createRes();
+
+  await register({
+    body: {
+      username: 'ada',
+      email: 'ada@example.com',
+      password,
+    },
+  }, res);
+
+  assert.equal(res.statusCode, 201);
+  assert.deepEqual(passwordHasher.hashCalls, [{ password, rounds: 10 }]);
+  assert.equal(db.calls.length, 1);
 });
 
 test('register trims username and normalizes email before storing', async () => {
@@ -280,7 +309,8 @@ test('register keeps unrelated unique violations on the 500 registration failure
   assert.doesNotMatch(db.calls[0].sql, /ON\s+CONFLICT/i);
 });
 
-test('login uses injected db for credential lookup', async () => {
+test('login accepts a password over the bcrypt byte limit and compares it unchanged', async () => {
+  const password = `${'a'.repeat(AUTH_PASSWORD_MAX_BYTES)}🙂`;
   const db = createDb([
     {
       rowCount: 1,
@@ -292,8 +322,10 @@ test('login uses injected db for credential lookup', async () => {
     jwtSecret: 'login-test-secret',
     passwordHasher,
   });
-  const req = { body: { email: 'grace@example.com', password: 's3cret' } };
+  const req = { body: { email: 'grace@example.com', password } };
   const res = createRes();
+
+  assert.equal(Buffer.byteLength(password, 'utf8'), AUTH_PASSWORD_MAX_BYTES + 4);
 
   await login(req, res);
 
@@ -303,7 +335,7 @@ test('login uses injected db for credential lookup', async () => {
   assert.doesNotMatch(db.calls[0].sql, /SELECT\s+\*/i);
   assert.deepEqual(db.calls[0].params, ['grace@example.com']);
   assert.deepEqual(passwordHasher.compareCalls, [
-    { password: 's3cret', passwordHash: 'stored-hash' },
+    { password, passwordHash: 'stored-hash' },
   ]);
   assert.equal(verifyToken(res.body.token, 'login-test-secret').userId, 77);
 });
