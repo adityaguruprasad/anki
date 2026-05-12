@@ -56,13 +56,29 @@ function hasDueCards(deck) {
   return hasPositiveSafeIntegerCount(deck, 'dueCards');
 }
 
+function selectDeckWithMostDueCards(decks) {
+  let selectedDeck = null;
+
+  for (const deck of decks) {
+    if (!hasUsableDeckId(deck) || !hasDueCards(deck)) {
+      continue;
+    }
+
+    if (!selectedDeck || deck.dueCards > selectedDeck.dueCards) {
+      selectedDeck = deck;
+    }
+  }
+
+  return selectedDeck;
+}
+
 function selectStudyDeckTarget(decks) {
   if (!Array.isArray(decks)) {
     return null;
   }
 
   return (
-    decks.find((deck) => hasUsableDeckId(deck) && hasDueCards(deck)) ||
+    selectDeckWithMostDueCards(decks) ||
     decks.find((deck) => (
       hasUsableDeckId(deck)
       && hasPositiveSafeIntegerCount(deck, 'totalCards')

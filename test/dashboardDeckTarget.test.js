@@ -103,15 +103,26 @@ test('hasDashboardDeckListPayload rejects malformed deck list payloads', () => {
   });
 });
 
-test('selectStudyDeckTarget returns the first deck with due cards', () => {
-  const dueDeck = { id: 2, name: 'Biology', totalCards: 4, dueCards: 1 };
-  const laterDueDeck = { id: 3, name: 'History', totalCards: 8, dueCards: 6 };
+test('selectStudyDeckTarget returns the due deck with the largest backlog', () => {
+  const smallerDueDeck = { id: 2, name: 'Biology', totalCards: 4, dueCards: 1 };
+  const largestDueDeck = { id: 3, name: 'History', totalCards: 8, dueCards: 6 };
 
   assert.equal(selectStudyDeckTarget([
     { id: 1, name: 'Math', totalCards: 20, dueCards: 0 },
-    dueDeck,
-    laterDueDeck,
-  ]), dueDeck);
+    smallerDueDeck,
+    largestDueDeck,
+  ]), largestDueDeck);
+});
+
+test('selectStudyDeckTarget keeps API order as the tie-breaker for equal due counts', () => {
+  const firstDueDeck = { id: 2, name: 'Biology', totalCards: 4, dueCards: 3 };
+  const tiedDueDeck = { id: 3, name: 'History', totalCards: 8, dueCards: 3 };
+
+  assert.equal(selectStudyDeckTarget([
+    { id: 1, name: 'Math', totalCards: 20, dueCards: 0 },
+    firstDueDeck,
+    tiedDueDeck,
+  ]), firstDueDeck);
 });
 
 test('selectStudyDeckTarget prefers due cards over earlier non-due cards', () => {

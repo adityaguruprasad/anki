@@ -26,19 +26,19 @@ test('getStudySessionRequest fetches decks when no valid deck id is present', ()
   });
 });
 
-test('getStudySessionRequest selects the first deck with due cards after decks load', () => {
-  const dueDeck = { id: 2, name: 'Biology', totalCards: 5, dueCards: 1 };
+test('getStudySessionRequest selects the due deck with the largest backlog after decks load', () => {
+  const largestDueDeck = { id: 3, name: 'History', totalCards: 8, dueCards: 4 };
 
   assert.deepEqual(
     getStudySessionRequest('', [
       { id: 1, name: 'Math', totalCards: 10, dueCards: 0 },
-      dueDeck,
-      { id: 3, name: 'History', totalCards: 8, dueCards: 4 },
+      { id: 2, name: 'Biology', totalCards: 5, dueCards: 1 },
+      largestDueDeck,
     ]),
     {
       type: STUDY_SESSION_REQUESTS.LOAD_CARDS,
-      deckId: 2,
-      deck: dueDeck,
+      deckId: 3,
+      deck: largestDueDeck,
       source: 'selected',
     },
   );
@@ -83,7 +83,7 @@ test('getStudySessionRequest uses an explicit deck id without requiring deck loa
 
 test('getValidatedStudySessionDeckListRequest rejects malformed deck lists instead of selecting from them', () => {
   const malformedSelectablePayload = [
-    { id: 1, name: 'Malformed', totalCards: '2', dueCards: 1 },
+    { id: 1, name: 'Malformed', totalCards: '2', dueCards: 10 },
     { id: 2, name: 'Due deck', totalCards: 5, dueCards: 3 },
   ];
 
