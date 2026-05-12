@@ -2,6 +2,7 @@
 const MIN_EASE_FACTOR = 1.3;
 const DEFAULT_EASE_FACTOR = 2.5;
 const INITIAL_GOOD_INTERVAL = 6;
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
 const normalizeEaseFactor = (value) => {
   const numeric = Number(value);
@@ -68,9 +69,10 @@ const calculateNextReview = (card, quality, reviewedAt) => {
   }
   ease_factor = normalizeEaseFactor(ease_factor);
 
-  // Calculate next review date
-  const next_review = normalizeReviewDate(reviewedAt);
-  next_review.setDate(next_review.getDate() + interval);
+  // Calculate next review date using UTC duration arithmetic so DST cannot
+  // shift the scheduled instant when the process timezone observes DST.
+  const reviewDate = normalizeReviewDate(reviewedAt);
+  const next_review = new Date(reviewDate.getTime() + interval * DAY_IN_MS);
 
   return {
     ease_factor,
