@@ -2,7 +2,11 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  DECK_REMOVAL_COMPLETION_TYPES,
+  DECK_REMOVAL_MESSAGES,
   MALFORMED_DECK_REMOVAL_PAYLOAD_ERROR,
+  getDeckRemovalFailureMessage,
+  getDeckRemovalResponseCompletion,
   hasDeckRemovalSuccessPayload,
   parseDeckRemovalSuccessPayload,
 } = require('../deckRemovalResponse');
@@ -48,4 +52,82 @@ test('parseDeckRemovalSuccessPayload rejects missing or non-true success values'
     { success: null },
     { success: [] },
   ].forEach(assertMalformed);
+});
+
+test('getDeckRemovalFailureMessage preserves existing non-OK error fallback behavior', () => {
+  assert.equal(getDeckRemovalFailureMessage({ error: 'Deck not found' }), 'Deck not found');
+  assert.equal(getDeckRemovalFailureMessage({ error: '' }), DECK_REMOVAL_MESSAGES.deleteFailed);
+  assert.equal(getDeckRemovalFailureMessage({}), DECK_REMOVAL_MESSAGES.deleteFailed);
+  assert.equal(getDeckRemovalFailureMessage(null), DECK_REMOVAL_MESSAGES.deleteFailed);
+});
+
+test('deck-removal response completion ignores stale responses before parsing payloads', () => {
+  let parseCalls = 0;
+  const completion = getDeckRemovalResponseCompletion({
+    isCurrent: false,
+    responseOk: true,
+    payload: { success: true },
+    parseRemovalSuccess() {
+      parseCalls += 1;
+      return {};
+    },
+  });
+
+  assert.deepEqual(completion, {
+    type: DECK_REMOVAL_COMPLETION_TYPES.IGNORED,
+    ignored: true,
+  });
+  assert.equal(parseCalls, 0);
+});
+
+test('deck-removal response completion preserves non-OK server error behavior', () => {
+  let parseCalls = 0;
+  const completion = getDeckRemovalResponseCompletion({
+    isCurrent: true,
+    responseOk: false,
+    payload: { error: 'Deck not found' },
+    parseRemovalSuccess() {
+      parseCalls += 1;
+      return {};
+    },
+  });
+
+  assert.deepEqual(completion, {
+    type: DECK_REMOVAL_COMPLETION_TYPES.SERVER_ERROR,
+    ignored: false,
+    error: 'Deck not found',
+  });
+  assert.equal(parseCalls, 0);
+});
+
+test('deck-removal response completion exposes only validated successful removal payloads', () => {
+  const payload = { success: true };
+
+  assert.deepEqual(
+    getDeckRemovalResponseCompletion({
+      isCurrent: true,
+      responseOk: true,
+      payload,
+    }),
+    {
+      type: DECK_REMOVAL_COMPLETION_TYPES.SUCCESS,
+      ignored: false,
+      removal: payload,
+    },
+  );
+});
+
+test('deck-removal response completion rejects malformed 2xx payloads before local mutation data exists', () => {
+  const completion = getDeckRemovalResponseCompletion({
+    isCurrent: true,
+    responseOk: true,
+    payload: { success: false },
+  });
+
+  assert.deepEqual(completion, {
+    type: DECK_REMOVAL_COMPLETION_TYPES.INVALID_RESPONSE,
+    ignored: false,
+    error: DECK_REMOVAL_MESSAGES.deleteFailed,
+  });
+  assert.equal(Object.prototype.hasOwnProperty.call(completion, 'removal'), false);
 });

@@ -2,8 +2,10 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  RENAME_DECK_COMPLETION_TYPES,
   RENAME_DECK_MESSAGES,
   getRenameDeckFailureMessage,
+  getRenameDeckResponseCompletion,
   renameDeckSubmission,
   validateRenameDeckName,
 } = require('../deckRenameState');
@@ -146,4 +148,96 @@ test('getRenameDeckFailureMessage falls back when response has no usable server 
   assert.equal(getRenameDeckFailureMessage({}), RENAME_DECK_MESSAGES.renameFailed);
   assert.equal(getRenameDeckFailureMessage({ error: '   ' }), RENAME_DECK_MESSAGES.renameFailed);
   assert.equal(getRenameDeckFailureMessage(null), RENAME_DECK_MESSAGES.renameFailed);
+});
+
+test('rename-deck response completion ignores stale responses before parsing payloads', () => {
+  let parseCalls = 0;
+  const completion = getRenameDeckResponseCompletion({
+    deckId: 7,
+    isCurrent: false,
+    responseOk: true,
+    payload: {
+      id: 7,
+      name: 'Spanish',
+    },
+    parseRenamedDeck() {
+      parseCalls += 1;
+      return {};
+    },
+  });
+
+  assert.deepEqual(completion, {
+    type: RENAME_DECK_COMPLETION_TYPES.IGNORED,
+    ignored: true,
+  });
+  assert.equal(parseCalls, 0);
+});
+
+test('rename-deck response completion preserves non-OK server error behavior', () => {
+  let parseCalls = 0;
+  const completion = getRenameDeckResponseCompletion({
+    deckId: 7,
+    isCurrent: true,
+    responseOk: false,
+    payload: { error: 'Deck not found' },
+    parseRenamedDeck() {
+      parseCalls += 1;
+      return {};
+    },
+  });
+
+  assert.deepEqual(completion, {
+    type: RENAME_DECK_COMPLETION_TYPES.SERVER_ERROR,
+    ignored: false,
+    error: 'Deck not found',
+  });
+  assert.equal(parseCalls, 0);
+});
+
+test('rename-deck response completion validates successful deck rows against the requested deck id', () => {
+  const renamedDeck = {
+    id: 7,
+    name: 'Organic Chemistry',
+    totalCards: 4,
+    dueCards: 1,
+  };
+  let receivedOptions;
+
+  assert.deepEqual(
+    getRenameDeckResponseCompletion({
+      deckId: '7',
+      isCurrent: true,
+      responseOk: true,
+      payload: renamedDeck,
+      parseRenamedDeck(payload, options) {
+        receivedOptions = options;
+        return payload;
+      },
+    }),
+    {
+      type: RENAME_DECK_COMPLETION_TYPES.SUCCESS,
+      ignored: false,
+      renamedDeck,
+    },
+  );
+  assert.deepEqual(receivedOptions, { expectedId: '7' });
+});
+
+test('rename-deck response completion rejects malformed 2xx payloads before local mutation data exists', () => {
+  const completion = getRenameDeckResponseCompletion({
+    deckId: 7,
+    isCurrent: true,
+    responseOk: true,
+    payload: {
+      id: 8,
+      name: 'Wrong deck',
+    },
+  });
+
+  assert.deepEqual(completion, {
+    type: RENAME_DECK_COMPLETION_TYPES.INVALID_RESPONSE,
+    ignored: false,
+    error: RENAME_DECK_MESSAGES.renameFailed,
+  });
+  assert.equal(Object.prototype.hasOwnProperty.call(completion, 'renamedDeck'), false);
 });

@@ -353,13 +353,18 @@ test('card mutations validate successful payloads before updating visible state'
   );
 });
 
-test('deck mutations validate successful payloads before updating visible state', () => {
+test('deck mutations classify responses before updating visible state', () => {
   const createBody = extractConstFunctionBody('createDeck');
   const renameBody = extractConstFunctionBody('renameDeck');
   const createAuthExpiredIndex = createBody.indexOf('if (handleAuthExpiredResponse(response, onAuthExpired))');
   const createJsonIndex = createBody.indexOf('const data = await response.json().catch(() => ({}));');
-  const createResponseOkIndex = createBody.indexOf('if (!response.ok) {');
-  const createValidationIndex = createBody.indexOf('createdDeck = parseDeckMutationResponsePayload(data);');
+  const createCompletionIndex = createBody.indexOf('const createCompletion = getCreateDeckResponseCompletion({');
+  const createServerErrorIndex = createBody.indexOf(
+    'createCompletion.type === CREATE_DECK_COMPLETION_TYPES.SERVER_ERROR',
+  );
+  const createInvalidResponseIndex = createBody.indexOf(
+    'createCompletion.type === CREATE_DECK_COMPLETION_TYPES.INVALID_RESPONSE',
+  );
   const createClearInputIndex = createBody.indexOf("setNewDeckName('');");
   const createLocalStateIndex = createBody.indexOf(
     'addCreatedDeck(currentDecks, createdDeck, submission.name)',
@@ -368,11 +373,14 @@ test('deck mutations validate successful payloads before updating visible state'
   const createSuccessIndex = createBody.indexOf('showCreateDeckSuccess();');
   const renameAuthExpiredIndex = renameBody.indexOf('if (handleAuthExpiredResponse(response, onAuthExpired))');
   const renameJsonIndex = renameBody.indexOf('const data = await response.json().catch(() => ({}));');
-  const renameResponseOkIndex = renameBody.indexOf('if (!response.ok) {');
-  const renameValidationIndex = renameBody.indexOf(
-    'renamedDeck = parseDeckMutationResponsePayload(data, { expectedId: deckId });',
+  const renameCompletionIndex = renameBody.indexOf('const renameCompletion = getRenameDeckResponseCompletion({');
+  const renameServerErrorIndex = renameBody.indexOf(
+    'renameCompletion.type === RENAME_DECK_COMPLETION_TYPES.SERVER_ERROR',
   );
-  const renameClearFormIndex = renameBody.indexOf('clearRenameDeckState(deckId);', renameValidationIndex);
+  const renameInvalidResponseIndex = renameBody.indexOf(
+    'renameCompletion.type === RENAME_DECK_COMPLETION_TYPES.INVALID_RESPONSE',
+  );
+  const renameClearFormIndex = renameBody.indexOf('clearRenameDeckState(deckId);', renameCompletionIndex);
   const renameLocalStateIndex = renameBody.indexOf(
     'mergeRenamedDeck(currentDecks, deckId, renamedDeck, submission.name)',
   );
@@ -380,73 +388,78 @@ test('deck mutations validate successful payloads before updating visible state'
 
   assert.match(
     deckSource,
-    /require\(['"]\.\/deckMutationResponse['"]\)/,
-    'Expected deck.js to import the deck-mutation response validator',
+    /getCreateDeckResponseCompletion,/,
+    'Expected deck.js to import the create-deck response completion helper',
   );
   assert.match(
     deckSource,
-    /const \{ parseDeckMutationResponsePayload \} = deckMutationResponse;/,
-    'Expected deck.js to destructure the deck-mutation response parser',
+    /getRenameDeckResponseCompletion,/,
+    'Expected deck.js to import the rename-deck response completion helper',
   );
 
   assert.notEqual(createAuthExpiredIndex, -1, 'Expected auth-expired handling to remain in createDeck');
   assert.notEqual(createJsonIndex, -1, 'Expected createDeck to parse response JSON');
-  assert.notEqual(createResponseOkIndex, -1, 'Expected createDeck to keep non-2xx handling');
-  assert.notEqual(createValidationIndex, -1, 'Expected createDeck to validate successful payloads');
-  assert.notEqual(createClearInputIndex, -1, 'Expected createDeck to clear the input only after validation');
-  assert.notEqual(createLocalStateIndex, -1, 'Expected createDeck to add only the parsed deck locally');
-  assert.notEqual(createSilentRefreshIndex, -1, 'Expected createDeck to silently refresh only after validation');
-  assert.notEqual(createSuccessIndex, -1, 'Expected createDeck to show success only after validation');
+  assert.notEqual(createCompletionIndex, -1, 'Expected createDeck to classify response completions');
+  assert.notEqual(createServerErrorIndex, -1, 'Expected createDeck to keep non-2xx handling');
+  assert.notEqual(createInvalidResponseIndex, -1, 'Expected createDeck to handle malformed successful payloads');
+  assert.notEqual(createClearInputIndex, -1, 'Expected createDeck to clear the input only after successful completion');
+  assert.notEqual(createLocalStateIndex, -1, 'Expected createDeck to add only completion deck data locally');
+  assert.notEqual(createSilentRefreshIndex, -1, 'Expected createDeck to silently refresh only after successful completion');
+  assert.notEqual(createSuccessIndex, -1, 'Expected createDeck to show success only after successful completion');
   assert.ok(createAuthExpiredIndex < createJsonIndex, 'Expected createDeck auth expiration before JSON parsing');
-  assert.ok(createJsonIndex < createResponseOkIndex, 'Expected createDeck non-2xx handling after JSON parsing');
-  assert.ok(createResponseOkIndex < createValidationIndex, 'Expected createDeck validation after non-2xx handling');
-  assert.ok(createValidationIndex < createClearInputIndex, 'Expected createDeck validation before clearing input');
-  assert.ok(createValidationIndex < createLocalStateIndex, 'Expected createDeck validation before local insertion');
-  assert.ok(createValidationIndex < createSilentRefreshIndex, 'Expected createDeck validation before silent refresh');
-  assert.ok(createValidationIndex < createSuccessIndex, 'Expected createDeck validation before success status');
+  assert.ok(createJsonIndex < createCompletionIndex, 'Expected createDeck completion classification after JSON parsing');
+  assert.ok(createCompletionIndex < createClearInputIndex, 'Expected createDeck classification before clearing input');
+  assert.ok(createCompletionIndex < createLocalStateIndex, 'Expected createDeck classification before local insertion');
+  assert.ok(createCompletionIndex < createSilentRefreshIndex, 'Expected createDeck classification before silent refresh');
+  assert.ok(createCompletionIndex < createSuccessIndex, 'Expected createDeck classification before success status');
   assert.match(
-    createBody.slice(createResponseOkIndex, createValidationIndex),
-    /error: getCreateDeckFailureMessage\(data\),/,
-    'Expected createDeck non-2xx responses to keep backend error copy behavior',
+    createBody.slice(createCompletionIndex, createClearInputIndex),
+    /error: createCompletion\.error,/,
+    'Expected createDeck completion errors to surface through status without clearing input',
   );
   assert.match(
-    createBody.slice(createValidationIndex, createClearInputIndex),
-    /error: CREATE_DECK_MESSAGES\.createFailed,/,
-    'Expected malformed successful creates to use safe create-deck failure copy',
+    createBody.slice(createCompletionIndex, createClearInputIndex),
+    /const \{ createdDeck \} = createCompletion;/,
+    'Expected createDeck to use only the validated completion deck',
   );
 
   assert.notEqual(renameAuthExpiredIndex, -1, 'Expected auth-expired handling to remain in renameDeck');
   assert.notEqual(renameJsonIndex, -1, 'Expected renameDeck to parse response JSON');
-  assert.notEqual(renameResponseOkIndex, -1, 'Expected renameDeck to keep non-2xx handling');
-  assert.notEqual(renameValidationIndex, -1, 'Expected renameDeck to validate successful payloads');
-  assert.notEqual(renameClearFormIndex, -1, 'Expected renameDeck to keep the form open until validation passes');
-  assert.notEqual(renameLocalStateIndex, -1, 'Expected renameDeck to merge only the parsed deck locally');
-  assert.notEqual(renameSilentRefreshIndex, -1, 'Expected renameDeck to silently refresh only after validation');
+  assert.notEqual(renameCompletionIndex, -1, 'Expected renameDeck to classify response completions');
+  assert.notEqual(renameServerErrorIndex, -1, 'Expected renameDeck to keep non-2xx handling');
+  assert.notEqual(renameInvalidResponseIndex, -1, 'Expected renameDeck to handle malformed successful payloads');
+  assert.notEqual(renameClearFormIndex, -1, 'Expected renameDeck to keep the form open until completion succeeds');
+  assert.notEqual(renameLocalStateIndex, -1, 'Expected renameDeck to merge only completion deck data locally');
+  assert.notEqual(renameSilentRefreshIndex, -1, 'Expected renameDeck to silently refresh only after successful completion');
   assert.ok(renameAuthExpiredIndex < renameJsonIndex, 'Expected renameDeck auth expiration before JSON parsing');
-  assert.ok(renameJsonIndex < renameResponseOkIndex, 'Expected renameDeck non-2xx handling after JSON parsing');
-  assert.ok(renameResponseOkIndex < renameValidationIndex, 'Expected renameDeck validation after non-2xx handling');
-  assert.ok(renameValidationIndex < renameClearFormIndex, 'Expected renameDeck validation before clearing form state');
-  assert.ok(renameValidationIndex < renameLocalStateIndex, 'Expected renameDeck validation before local merge');
-  assert.ok(renameValidationIndex < renameSilentRefreshIndex, 'Expected renameDeck validation before silent refresh');
+  assert.ok(renameJsonIndex < renameCompletionIndex, 'Expected renameDeck completion classification after JSON parsing');
+  assert.ok(renameCompletionIndex < renameClearFormIndex, 'Expected renameDeck classification before clearing form state');
+  assert.ok(renameCompletionIndex < renameLocalStateIndex, 'Expected renameDeck classification before local merge');
+  assert.ok(renameCompletionIndex < renameSilentRefreshIndex, 'Expected renameDeck classification before silent refresh');
   assert.match(
-    renameBody.slice(renameResponseOkIndex, renameValidationIndex),
-    /\[deckId\]: getRenameDeckFailureMessage\(data\),/,
-    'Expected renameDeck non-2xx responses to keep backend error copy behavior',
+    renameBody.slice(renameCompletionIndex, renameClearFormIndex),
+    /\[deckId\]: renameCompletion\.error,/,
+    'Expected renameDeck completion errors to surface without clearing form state',
   );
   assert.match(
-    renameBody.slice(renameValidationIndex, renameClearFormIndex),
-    /\[deckId\]: RENAME_DECK_MESSAGES\.renameFailed,/,
-    'Expected malformed successful renames to use safe rename-deck failure copy',
+    renameBody.slice(renameCompletionIndex, renameClearFormIndex),
+    /const \{ renamedDeck \} = renameCompletion;/,
+    'Expected renameDeck to use only the validated completion deck',
   );
 });
 
-test('deleteDeck validates successful removal payloads before updating visible state', () => {
+test('deleteDeck classifies removal responses before updating visible state', () => {
   const body = extractConstFunctionBody('deleteDeck');
   const authExpiredIndex = body.indexOf('if (handleAuthExpiredResponse(response, onAuthExpired))');
   const jsonIndex = body.indexOf('const data = await response.json().catch(() => ({}));');
-  const responseOkIndex = body.indexOf('if (!response.ok) {');
-  const validationIndex = body.indexOf('parseDeckRemovalSuccessPayload(data);');
-  const clearErrorIndex = body.indexOf('delete nextErrors[deckId];', validationIndex);
+  const completionIndex = body.indexOf('const deckRemovalCompletion = getDeckRemovalResponseCompletion({');
+  const serverErrorIndex = body.indexOf(
+    'deckRemovalCompletion.type === DECK_REMOVAL_COMPLETION_TYPES.SERVER_ERROR',
+  );
+  const invalidResponseIndex = body.indexOf(
+    'deckRemovalCompletion.type === DECK_REMOVAL_COMPLETION_TYPES.INVALID_RESPONSE',
+  );
+  const clearErrorIndex = body.indexOf('delete nextErrors[deckId];', completionIndex);
   const removeDeckIndex = body.indexOf('removeDeckFromList(currentDecks, deckId)');
   const removeCardsIndex = body.indexOf('delete nextCards[deckId];');
   const silentRefreshIndex = body.indexOf('void fetchDecks({ silent: true });');
@@ -454,38 +467,38 @@ test('deleteDeck validates successful removal payloads before updating visible s
   assert.match(
     deckSource,
     /require\(['"]\.\/deckRemovalResponse['"]\)/,
-    'Expected deck.js to import the deck-removal response validator',
+    'Expected deck.js to import deck-removal response helpers',
   );
   assert.match(
     deckSource,
-    /const \{ parseDeckRemovalSuccessPayload \} = deckRemovalResponse;/,
-    'Expected deck.js to destructure the deck-removal response parser',
+    /getDeckRemovalResponseCompletion,/,
+    'Expected deck.js to destructure the deck-removal response completion helper',
   );
 
   assert.notEqual(authExpiredIndex, -1, 'Expected auth-expired handling to remain in deleteDeck');
   assert.notEqual(jsonIndex, -1, 'Expected deleteDeck to parse response JSON');
-  assert.notEqual(responseOkIndex, -1, 'Expected deleteDeck to keep non-2xx handling');
-  assert.notEqual(validationIndex, -1, 'Expected deleteDeck to validate successful payloads');
-  assert.notEqual(clearErrorIndex, -1, 'Expected deleteDeck to clear errors only after validation');
-  assert.notEqual(removeDeckIndex, -1, 'Expected deleteDeck to remove the deck only after validation');
-  assert.notEqual(removeCardsIndex, -1, 'Expected deleteDeck to remove deck cards only after validation');
-  assert.notEqual(silentRefreshIndex, -1, 'Expected deleteDeck to silently refresh only after validation');
+  assert.notEqual(completionIndex, -1, 'Expected deleteDeck to classify response completions');
+  assert.notEqual(serverErrorIndex, -1, 'Expected deleteDeck to keep non-2xx handling');
+  assert.notEqual(invalidResponseIndex, -1, 'Expected deleteDeck to handle malformed successful payloads');
+  assert.notEqual(clearErrorIndex, -1, 'Expected deleteDeck to clear errors only after completion succeeds');
+  assert.notEqual(removeDeckIndex, -1, 'Expected deleteDeck to remove the deck only after completion succeeds');
+  assert.notEqual(removeCardsIndex, -1, 'Expected deleteDeck to remove deck cards only after completion succeeds');
+  assert.notEqual(silentRefreshIndex, -1, 'Expected deleteDeck to silently refresh only after completion succeeds');
   assert.ok(authExpiredIndex < jsonIndex, 'Expected deleteDeck auth expiration before JSON parsing');
-  assert.ok(jsonIndex < responseOkIndex, 'Expected deleteDeck non-2xx handling after JSON parsing');
-  assert.ok(responseOkIndex < validationIndex, 'Expected deleteDeck validation after non-2xx handling');
-  assert.ok(validationIndex < clearErrorIndex, 'Expected deleteDeck validation before clearing errors');
-  assert.ok(validationIndex < removeDeckIndex, 'Expected deleteDeck validation before local deck removal');
-  assert.ok(validationIndex < removeCardsIndex, 'Expected deleteDeck validation before local card cleanup');
-  assert.ok(validationIndex < silentRefreshIndex, 'Expected deleteDeck validation before silent refresh');
+  assert.ok(jsonIndex < completionIndex, 'Expected deleteDeck completion classification after JSON parsing');
+  assert.ok(completionIndex < clearErrorIndex, 'Expected deleteDeck classification before clearing errors');
+  assert.ok(completionIndex < removeDeckIndex, 'Expected deleteDeck classification before local deck removal');
+  assert.ok(completionIndex < removeCardsIndex, 'Expected deleteDeck classification before local card cleanup');
+  assert.ok(completionIndex < silentRefreshIndex, 'Expected deleteDeck classification before silent refresh');
   assert.match(
-    body.slice(responseOkIndex, validationIndex),
-    /\[deckId\]: data\.error \|\| 'Unable to delete deck\.',/,
-    'Expected deleteDeck non-2xx responses to keep backend error copy behavior',
+    body.slice(completionIndex, clearErrorIndex),
+    /\[deckId\]: deckRemovalCompletion\.error,/,
+    'Expected deleteDeck completion errors to surface without clearing visible state',
   );
   assert.match(
-    body.slice(validationIndex, clearErrorIndex),
-    /\[deckId\]: 'Unable to delete deck\.',/,
-    'Expected malformed successful deletes to use safe delete-deck failure copy',
+    body,
+    /\[deckId\]: DECK_REMOVAL_MESSAGES\.networkFailed,/,
+    'Expected deleteDeck network errors to keep existing safe copy',
   );
 });
 

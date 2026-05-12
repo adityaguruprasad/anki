@@ -178,15 +178,21 @@ test('DeckManagement mutation handlers guard awaited completions and cleanup', (
     deleteCard: 'removeLoadedCard(deckId, cardId);',
     deleteDeck: 'removeDeckFromList(currentDecks, deckId)',
   };
+  const nonOkHandlingMarkers = {
+    createDeck: 'createCompletion.type === CREATE_DECK_COMPLETION_TYPES.SERVER_ERROR',
+    renameDeck: 'renameCompletion.type === RENAME_DECK_COMPLETION_TYPES.SERVER_ERROR',
+    deleteDeck: 'deckRemovalCompletion.type === DECK_REMOVAL_COMPLETION_TYPES.SERVER_ERROR',
+  };
 
   for (const [functionName, successfulStateMutation] of Object.entries(expectations)) {
     const body = extractConstFunctionBody(functionName);
+    const nonOkHandlingMarker = nonOkHandlingMarkers[functionName] || 'if (!response.ok) {';
     const fetchIndex = body.indexOf('const response = await fetch(');
     const postFetchGuardIndex = body.indexOf('if (!isCurrentMutation()) {', fetchIndex);
     const authExpiredIndex = body.indexOf('if (handleAuthExpiredResponse(response, onAuthExpired))', fetchIndex);
     const jsonIndex = body.indexOf('const data = await response.json().catch(() => ({}));', fetchIndex);
     const postJsonGuardIndex = body.indexOf('if (!isCurrentMutation()) {', jsonIndex);
-    const nonOkIndex = body.indexOf('if (!response.ok) {', fetchIndex);
+    const nonOkIndex = body.indexOf(nonOkHandlingMarker, fetchIndex);
     const successIndex = body.indexOf(successfulStateMutation);
     const successGuardIndex = body.lastIndexOf('if (!isCurrentMutation()) {', successIndex);
     const catchIndex = body.indexOf('} catch (error) {');

@@ -8,7 +8,6 @@ const deckListLoadState = require('./deckListLoadState');
 const deckRenameState = require('./deckRenameState');
 const deckManagementApiRequests = require('./deckManagementApiRequests');
 const deckManagementDeckListPayload = require('./deckManagementDeckListPayload');
-const deckMutationResponse = require('./deckMutationResponse');
 const deckRemovalResponse = require('./deckRemovalResponse');
 const deckCollectionState = require('./deckCollectionState');
 const deckCardState = require('./deckCardState');
@@ -25,9 +24,10 @@ const authHeaders = require('./authHeaders');
 const authExpiration = require('./authExpiration');
 
 const {
+  CREATE_DECK_COMPLETION_TYPES,
   CREATE_DECK_MESSAGES,
   createDeckSubmission,
-  getCreateDeckFailureMessage,
+  getCreateDeckResponseCompletion,
 } = deckCreateState;
 const {
   DECK_LIST_LOAD_MESSAGES,
@@ -39,14 +39,18 @@ const {
   isCurrentDeckListRequest,
 } = deckListLoadState;
 const {
+  RENAME_DECK_COMPLETION_TYPES,
   RENAME_DECK_MESSAGES,
-  getRenameDeckFailureMessage,
+  getRenameDeckResponseCompletion,
   renameDeckSubmission,
 } = deckRenameState;
 const { getDeckManagementApiRequests } = deckManagementApiRequests;
 const { parseDeckManagementDeckListPayload } = deckManagementDeckListPayload;
-const { parseDeckMutationResponsePayload } = deckMutationResponse;
-const { parseDeckRemovalSuccessPayload } = deckRemovalResponse;
+const {
+  DECK_REMOVAL_COMPLETION_TYPES,
+  DECK_REMOVAL_MESSAGES,
+  getDeckRemovalResponseCompletion,
+} = deckRemovalResponse;
 const {
   addCreatedDeck,
   mergeRenamedDeck,
@@ -360,30 +364,38 @@ const DeckManagement = ({ env, onAuthExpired }) => {
         return;
       }
 
-      if (!response.ok) {
+      const createCompletion = getCreateDeckResponseCompletion({
+        isCurrent: isCurrentMutation(),
+        responseOk: response.ok,
+        payload: data,
+      });
+
+      if (createCompletion.ignored) {
+        return;
+      }
+
+      if (createCompletion.type === CREATE_DECK_COMPLETION_TYPES.SERVER_ERROR) {
         setCreateDeckStatus({
           creating: false,
-          error: getCreateDeckFailureMessage(data),
+          error: createCompletion.error,
           success: '',
         });
         return;
       }
 
-      let createdDeck;
-      try {
-        createdDeck = parseDeckMutationResponsePayload(data);
-      } catch {
+      if (createCompletion.type === CREATE_DECK_COMPLETION_TYPES.INVALID_RESPONSE) {
         if (!isCurrentMutation()) {
           return;
         }
         setCreateDeckStatus({
           creating: false,
-          error: CREATE_DECK_MESSAGES.createFailed,
+          error: createCompletion.error,
           success: '',
         });
         return;
       }
 
+      const { createdDeck } = createCompletion;
       if (!isCurrentMutation()) {
         return;
       }
@@ -493,28 +505,37 @@ const DeckManagement = ({ env, onAuthExpired }) => {
         return;
       }
 
-      if (!response.ok) {
+      const renameCompletion = getRenameDeckResponseCompletion({
+        deckId,
+        isCurrent: isCurrentMutation(),
+        responseOk: response.ok,
+        payload: data,
+      });
+
+      if (renameCompletion.ignored) {
+        return;
+      }
+
+      if (renameCompletion.type === RENAME_DECK_COMPLETION_TYPES.SERVER_ERROR) {
         setRenameErrors((currentErrors) => ({
           ...currentErrors,
-          [deckId]: getRenameDeckFailureMessage(data),
+          [deckId]: renameCompletion.error,
         }));
         return;
       }
 
-      let renamedDeck;
-      try {
-        renamedDeck = parseDeckMutationResponsePayload(data, { expectedId: deckId });
-      } catch {
+      if (renameCompletion.type === RENAME_DECK_COMPLETION_TYPES.INVALID_RESPONSE) {
         if (!isCurrentMutation()) {
           return;
         }
         setRenameErrors((currentErrors) => ({
           ...currentErrors,
-          [deckId]: RENAME_DECK_MESSAGES.renameFailed,
+          [deckId]: renameCompletion.error,
         }));
         return;
       }
 
+      const { renamedDeck } = renameCompletion;
       if (!isCurrentMutation()) {
         return;
       }
@@ -1337,23 +1358,31 @@ const DeckManagement = ({ env, onAuthExpired }) => {
         return;
       }
 
-      if (!response.ok) {
+      const deckRemovalCompletion = getDeckRemovalResponseCompletion({
+        isCurrent: isCurrentMutation(),
+        responseOk: response.ok,
+        payload: data,
+      });
+
+      if (deckRemovalCompletion.ignored) {
+        return;
+      }
+
+      if (deckRemovalCompletion.type === DECK_REMOVAL_COMPLETION_TYPES.SERVER_ERROR) {
         setDeleteErrors((currentErrors) => ({
           ...currentErrors,
-          [deckId]: data.error || 'Unable to delete deck.',
+          [deckId]: deckRemovalCompletion.error,
         }));
         return;
       }
 
-      try {
-        parseDeckRemovalSuccessPayload(data);
-      } catch {
+      if (deckRemovalCompletion.type === DECK_REMOVAL_COMPLETION_TYPES.INVALID_RESPONSE) {
         if (!isCurrentMutation()) {
           return;
         }
         setDeleteErrors((currentErrors) => ({
           ...currentErrors,
-          [deckId]: 'Unable to delete deck.',
+          [deckId]: deckRemovalCompletion.error,
         }));
         return;
       }
@@ -1383,7 +1412,7 @@ const DeckManagement = ({ env, onAuthExpired }) => {
       console.error('Error deleting deck:', error);
       setDeleteErrors((currentErrors) => ({
         ...currentErrors,
-        [deckId]: 'Network error. Please try again.',
+        [deckId]: DECK_REMOVAL_MESSAGES.networkFailed,
       }));
     } finally {
       if (isCurrentMutation()) {
