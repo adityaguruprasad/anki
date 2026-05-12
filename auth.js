@@ -9,6 +9,8 @@ const {
 
 const DEFAULT_DEV_JWT_SECRET = 'your_secret_key';
 const DEFAULT_JWT_EXPIRES_IN_SECONDS = 60 * 60 * 24;
+const JWT_EXPIRES_IN_SECONDS_ERROR =
+  'JWT_EXPIRES_IN_SECONDS must be a positive integer not greater than Number.MAX_SAFE_INTEGER';
 // Keep these aligned with anki.db users.username VARCHAR(50) and users.email VARCHAR(100).
 const AUTH_USERNAME_MAX_LENGTH = 50;
 const AUTH_EMAIL_MAX_LENGTH = 100;
@@ -35,12 +37,29 @@ function resolveJwtSecret(env = process.env) {
 }
 
 function validateJwtExpiresInSeconds(value) {
-  const expiresInSeconds = Number(value);
-  if (!Number.isInteger(expiresInSeconds) || expiresInSeconds <= 0) {
-    throw new Error('JWT_EXPIRES_IN_SECONDS must be a positive integer');
+  if (typeof value === 'number') {
+    if (!Number.isSafeInteger(value) || value <= 0) {
+      throw new Error(JWT_EXPIRES_IN_SECONDS_ERROR);
+    }
+
+    return value;
   }
 
-  return expiresInSeconds;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!/^\d+$/.test(trimmed)) {
+      throw new Error(JWT_EXPIRES_IN_SECONDS_ERROR);
+    }
+
+    const parsed = BigInt(trimmed);
+    if (parsed <= 0n || parsed > BigInt(Number.MAX_SAFE_INTEGER)) {
+      throw new Error(JWT_EXPIRES_IN_SECONDS_ERROR);
+    }
+
+    return Number(parsed);
+  }
+
+  throw new Error(JWT_EXPIRES_IN_SECONDS_ERROR);
 }
 
 function resolveJwtExpiresInSeconds(env = process.env) {
@@ -55,17 +74,28 @@ function decodeJsonPart(value) {
   return JSON.parse(Buffer.from(value, 'base64url').toString('utf8'));
 }
 
+function validateJwtExpirationTimestamp(exp) {
+  if (typeof exp !== 'number' || !Number.isSafeInteger(exp) || exp <= 0) {
+    throw new Error('Token expiration must be a positive safe integer');
+  }
+
+  return exp;
+}
+
 function signToken(payload, secret = resolveJwtSecret(), options = {}) {
   const now = options.now ?? Math.floor(Date.now() / 1000);
   const expiresInSeconds =
     options.expiresInSeconds == null
       ? resolveJwtExpiresInSeconds(options.env)
       : validateJwtExpiresInSeconds(options.expiresInSeconds);
+  // Duration inputs are checked independently, and the computed NumericDate is checked too
+  // so large safe durations cannot overflow past the safe integer range after adding now.
+  const exp = validateJwtExpirationTimestamp(now + expiresInSeconds);
   const header = { alg: 'HS256', typ: 'JWT' };
   const tokenPayload = {
     ...payload,
     iat: now,
-    exp: now + expiresInSeconds,
+    exp,
   };
   const body = `${base64UrlJson(header)}.${base64UrlJson(tokenPayload)}`;
   const signature = crypto.createHmac('sha256', secret).update(body).digest('base64url');
@@ -97,9 +127,10 @@ function verifyToken(token, secret = resolveJwtSecret(), options = {}) {
     throw new Error('Invalid token payload');
   }
 
-  if (!Number.isFinite(payload.exp)) {
+  if (payload.exp == null) {
     throw new Error('Token expiration is required');
   }
+  const exp = validateJwtExpirationTimestamp(payload.exp);
 
   const normalizedUserId = normalizeTokenUserId(payload.userId);
   if (normalizedUserId == null) {
@@ -107,7 +138,7 @@ function verifyToken(token, secret = resolveJwtSecret(), options = {}) {
   }
 
   const now = options.now ?? Math.floor(Date.now() / 1000);
-  if (payload.exp <= now) {
+  if (exp <= now) {
     throw new Error('Token expired');
   }
 

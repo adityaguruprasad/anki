@@ -419,6 +419,41 @@ test('signToken adds exp and verifyToken rejects expired tokens', () => {
   assert.throws(() => verifyToken(token, 'expiry-secret', { now: 1060 }), /Token expired/);
 });
 
+test('signToken rejects expiration math that would produce an unsafe exp', () => {
+  assert.throws(
+    () =>
+      signToken({ userId: 101 }, 'unsafe-exp-secret', {
+        now: Number.MAX_SAFE_INTEGER,
+        expiresInSeconds: 1,
+      }),
+    /Token expiration must be a positive safe integer/
+  );
+});
+
+test('verifyToken rejects non-integer, string, and unsafe exp claims before expiry checks', () => {
+  const invalidExpClaims = [
+    { label: 'fractional', exp: 2000.5 },
+    { label: 'string', exp: '2000' },
+    { label: 'unsafe', exp: Number.MAX_SAFE_INTEGER + 1 },
+    { label: 'zero', exp: 0 },
+    { label: 'negative', exp: -1 },
+  ];
+
+  for (const { label, exp } of invalidExpClaims) {
+    const token = signRawJwt(
+      { alg: 'HS256', typ: 'JWT' },
+      { userId: 101, iat: 1000, exp },
+      'strict-exp-secret'
+    );
+
+    assert.throws(
+      () => verifyToken(token, 'strict-exp-secret', { now: 1000 }),
+      /Token expiration must be a positive safe integer/,
+      label
+    );
+  }
+});
+
 test('verifyToken accepts positive integer userId claims as normalized numbers', () => {
   const validClaims = [
     { userId: 42, expected: 42 },
@@ -652,10 +687,24 @@ test('resolveJwtSecret prefers JWT_SECRET and keeps deterministic test default',
 test('resolveJwtExpiresInSeconds supports a configurable positive integer default', () => {
   assert.equal(resolveJwtExpiresInSeconds({ NODE_ENV: 'test' }), DEFAULT_JWT_EXPIRES_IN_SECONDS);
   assert.equal(resolveJwtExpiresInSeconds({ JWT_EXPIRES_IN_SECONDS: '120' }), 120);
-  assert.throws(
-    () => resolveJwtExpiresInSeconds({ JWT_EXPIRES_IN_SECONDS: '0' }),
-    /JWT_EXPIRES_IN_SECONDS must be a positive integer/
-  );
+
+  const invalidExpiresInValues = [
+    '0',
+    '-1',
+    '1.5',
+    String(Number.MAX_SAFE_INTEGER + 1),
+    Number.MAX_SAFE_INTEGER + 1,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+  ];
+
+  for (const value of invalidExpiresInValues) {
+    assert.throws(
+      () => resolveJwtExpiresInSeconds({ JWT_EXPIRES_IN_SECONDS: value }),
+      /JWT_EXPIRES_IN_SECONDS must be a positive integer/,
+      String(value)
+    );
+  }
 });
 
 test('authenticateToken preserves existing 401 and 403 responses for missing and invalid tokens', () => {
