@@ -8,19 +8,41 @@ function isNonBlankString(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
-function hasUsableDeckManagementDeckId(value) {
+const MAX_SAFE_INTEGER_STRING = String(Number.MAX_SAFE_INTEGER);
+
+function hasRouteSafeDeckManagementDeckId(value) {
   if (typeof value === 'number') {
-    return Number.isFinite(value);
+    return Number.isSafeInteger(value) && value > 0;
   }
 
-  return isNonBlankString(value);
+  if (typeof value === 'string') {
+    return (
+      /^[1-9]\d*$/.test(value)
+      && (
+        value.length < MAX_SAFE_INTEGER_STRING.length
+        || (
+          value.length === MAX_SAFE_INTEGER_STRING.length
+          && value <= MAX_SAFE_INTEGER_STRING
+        )
+      )
+    );
+  }
+
+  return false;
+}
+
+function hasNonNegativeSafeIntegerCount(deck, key) {
+  return Number.isSafeInteger(deck[key]) && deck[key] >= 0;
 }
 
 function hasDeckManagementDeckRowPayload(deck) {
   return (
     isObjectRecord(deck)
-    && hasUsableDeckManagementDeckId(deck.id)
+    && hasRouteSafeDeckManagementDeckId(deck.id)
     && isNonBlankString(deck.name)
+    && hasNonNegativeSafeIntegerCount(deck, 'totalCards')
+    && hasNonNegativeSafeIntegerCount(deck, 'dueCards')
+    && deck.dueCards <= deck.totalCards
   );
 }
 

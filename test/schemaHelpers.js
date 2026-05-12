@@ -41,5 +41,6 @@ function getVarcharColumnLength(tableName, columnName) {
 
 module.exports = {
   readAnkiSchema,
+  getTableDefinition,
   getVarcharColumnLength,
 };
