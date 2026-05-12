@@ -10,24 +10,47 @@ const REVIEW_ACTIVITY_CHART_BUCKETS = Object.freeze([
   Object.freeze({ name: 'This Month', key: 'monthReviews' }),
 ]);
 
-function hasReviewActivityStats(stats) {
-  return Boolean(stats) && typeof stats === 'object' && !Array.isArray(stats);
-}
+const REVIEW_ACTIVITY_DIGIT_COUNT_PATTERN = /^[0-9]+$/;
 
-function toReviewActivityCount(value) {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return Math.max(0, Math.trunc(value));
+function normalizeReviewActivityCount(value) {
+  if (typeof value === 'number') {
+    if (Number.isSafeInteger(value) && value >= 0) {
+      return value;
+    }
+
+    return null;
   }
 
-  if (typeof value === 'string' && value.trim() !== '') {
-    const parsed = Number(value);
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
 
-    if (Number.isFinite(parsed)) {
-      return Math.max(0, Math.trunc(parsed));
+    if (REVIEW_ACTIVITY_DIGIT_COUNT_PATTERN.test(trimmed)) {
+      const normalized = trimmed.replace(/^0+/, '') || '0';
+      const parsed = Number(normalized);
+
+      if (Number.isSafeInteger(parsed)) {
+        return parsed;
+      }
     }
   }
 
-  return 0;
+  return null;
+}
+
+function hasReviewActivityStats(stats) {
+  return (
+    Boolean(stats)
+    && typeof stats === 'object'
+    && !Array.isArray(stats)
+    && REVIEW_ACTIVITY_CHART_BUCKETS.every(({ key }) => (
+      Object.prototype.hasOwnProperty.call(stats, key)
+      && normalizeReviewActivityCount(stats[key]) !== null
+    ))
+  );
+}
+
+function toReviewActivityCount(value) {
+  return normalizeReviewActivityCount(value);
 }
 
 function buildReviewActivityChartData(stats) {
