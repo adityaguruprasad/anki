@@ -19,6 +19,22 @@ const normalizeInterval = (value) => {
   return Math.max(1, Math.round(numeric));
 };
 
+const hasExplicitInitialReviewCount = (card) => {
+  if (!Object.prototype.hasOwnProperty.call(card ?? {}, 'review_count')) {
+    return false;
+  }
+
+  // Only an explicit, finite review_count <= 0 marks a persisted card as new.
+  // Null means "absent/legacy" here; missing, null, or non-finite counts keep
+  // the legacy persisted-interval behavior.
+  if (card.review_count === null) {
+    return false;
+  }
+
+  const reviewCount = Number(card.review_count);
+  return Number.isFinite(reviewCount) && reviewCount <= 0;
+};
+
 const normalizeReviewDate = (value) => {
   if (value === null) {
     throw new TypeError('Invalid review date');
@@ -36,7 +52,7 @@ const calculateNextReview = (card, quality, reviewedAt) => {
   let interval;
 
   // If there's no usable persisted interval, apply initial scheduling defaults.
-  if (storedInterval === null) {
+  if (storedInterval === null || hasExplicitInitialReviewCount(card)) {
     interval = quality < 3 ? 1 : INITIAL_GOOD_INTERVAL;
   } else if (quality >= 3) {
     interval = Math.max(1, Math.round(storedInterval * ease_factor));

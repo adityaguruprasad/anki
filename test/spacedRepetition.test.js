@@ -20,6 +20,70 @@ test('calculateNextReview returns safe defaults for missing persisted values', (
   assert.equal(result.ease_factor, 2.5);
 });
 
+test('calculateNextReview uses initial pass interval for first review of persisted new cards', () => {
+  const reviewedAt = new Date('2026-05-10T14:30:00.000Z');
+  const result = calculateNextReview({
+    interval: 1,
+    ease_factor: 2.5,
+    review_count: 0,
+  }, 3, reviewedAt);
+
+  assertValidSchedule(result);
+  assert.equal(result.interval, 6);
+  assert.equal(result.ease_factor, 2.5);
+  assert.equal(result.next_review.toISOString(), '2026-05-16T14:30:00.000Z');
+});
+
+test('calculateNextReview uses relearn interval for failed first review of persisted new cards', () => {
+  const reviewedAt = new Date('2026-05-10T14:30:00.000Z');
+  const result = calculateNextReview({
+    interval: 1,
+    ease_factor: 2.5,
+    review_count: 0,
+  }, 2, reviewedAt);
+
+  assertValidSchedule(result);
+  assert.equal(result.interval, 1);
+  assert.equal(result.ease_factor, 2.3);
+  assert.equal(result.next_review.toISOString(), '2026-05-11T14:30:00.000Z');
+});
+
+test('calculateNextReview keeps persisted interval growth after the first completed review', () => {
+  const result = calculateNextReview({
+    interval: 1,
+    ease_factor: 2.5,
+    review_count: 1,
+  }, 3);
+
+  assertValidSchedule(result);
+  assert.equal(result.interval, 3);
+  assert.equal(result.ease_factor, 2.5);
+});
+
+test('calculateNextReview treats null review_count as legacy persisted state', () => {
+  const result = calculateNextReview({
+    interval: 4,
+    ease_factor: 2,
+    review_count: null,
+  }, 3);
+
+  assertValidSchedule(result);
+  assert.equal(result.interval, 8);
+  assert.equal(result.ease_factor, 2);
+});
+
+test('calculateNextReview treats non-numeric review_count as legacy persisted state', () => {
+  const result = calculateNextReview({
+    interval: 4,
+    ease_factor: 2,
+    review_count: 'unknown',
+  }, 3);
+
+  assertValidSchedule(result);
+  assert.equal(result.interval, 8);
+  assert.equal(result.ease_factor, 2);
+});
+
 test('calculateNextReview anchors next review to the provided review time', () => {
   const reviewedAt = new Date('2026-05-10T14:30:00.000Z');
   const result = calculateNextReview({ interval: 2, ease_factor: 2 }, 3, reviewedAt);
