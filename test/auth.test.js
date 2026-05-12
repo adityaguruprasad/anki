@@ -8,6 +8,8 @@ const {
   AUTH_USERNAME_MAX_LENGTH,
   DEFAULT_JWT_EXPIRES_IN_SECONDS,
   DEFAULT_DEV_JWT_SECRET,
+  JWT_TOKEN_TOO_LONG_ERROR,
+  MAX_JWT_TOKEN_LENGTH,
   createAuthHandlers,
   extractBearerToken,
   resolveJwtExpiresInSeconds,
@@ -517,6 +519,30 @@ test('verifyToken rejects tokens without exp and non-HS256 algorithms', () => {
   assert.throws(
     () => verifyToken(hs512Token, 'alg-secret', { now: 1000 }),
     /Invalid token algorithm/
+  );
+});
+
+test('verifyToken rejects oversized token strings before JWT part decoding', () => {
+  const oversizedToken = `${'a'.repeat(MAX_JWT_TOKEN_LENGTH + 1)}.e30.signature`;
+
+  assert.throws(
+    () => verifyToken(oversizedToken, 'oversized-token-secret', { now: 1000 }),
+    { message: JWT_TOKEN_TOO_LONG_ERROR }
+  );
+});
+
+test('verifyToken allows max-length token strings to reach signature validation', () => {
+  const body = `${base64UrlJson({ alg: 'HS256', typ: 'JWT' })}.${base64UrlJson({
+    userId: 101,
+    iat: 1000,
+    exp: 2000,
+  })}`;
+  const boundaryToken = `${body}.${'a'.repeat(MAX_JWT_TOKEN_LENGTH - body.length - 1)}`;
+
+  assert.equal(boundaryToken.length, MAX_JWT_TOKEN_LENGTH);
+  assert.throws(
+    () => verifyToken(boundaryToken, 'boundary-token-secret', { now: 1000 }),
+    /Invalid token signature/
   );
 });
 

@@ -13,6 +13,10 @@ const JWT_SECRET_EMPTY_ERROR = 'JWT_SECRET must not be empty';
 const JWT_SECRET_TYPE_ERROR = 'JWT_SECRET must be a string';
 const JWT_EXPIRES_IN_SECONDS_ERROR =
   'JWT_EXPIRES_IN_SECONDS must be a positive integer not greater than Number.MAX_SAFE_INTEGER';
+// App-issued HS256 JWTs carry only compact userId/iat/exp claims; 4096 leaves generous
+// headroom while bounding split, JSON parsing, and HMAC work before verification.
+const MAX_JWT_TOKEN_LENGTH = 4096;
+const JWT_TOKEN_TOO_LONG_ERROR = `JWT token must be ${MAX_JWT_TOKEN_LENGTH} characters or fewer`;
 // Keep these aligned with anki.db users.username VARCHAR(50) and users.email VARCHAR(100).
 const AUTH_USERNAME_MAX_LENGTH = 50;
 const AUTH_EMAIL_MAX_LENGTH = 100;
@@ -93,6 +97,16 @@ function validateJwtExpirationTimestamp(exp) {
   return exp;
 }
 
+function validateJwtTokenText(token) {
+  if (typeof token !== 'string' || token.length === 0) {
+    throw new Error('Invalid token');
+  }
+
+  if (token.length > MAX_JWT_TOKEN_LENGTH) {
+    throw new Error(JWT_TOKEN_TOO_LONG_ERROR);
+  }
+}
+
 function signToken(payload, secret = resolveJwtSecret(), options = {}) {
   const now = options.now ?? Math.floor(Date.now() / 1000);
   const expiresInSeconds =
@@ -114,6 +128,8 @@ function signToken(payload, secret = resolveJwtSecret(), options = {}) {
 }
 
 function verifyToken(token, secret = resolveJwtSecret(), options = {}) {
+  validateJwtTokenText(token);
+
   const parts = token.split('.');
   if (parts.length !== 3) {
     throw new Error('Invalid token');
@@ -330,6 +346,8 @@ module.exports = {
   AUTH_USERNAME_MAX_LENGTH,
   DEFAULT_JWT_EXPIRES_IN_SECONDS,
   DEFAULT_DEV_JWT_SECRET,
+  JWT_TOKEN_TOO_LONG_ERROR,
+  MAX_JWT_TOKEN_LENGTH,
   createAuthHandlers,
   extractBearerToken,
   resolveJwtExpiresInSeconds,
