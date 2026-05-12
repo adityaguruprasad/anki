@@ -2293,6 +2293,7 @@ test('POST /api/study-session returns updated scheduling metadata for successful
   assert.match(db.calls[1].sql, /next_review\s+=\s+\$2/i);
   assert.match(db.calls[1].sql, /interval\s+=\s+\$3/i);
   assert.match(db.calls[1].sql, /ease_factor\s+=\s+\$4/i);
+  assert.match(db.calls[1].sql, /review_count\s+=\s+COALESCE\s*\(\s*review_count\s*,\s*0\s*\)\s*\+\s*1/i);
   assert.match(db.calls[1].sql, /WHERE\s+id\s+=\s+\$5/i);
   assert.match(db.calls[1].sql, /EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+decks\s+d/i);
   assert.match(db.calls[1].sql, /d\.id\s+=\s+cards\.deck_id/i);

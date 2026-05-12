@@ -615,7 +615,7 @@ async function submitStudySession(req, res, db, calculateNextReview) {
            next_review = $2,
            interval = $3,
            ease_factor = $4,
-           review_count = review_count + 1
+           review_count = COALESCE(review_count, 0) + 1
        WHERE id = $5
          AND EXISTS (
            SELECT 1
