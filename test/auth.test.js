@@ -633,6 +633,59 @@ test('authenticateToken accepts tokens signed with configured and default secret
   assert.equal(defaultReq.user.userId, 202);
 });
 
+test('createAuthHandlers validates and canonicalizes explicit jwtSecret options', () => {
+  const passwordHasher = createPasswordHasher();
+  const { authenticateToken } = createAuthHandlers(createDb([]), {
+    jwtSecret: '  configured-secret\n\t',
+    passwordHasher,
+  });
+  const req = {
+    headers: { authorization: `Bearer ${signToken({ userId: 203 }, 'configured-secret')}` },
+  };
+  let nextCalled = false;
+
+  authenticateToken(req, createRes(), () => {
+    nextCalled = true;
+  });
+
+  assert.equal(nextCalled, true);
+  assert.equal(req.user.userId, 203);
+
+  for (const jwtSecret of ['', ' \n\t ']) {
+    assert.throws(
+      () => createAuthHandlers(createDb([]), { jwtSecret, passwordHasher }),
+      /JWT_SECRET must not be empty/
+    );
+  }
+
+  for (const jwtSecret of [null, 12345]) {
+    assert.throws(
+      () => createAuthHandlers(createDb([]), { jwtSecret, passwordHasher }),
+      { name: 'TypeError', message: 'JWT_SECRET must be a string' }
+    );
+  }
+});
+
+test('createAuthHandlers lets undefined jwtSecret fall back to env JWT_SECRET', () => {
+  const passwordHasher = createPasswordHasher();
+  const { authenticateToken } = createAuthHandlers(createDb([]), {
+    jwtSecret: undefined,
+    env: { JWT_SECRET: 'env-secret' },
+    passwordHasher,
+  });
+  const req = {
+    headers: { authorization: `Bearer ${signToken({ userId: 204 }, 'env-secret')}` },
+  };
+  let nextCalled = false;
+
+  authenticateToken(req, createRes(), () => {
+    nextCalled = true;
+  });
+
+  assert.equal(nextCalled, true);
+  assert.equal(req.user.userId, 204);
+});
+
 test('authenticateToken normalizes numeric string userId claims to numbers', () => {
   const { authenticateToken } = createAuthHandlers(createDb([]), {
     jwtSecret: 'numeric-auth-secret',

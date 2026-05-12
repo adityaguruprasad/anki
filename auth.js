@@ -229,12 +229,24 @@ function isDuplicateAccountError(error) {
   return error?.code === '23505' && DUPLICATE_ACCOUNT_CONSTRAINTS.has(error.constraint);
 }
 
+function resolveAuthHandlerJwtSecret(options = {}) {
+  // Only undefined means "not provided"; other falsy values must fail closed.
+  if (options.jwtSecret !== undefined) {
+    return resolveJwtSecret({
+      ...options.env,
+      JWT_SECRET: options.jwtSecret,
+    });
+  }
+
+  return resolveJwtSecret(options.env);
+}
+
 function createAuthHandlers(db, options = {}) {
   if (!db || typeof db.query !== 'function') {
     throw new TypeError('createAuthHandlers requires a database object with a query method');
   }
 
-  const jwtSecret = options.jwtSecret || resolveJwtSecret(options.env);
+  const jwtSecret = resolveAuthHandlerJwtSecret(options);
   const jwtExpiresInSeconds =
     options.jwtExpiresInSeconds == null
       ? resolveJwtExpiresInSeconds(options.env)
