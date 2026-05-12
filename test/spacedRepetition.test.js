@@ -20,6 +20,27 @@ test('calculateNextReview returns safe defaults for missing persisted values', (
   assert.equal(result.ease_factor, 2.5);
 });
 
+test('calculateNextReview anchors next review to the provided review time', () => {
+  const reviewedAt = new Date('2026-05-10T14:30:00.000Z');
+  const result = calculateNextReview({ interval: 2, ease_factor: 2 }, 3, reviewedAt);
+
+  assertValidSchedule(result);
+  assert.equal(result.interval, 4);
+  assert.equal(result.next_review.toISOString(), '2026-05-14T14:30:00.000Z');
+  assert.equal(reviewedAt.toISOString(), '2026-05-10T14:30:00.000Z');
+});
+
+test('calculateNextReview rejects invalid review date anchors', () => {
+  assert.throws(
+    () => calculateNextReview({ interval: 2, ease_factor: 2 }, 3, 'not-a-date'),
+    /Invalid review date/,
+  );
+  assert.throws(
+    () => calculateNextReview({ interval: 2, ease_factor: 2 }, 3, null),
+    /Invalid review date/,
+  );
+});
+
 test('calculateNextReview sanitizes NaN and negative persisted scheduling values', () => {
   const result = calculateNextReview({ interval: -10, ease_factor: Number.NaN }, 3);
 

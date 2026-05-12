@@ -19,7 +19,18 @@ const normalizeInterval = (value) => {
   return Math.max(1, Math.round(numeric));
 };
 
-const calculateNextReview = (card, quality) => {
+const normalizeReviewDate = (value) => {
+  if (value === null) {
+    throw new TypeError('Invalid review date');
+  }
+  const reviewDate = value === undefined ? new Date() : new Date(value);
+  if (Number.isNaN(reviewDate.getTime())) {
+    throw new TypeError('Invalid review date');
+  }
+  return reviewDate;
+};
+
+const calculateNextReview = (card, quality, reviewedAt) => {
   let ease_factor = normalizeEaseFactor(card?.ease_factor);
   const storedInterval = normalizeInterval(card?.interval);
   let interval;
@@ -42,7 +53,7 @@ const calculateNextReview = (card, quality) => {
   ease_factor = normalizeEaseFactor(ease_factor);
 
   // Calculate next review date
-  const next_review = new Date();
+  const next_review = normalizeReviewDate(reviewedAt);
   next_review.setDate(next_review.getDate() + interval);
 
   return {
