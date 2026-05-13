@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const {
   MALFORMED_DECK_CARD_BROWSE_PAYLOAD_ERROR,
   hasDeckCardBrowseRowPayload,
+  hasMatchingCursorFamilies,
   parseDeckCardBrowseResponsePayload,
 } = require('../deckCardBrowseResponse');
 
@@ -57,6 +58,12 @@ test('parseDeckCardBrowseResponsePayload preserves valid cursor objects', () => 
       cursorId: 3,
       beforeCreatedAt: '2026-05-08T13:00:00.000Z',
       beforeId: '3',
+    },
+    {
+      cursorCreatedAt: '2026-05-08T13:00:00.000Z',
+      cursorId: '0003',
+      beforeCreatedAt: '2026-05-08T13:00:00.000Z',
+      beforeId: 3,
     },
   ].forEach((nextCursor) => {
     const payload = {
@@ -120,6 +127,18 @@ test('hasDeckCardBrowseRowPayload accepts only card-browser row objects', () => 
   );
 });
 
+test('hasMatchingCursorFamilies rejects matching invalid cursor ids', () => {
+  assert.equal(
+    hasMatchingCursorFamilies({
+      cursorCreatedAt: '2026-05-08T13:00:00.000Z',
+      cursorId: 'not-a-positive-integer',
+      beforeCreatedAt: '2026-05-08T13:00:00.000Z',
+      beforeId: 'also-not-a-positive-integer',
+    }),
+    false,
+  );
+});
+
 test('parseDeckCardBrowseResponsePayload rejects partial or blank cursor payloads', () => {
   [
     { nextCursor: undefined },
@@ -147,6 +166,36 @@ test('parseDeckCardBrowseResponsePayload rejects partial or blank cursor payload
         cursorId: 3,
         beforeCreatedAt: '2026-05-08T13:00:01.000Z',
         beforeId: 3,
+      },
+    },
+  ].forEach((payload) => {
+    assertMalformed({
+      cards: [{ id: 1, front_content: 'Front', back_content: 'Back' }],
+      ...payload,
+    });
+  });
+});
+
+test('parseDeckCardBrowseResponsePayload rejects invalid cursor timestamps and ids', () => {
+  [
+    { nextCursor: { cursorCreatedAt: 'not-a-date', cursorId: 3 } },
+    { nextCursor: { cursorCreatedAt: '2026-05-08', cursorId: 3 } },
+    { nextCursor: { cursorCreatedAt: '2026-05-08T13:00:00', cursorId: 3 } },
+    { nextCursor: { cursorCreatedAt: '2026-02-31T13:00:00.000Z', cursorId: 3 } },
+    { nextCursor: { cursorCreatedAt: '2026-05-08T13:00:00.000Z ', cursorId: 3 } },
+    { nextCursor: { cursorCreatedAt: '2026-05-08T13:00:00.000Z', cursorId: 0 } },
+    { nextCursor: { cursorCreatedAt: '2026-05-08T13:00:00.000Z', cursorId: '0' } },
+    { nextCursor: { cursorCreatedAt: '2026-05-08T13:00:00.000Z', cursorId: -1 } },
+    { nextCursor: { cursorCreatedAt: '2026-05-08T13:00:00.000Z', cursorId: 'abc' } },
+    { nextCursor: { cursorCreatedAt: '2026-05-08T13:00:00.000Z', cursorId: '1.2' } },
+    { nextCursor: { cursorCreatedAt: '2026-05-08T13:00:00.000Z', cursorId: Number.MAX_SAFE_INTEGER + 1 } },
+    { nextCursor: { cursorCreatedAt: '2026-05-08T13:00:00.000Z', cursorId: String(Number.MAX_SAFE_INTEGER + 1) } },
+    {
+      nextCursor: {
+        cursorCreatedAt: '2026-05-08T13:00:00.000Z',
+        cursorId: '3',
+        beforeCreatedAt: '2026-05-08T13:00:00.000Z',
+        beforeId: '4',
       },
     },
   ].forEach((payload) => {

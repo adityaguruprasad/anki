@@ -1,4 +1,7 @@
+const { isValidIsoTimestamp } = require('./isoTimestampValidation');
+
 const MALFORMED_DECK_CARD_BROWSE_PAYLOAD_ERROR = 'Malformed deck-card browse payload';
+const MAX_SAFE_INTEGER_TEXT = String(Number.MAX_SAFE_INTEGER);
 
 function isObjectRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -20,6 +23,42 @@ function hasUsableId(value) {
   return isNonBlankString(value);
 }
 
+function normalizeSafePositiveIntegerId(value) {
+  if (typeof value === 'number') {
+    return Number.isSafeInteger(value) && value > 0 ? String(value) : null;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!/^\d+$/.test(trimmed)) {
+      return null;
+    }
+
+    const normalized = trimmed.replace(/^0+/, '');
+    if (normalized.length === 0) {
+      return null;
+    }
+
+    if (
+      normalized.length > MAX_SAFE_INTEGER_TEXT.length
+      || (
+        normalized.length === MAX_SAFE_INTEGER_TEXT.length
+        && normalized > MAX_SAFE_INTEGER_TEXT
+      )
+    ) {
+      return null;
+    }
+
+    return normalized;
+  }
+
+  return null;
+}
+
+function hasSafePositiveIntegerId(value) {
+  return normalizeSafePositiveIntegerId(value) !== null;
+}
+
 function hasDeckCardBrowseRowPayload(card) {
   return (
     isObjectRecord(card)
@@ -33,8 +72,8 @@ function hasValidCursorFamily(cursor, createdAtKey, idKey) {
   return (
     hasOwn(cursor, createdAtKey)
     && hasOwn(cursor, idKey)
-    && isNonBlankString(cursor[createdAtKey])
-    && hasUsableId(cursor[idKey])
+    && isValidIsoTimestamp(cursor[createdAtKey])
+    && hasSafePositiveIntegerId(cursor[idKey])
   );
 }
 
@@ -49,22 +88,32 @@ function hasInvalidCursorFamily(cursor, createdAtKey, idKey) {
   return (
     !hasCreatedAt
     || !hasId
-    || !isNonBlankString(cursor[createdAtKey])
-    || !hasUsableId(cursor[idKey])
+    || !isValidIsoTimestamp(cursor[createdAtKey])
+    || !hasSafePositiveIntegerId(cursor[idKey])
   );
 }
 
 function hasMatchingCursorFamilies(cursor) {
-  if (
-    !hasValidCursorFamily(cursor, 'cursorCreatedAt', 'cursorId')
-    || !hasValidCursorFamily(cursor, 'beforeCreatedAt', 'beforeId')
-  ) {
+  const hasCursorFamily = hasOwn(cursor, 'cursorCreatedAt') && hasOwn(cursor, 'cursorId');
+  const hasBeforeFamily = hasOwn(cursor, 'beforeCreatedAt') && hasOwn(cursor, 'beforeId');
+
+  if (!hasCursorFamily || !hasBeforeFamily) {
     return true;
+  }
+
+  const normalizedCursorId = normalizeSafePositiveIntegerId(cursor.cursorId);
+  const normalizedBeforeId = normalizeSafePositiveIntegerId(cursor.beforeId);
+
+  if (
+    normalizedCursorId === null
+    || normalizedBeforeId === null
+  ) {
+    return false;
   }
 
   return (
     cursor.cursorCreatedAt === cursor.beforeCreatedAt
-    && String(cursor.cursorId).trim() === String(cursor.beforeId).trim()
+    && normalizedCursorId === normalizedBeforeId
   );
 }
 
@@ -116,5 +165,6 @@ function parseDeckCardBrowseResponsePayload(payload) {
 module.exports = {
   MALFORMED_DECK_CARD_BROWSE_PAYLOAD_ERROR,
   hasDeckCardBrowseRowPayload,
+  hasMatchingCursorFamilies,
   parseDeckCardBrowseResponsePayload,
 };

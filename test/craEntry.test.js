@@ -40,6 +40,7 @@ test('CRA source sync keeps the root App and its component closure in the build'
     'dashboard.js',
     'dashboardRequestInFlightState.js',
     'deck.js',
+    'isoTimestampValidation.js',
     'studySession.js',
   ].forEach((fileName) => {
     assert.ok(
