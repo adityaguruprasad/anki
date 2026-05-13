@@ -17,6 +17,10 @@ function hasSameCardId(leftId, rightId) {
   return hasSameRouteSafeCardId(leftId, rightId);
 }
 
+function isNonBlankCardContent(value) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
 function hasValidMutationNextReview(card) {
   if (!Object.prototype.hasOwnProperty.call(card, 'next_review')) {
     return false;
@@ -32,8 +36,8 @@ function hasDeckCardMutationPayload(payload, options = {}) {
   return (
     isObjectRecord(payload)
     && hasUsableCardId(payload.id)
-    && typeof payload.front_content === 'string'
-    && typeof payload.back_content === 'string'
+    && isNonBlankCardContent(payload.front_content)
+    && isNonBlankCardContent(payload.back_content)
     && hasValidMutationNextReview(payload)
     && (!hasExpectedId || (hasUsableCardId(expectedId) && hasSameCardId(payload.id, expectedId)))
   );

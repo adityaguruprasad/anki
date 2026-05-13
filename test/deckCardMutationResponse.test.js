@@ -43,10 +43,11 @@ test('parseDeckCardMutationResponsePayload preserves valid cards and extra field
   assert.deepEqual(parsed, payload);
 });
 
-test('parseDeckCardMutationResponsePayload accepts numeric ids and blank string content', () => {
+test('parseDeckCardMutationResponsePayload accepts numeric ids and non-blank string content', () => {
   const payload = createValidCardPayload({
-    front_content: '',
-    back_content: '  ',
+    id: 7,
+    front_content: '  Front  ',
+    back_content: '\nBack\t',
   });
 
   assert.equal(parseDeckCardMutationResponsePayload(payload), payload);
@@ -108,6 +109,17 @@ test('parseDeckCardMutationResponsePayload rejects missing or non-string card co
   ].forEach(assertMalformed);
 });
 
+test('parseDeckCardMutationResponsePayload rejects blank card content fields', () => {
+  [
+    createValidCardPayload({ id: 1, front_content: '' }),
+    createValidCardPayload({ id: 1, front_content: '  ' }),
+    createValidCardPayload({ id: 1, front_content: '\n\t' }),
+    createValidCardPayload({ id: 1, back_content: '' }),
+    createValidCardPayload({ id: 1, back_content: '  ' }),
+    createValidCardPayload({ id: 1, back_content: '\n\t' }),
+  ].forEach(assertMalformed);
+});
+
 test('parseDeckCardMutationResponsePayload requires trustworthy next_review metadata', () => {
   [
     { id: 1, front_content: 'Front', back_content: 'Back' },
@@ -144,7 +156,7 @@ test('hasDeckCardMutationPayload accepts only single-card mutation objects', () 
   );
   assert.equal(
     hasDeckCardMutationPayload(createValidCardPayload({ id: 1, front_content: '', back_content: '' })),
-    true,
+    false,
   );
   assert.equal(hasDeckCardMutationPayload(null), false);
   assert.equal(hasDeckCardMutationPayload([]), false);
