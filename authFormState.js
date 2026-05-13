@@ -18,6 +18,8 @@ const MAX_BACKEND_AUTH_ERROR_LENGTH = 240;
 // so registration must honor the backend username cap before submitting.
 const AUTH_EMAIL_MAX_LENGTH = 100;
 const AUTH_USERNAME_MAX_LENGTH = 50;
+// After surrounding trim, reject embedded whitespace plus C0/DEL control characters.
+const AUTH_EMAIL_UNSAFE_CHARACTER_PATTERN = /[\s\x00-\x1F\x7F]/u;
 const GENERIC_AUTH_ERRORS = Object.freeze({
   [AUTH_MODES.LOGIN]: 'Login failed. Please check your credentials.',
   [AUTH_MODES.REGISTER]: 'Could not create account. Please check your email and password.',
@@ -170,6 +172,10 @@ function validateAuthInput({ mode, email, password }) {
 
   if (trimmedEmail.length === 0) {
     return { ok: false, error: 'Email is required' };
+  }
+
+  if (AUTH_EMAIL_UNSAFE_CHARACTER_PATTERN.test(trimmedEmail)) {
+    return { ok: false, error: 'Valid email is required' };
   }
 
   const emailParts = trimmedEmail.split('@');

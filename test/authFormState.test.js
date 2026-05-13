@@ -244,6 +244,33 @@ test('validateAuthInput rejects emails that do not have exactly one @ with non-e
   }
 });
 
+test('validateAuthInput rejects embedded unsafe email characters while preserving surrounding trim', () => {
+  assert.deepEqual(
+    validateAuthInput({ mode: AUTH_MODES.LOGIN, email: ' \tada@example.com\n', password: 's3cret' }),
+    {
+      ok: true,
+      value: {
+        mode: AUTH_MODES.LOGIN,
+        email: 'ada@example.com',
+        password: 's3cret',
+      },
+    }
+  );
+
+  for (const email of [
+    'ada @example.com',
+    'ada\t@example.com',
+    'ada@example.com\nx',
+    'ada@example\x00.com',
+    'ada@example\u007f.com',
+  ]) {
+    assert.deepEqual(
+      validateAuthInput({ mode: AUTH_MODES.LOGIN, email, password: 's3cret' }),
+      { ok: false, error: 'Valid email is required' }
+    );
+  }
+});
+
 test('validateAuthInput enforces the backend email length cap and accepts the boundary', () => {
   const maxLengthEmail = createEmailWithLength(AUTH_EMAIL_MAX_LENGTH);
   const tooLongEmail = createEmailWithLength(AUTH_EMAIL_MAX_LENGTH + 1);
