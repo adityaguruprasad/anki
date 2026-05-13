@@ -20,7 +20,11 @@ const JWT_TOKEN_TOO_LONG_ERROR = `JWT token must be ${MAX_JWT_TOKEN_LENGTH} char
 // Keep these aligned with anki.db users.username VARCHAR(50) and users.email VARCHAR(100).
 const AUTH_USERNAME_MAX_LENGTH = 50;
 const AUTH_EMAIL_MAX_LENGTH = 100;
+const PASSWORD_HASH_COST = 10;
 const DUPLICATE_ACCOUNT_CONSTRAINTS = new Set(['users_username_key', 'users_email_key']);
+// Bcrypt hash of a non-secret placeholder; used only to equalize missing-account login work.
+const MISSING_ACCOUNT_DUMMY_PASSWORD_HASH =
+  '$2b$10$xnS.9dA.hjbGf20CAaG6xuMuScJF.XYy.xwfX5K5UHddi5gJdzBKK';
 
 function base64UrlEncode(value) {
   return Buffer.from(value).toString('base64url');
@@ -279,7 +283,7 @@ function createAuthHandlers(db, options = {}) {
     }
 
     try {
-      const hashedPassword = await passwordHasher.hash(passwordValidation.value, 10);
+      const hashedPassword = await passwordHasher.hash(passwordValidation.value, PASSWORD_HASH_COST);
       const result = await db.query(
         'INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3) RETURNING id',
         [trimmedUsername, normalizedEmail, hashedPassword]
@@ -319,6 +323,8 @@ function createAuthHandlers(db, options = {}) {
         [normalizedEmail]
       );
       if (result.rows.length === 0) {
+        // Ignore the dummy result; missing accounts must never authenticate.
+        await passwordHasher.compare(password, MISSING_ACCOUNT_DUMMY_PASSWORD_HASH);
         return res.status(401).json({ error: 'Invalid credentials' });
       }
       const user = result.rows[0];
@@ -360,6 +366,8 @@ module.exports = {
   DEFAULT_DEV_JWT_SECRET,
   JWT_TOKEN_TOO_LONG_ERROR,
   MAX_JWT_TOKEN_LENGTH,
+  MISSING_ACCOUNT_DUMMY_PASSWORD_HASH,
+  PASSWORD_HASH_COST,
   createAuthHandlers,
   extractBearerToken,
   resolveJwtExpiresInSeconds,

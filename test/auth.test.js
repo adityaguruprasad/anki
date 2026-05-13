@@ -10,6 +10,8 @@ const {
   DEFAULT_DEV_JWT_SECRET,
   JWT_TOKEN_TOO_LONG_ERROR,
   MAX_JWT_TOKEN_LENGTH,
+  MISSING_ACCOUNT_DUMMY_PASSWORD_HASH,
+  PASSWORD_HASH_COST,
   createAuthHandlers,
   extractBearerToken,
   resolveJwtExpiresInSeconds,
@@ -110,7 +112,7 @@ test('register uses injected db and returns a signed token with inserted user id
   assert.equal(res.statusCode, 201);
   assert.equal(typeof res.body.token, 'string');
   assert.deepEqual(passwordHasher.hashCalls, [
-    { password: 'correct horse battery staple', rounds: 10 },
+    { password: 'correct horse battery staple', rounds: PASSWORD_HASH_COST },
   ]);
   assert.equal(db.calls.length, 1);
   assert.match(db.calls[0].sql, /INSERT INTO users/i);
@@ -211,7 +213,7 @@ test('register accepts a password exactly at the bcrypt byte limit', async () =>
   }, res);
 
   assert.equal(res.statusCode, 201);
-  assert.deepEqual(passwordHasher.hashCalls, [{ password, rounds: 10 }]);
+  assert.deepEqual(passwordHasher.hashCalls, [{ password, rounds: PASSWORD_HASH_COST }]);
   assert.equal(db.calls.length, 1);
 });
 
@@ -270,7 +272,7 @@ test('register returns 409 for duplicate username or email unique violations wit
       assert.deepEqual(res.body, { error: 'Account already exists' });
       assert.equal(res.body.token, undefined);
       assert.deepEqual(passwordHasher.hashCalls, [
-        { password: 'correct horse battery staple', rounds: 10 },
+        { password: 'correct horse battery staple', rounds: PASSWORD_HASH_COST },
       ]);
       assert.equal(db.calls.length, 1);
       assert.doesNotMatch(db.calls[0].sql, /ON\s+CONFLICT/i);
@@ -305,7 +307,7 @@ test('register keeps unrelated unique violations on the 500 registration failure
   assert.equal(res.statusCode, 500);
   assert.deepEqual(res.body, { error: 'Error registering user' });
   assert.deepEqual(passwordHasher.hashCalls, [
-    { password: 'correct horse battery staple', rounds: 10 },
+    { password: 'correct horse battery staple', rounds: PASSWORD_HASH_COST },
   ]);
   assert.equal(db.calls.length, 1);
   assert.doesNotMatch(db.calls[0].sql, /ON\s+CONFLICT/i);
@@ -340,6 +342,89 @@ test('login accepts a password over the bcrypt byte limit and compares it unchan
     { password, passwordHash: 'stored-hash' },
   ]);
   assert.equal(verifyToken(res.body.token, 'login-test-secret').userId, 77);
+});
+
+test('login compares against the fixed dummy hash for a missing user before returning 401', async () => {
+  const db = createDb([{ rowCount: 0, rows: [] }]);
+  const passwordHasher = createPasswordHasher({ compareResult: true });
+  const { login } = createAuthHandlers(db, {
+    jwtSecret: 'missing-login-secret',
+    passwordHasher,
+  });
+  const res = createRes();
+
+  await login({ body: { email: 'missing@example.com', password: 'correct-password' } }, res);
+
+  assert.equal(res.statusCode, 401);
+  assert.deepEqual(res.body, { error: 'Invalid credentials' });
+  assert.equal(res.body.token, undefined);
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, ['missing@example.com']);
+  assert.deepEqual(passwordHasher.compareCalls, [
+    {
+      password: 'correct-password',
+      passwordHash: MISSING_ACCOUNT_DUMMY_PASSWORD_HASH,
+    },
+  ]);
+});
+
+test('missing-account dummy hash cost matches registration hash cost', () => {
+  const [, , dummyHashCost] = MISSING_ACCOUNT_DUMMY_PASSWORD_HASH.split('$');
+
+  assert.equal(Number(dummyHashCost), PASSWORD_HASH_COST);
+});
+
+test('login compares an existing user password only against the stored hash', async () => {
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [{ id: 79, email: 'ada@example.com', password_hash: 'stored-user-hash' }],
+    },
+  ]);
+  const passwordHasher = createPasswordHasher({ compareResult: true });
+  const { login } = createAuthHandlers(db, {
+    jwtSecret: 'existing-login-secret',
+    passwordHasher,
+  });
+  const res = createRes();
+
+  await login({ body: { email: 'ada@example.com', password: 'stored-password' } }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(typeof res.body.token, 'string');
+  assert.deepEqual(passwordHasher.compareCalls, [
+    { password: 'stored-password', passwordHash: 'stored-user-hash' },
+  ]);
+  assert.notEqual(passwordHasher.compareCalls[0].passwordHash, MISSING_ACCOUNT_DUMMY_PASSWORD_HASH);
+  assert.equal(verifyToken(res.body.token, 'existing-login-secret').userId, 79);
+});
+
+test('login invalid input short-circuits before lookup or dummy comparison', async () => {
+  const db = {
+    calls: [],
+    async query() {
+      assert.fail('invalid login input must not query the database');
+    },
+  };
+  const passwordHasher = {
+    compareCalls: [],
+    async compare(...args) {
+      this.compareCalls.push(args);
+      assert.fail('invalid login input must not compare any password hash');
+    },
+  };
+  const { login } = createAuthHandlers(db, {
+    jwtSecret: 'invalid-short-circuit-secret',
+    passwordHasher,
+  });
+  const res = createRes();
+
+  await login({ body: { email: 'invalid-email', password: 'correct-password' } }, res);
+
+  assert.equal(res.statusCode, 400);
+  assert.deepEqual(res.body, { error: 'Valid email is required' });
+  assert.deepEqual(db.calls, []);
+  assert.deepEqual(passwordHasher.compareCalls, []);
 });
 
 test('login rejects invalid input before querying or comparing', async (t) => {
