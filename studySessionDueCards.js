@@ -1,38 +1,9 @@
+const { hasRouteSafeCardId } = require('./cardIdentifier');
+
 const MALFORMED_DUE_CARD_PAYLOAD_ERROR = 'Malformed due-card payload';
-const MAX_SAFE_INTEGER_STRING = String(Number.MAX_SAFE_INTEGER);
-
-function isSafePositiveIntegerString(value) {
-  const normalized = value.replace(/^0+/, '');
-
-  if (normalized.length === 0) {
-    return false;
-  }
-
-  return (
-    normalized.length < MAX_SAFE_INTEGER_STRING.length
-    || (
-      normalized.length === MAX_SAFE_INTEGER_STRING.length
-      && normalized <= MAX_SAFE_INTEGER_STRING
-    )
-  );
-}
 
 function hasSafeStudySessionCardId(value) {
-  if (typeof value === 'number') {
-    return Number.isSafeInteger(value) && value > 0;
-  }
-
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-
-    if (!/^\d+$/.test(trimmed)) {
-      return false;
-    }
-
-    return isSafePositiveIntegerString(trimmed);
-  }
-
-  return false;
+  return hasRouteSafeCardId(value);
 }
 
 function isNonBlankCardContent(value) {

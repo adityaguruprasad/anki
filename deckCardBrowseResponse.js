@@ -1,7 +1,10 @@
 const { isValidIsoTimestamp } = require('./isoTimestampValidation');
+const {
+  hasRouteSafeCardId,
+  normalizeRouteSafeCardId,
+} = require('./cardIdentifier');
 
 const MALFORMED_DECK_CARD_BROWSE_PAYLOAD_ERROR = 'Malformed deck-card browse payload';
-const MAX_SAFE_INTEGER_TEXT = String(Number.MAX_SAFE_INTEGER);
 
 function isObjectRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -16,47 +19,7 @@ function hasOwn(value, key) {
 }
 
 function hasUsableId(value) {
-  if (typeof value === 'number') {
-    return Number.isFinite(value);
-  }
-
-  return isNonBlankString(value);
-}
-
-function normalizeSafePositiveIntegerId(value) {
-  if (typeof value === 'number') {
-    return Number.isSafeInteger(value) && value > 0 ? String(value) : null;
-  }
-
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (!/^\d+$/.test(trimmed)) {
-      return null;
-    }
-
-    const normalized = trimmed.replace(/^0+/, '');
-    if (normalized.length === 0) {
-      return null;
-    }
-
-    if (
-      normalized.length > MAX_SAFE_INTEGER_TEXT.length
-      || (
-        normalized.length === MAX_SAFE_INTEGER_TEXT.length
-        && normalized > MAX_SAFE_INTEGER_TEXT
-      )
-    ) {
-      return null;
-    }
-
-    return normalized;
-  }
-
-  return null;
-}
-
-function hasSafePositiveIntegerId(value) {
-  return normalizeSafePositiveIntegerId(value) !== null;
+  return hasRouteSafeCardId(value);
 }
 
 function hasDeckCardBrowseRowPayload(card) {
@@ -73,7 +36,7 @@ function hasValidCursorFamily(cursor, createdAtKey, idKey) {
     hasOwn(cursor, createdAtKey)
     && hasOwn(cursor, idKey)
     && isValidIsoTimestamp(cursor[createdAtKey])
-    && hasSafePositiveIntegerId(cursor[idKey])
+    && hasRouteSafeCardId(cursor[idKey])
   );
 }
 
@@ -89,7 +52,7 @@ function hasInvalidCursorFamily(cursor, createdAtKey, idKey) {
     !hasCreatedAt
     || !hasId
     || !isValidIsoTimestamp(cursor[createdAtKey])
-    || !hasSafePositiveIntegerId(cursor[idKey])
+    || !hasRouteSafeCardId(cursor[idKey])
   );
 }
 
@@ -101,8 +64,8 @@ function hasMatchingCursorFamilies(cursor) {
     return true;
   }
 
-  const normalizedCursorId = normalizeSafePositiveIntegerId(cursor.cursorId);
-  const normalizedBeforeId = normalizeSafePositiveIntegerId(cursor.beforeId);
+  const normalizedCursorId = normalizeRouteSafeCardId(cursor.cursorId);
+  const normalizedBeforeId = normalizeRouteSafeCardId(cursor.beforeId);
 
   if (
     normalizedCursorId === null

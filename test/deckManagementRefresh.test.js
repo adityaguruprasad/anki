@@ -69,8 +69,19 @@ test('successful mutation refreshes request a silent deck list update', () => {
 
 test('deleteCard requires a card object with an id before removal work', () => {
   const body = extractConstFunctionBody('deleteCard');
+  assert.match(
+    deckSource,
+    /const cardIdentifier = require\('\.\/cardIdentifier'\);/,
+    'Expected deck.js to import the shared card identifier helper',
+  );
+  assert.match(
+    deckSource,
+    /const \{ hasRouteSafeCardId \} = cardIdentifier;/,
+    'Expected deck.js to use the route-safe card id helper',
+  );
   assert.match(body, /const isCardObject = card && typeof card === 'object';/);
   assert.match(body, /const cardId = isCardObject \? card\.id : undefined;/);
+  assert.match(body, /const hasUsableCardId = hasRouteSafeCardId\(cardId\);/);
   assert.match(body, /if \(!isCardObject \|\| !hasUsableCardId\) \{\s*return;\s*\}/);
   assert.doesNotMatch(body, /card\?\.id\s*\?\?\s*card/);
 

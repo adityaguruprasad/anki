@@ -22,6 +22,7 @@ const deckCardCreateState = require('./deckCardCreateState');
 const deckManagementMutationLifecycle = require('./deckManagementMutationLifecycle');
 const authHeaders = require('./authHeaders');
 const authExpiration = require('./authExpiration');
+const cardIdentifier = require('./cardIdentifier');
 
 const {
   CREATE_DECK_COMPLETION_TYPES,
@@ -105,6 +106,7 @@ const {
 } = deckManagementMutationLifecycle;
 const { buildAuthHeaders } = authHeaders;
 const { handleAuthExpiredResponse } = authExpiration;
+const { hasRouteSafeCardId } = cardIdentifier;
 
 const CARD_PAGE_LIMIT = 10;
 const CREATE_DECK_SUCCESS_VISIBLE_MS = 2500;
@@ -1217,10 +1219,7 @@ const DeckManagement = ({ env, onAuthExpired }) => {
   const deleteCard = async (deckId, card) => {
     const isCardObject = card && typeof card === 'object';
     const cardId = isCardObject ? card.id : undefined;
-    const hasUsableCardId = (
-      (typeof cardId === 'number' && Number.isFinite(cardId)) ||
-      (typeof cardId === 'string' && cardId.trim() !== '')
-    );
+    const hasUsableCardId = hasRouteSafeCardId(cardId);
     if (!isCardObject || !hasUsableCardId) {
       return;
     }

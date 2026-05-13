@@ -26,7 +26,7 @@ test('parseDeckCardBrowseResponsePayload accepts an empty page without a cursor'
 
 test('parseDeckCardBrowseResponsePayload preserves valid card rows and extra fields', () => {
   const cardWithStringId = {
-    id: 'card-1',
+    id: '0001',
     front_content: 'Front',
     back_content: 'Back',
     created_at: '2026-05-08T12:00:00.000Z',
@@ -95,7 +95,16 @@ test('parseDeckCardBrowseResponsePayload rejects invalid card rows', () => {
     { id: null, front_content: 'Front', back_content: 'Back' },
     { id: '', front_content: 'Front', back_content: 'Back' },
     { id: '  ', front_content: 'Front', back_content: 'Back' },
+    { id: 'card-1', front_content: 'Front', back_content: 'Back' },
+    { id: '0', front_content: 'Front', back_content: 'Back' },
+    { id: '-1', front_content: 'Front', back_content: 'Back' },
+    { id: '1.2', front_content: 'Front', back_content: 'Back' },
+    { id: '9007199254740992', front_content: 'Front', back_content: 'Back' },
+    { id: 0, front_content: 'Front', back_content: 'Back' },
+    { id: -1, front_content: 'Front', back_content: 'Back' },
+    { id: 1.5, front_content: 'Front', back_content: 'Back' },
     { id: Number.NaN, front_content: 'Front', back_content: 'Back' },
+    { id: Number.MAX_SAFE_INTEGER + 1, front_content: 'Front', back_content: 'Back' },
     { id: {}, front_content: 'Front', back_content: 'Back' },
     { id: 1, front_content: '', back_content: 'Back' },
     { id: 1, front_content: '  ', back_content: 'Back' },
@@ -123,6 +132,14 @@ test('hasDeckCardBrowseRowPayload accepts only card-browser row objects', () => 
   assert.equal(hasDeckCardBrowseRowPayload([]), false);
   assert.equal(
     hasDeckCardBrowseRowPayload({ id: '', front_content: 'Front', back_content: 'Back' }),
+    false,
+  );
+  assert.equal(
+    hasDeckCardBrowseRowPayload({ id: 'card-1', front_content: 'Front', back_content: 'Back' }),
+    false,
+  );
+  assert.equal(
+    hasDeckCardBrowseRowPayload({ id: 0, front_content: 'Front', back_content: 'Back' }),
     false,
   );
 });

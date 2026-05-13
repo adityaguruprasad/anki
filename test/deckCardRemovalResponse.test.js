@@ -84,6 +84,8 @@ test('parseDeckCardRemovalSuccessPayload requires the authoritative deleted card
     { success: true, card: [] },
     { success: true, card: { id: 7, front_content: 'Front' } },
     { success: true, card: { id: '', front_content: 'Front', back_content: 'Back' } },
+    { success: true, card: { id: 'card-7', front_content: 'Front', back_content: 'Back' } },
+    { success: true, card: { id: '0', front_content: 'Front', back_content: 'Back' } },
     { success: true, card: { id: 0, front_content: 'Front', back_content: 'Back' } },
     { success: true, card: { id: -1, front_content: 'Front', back_content: 'Back' } },
     { success: true, card: { id: 1.5, front_content: 'Front', back_content: 'Back' } },

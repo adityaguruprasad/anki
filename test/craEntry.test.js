@@ -37,6 +37,7 @@ test('CRA source sync keeps the root App and its component closure in the build'
   [
     'main.js',
     'authPasswordValidation.js',
+    'cardIdentifier.js',
     'dashboard.js',
     'dashboardRequestInFlightState.js',
     'deck.js',

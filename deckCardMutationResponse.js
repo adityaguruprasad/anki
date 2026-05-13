@@ -1,23 +1,19 @@
 const MALFORMED_DECK_CARD_MUTATION_PAYLOAD_ERROR = 'Malformed deck-card mutation payload';
+const {
+  hasRouteSafeCardId,
+  hasSameRouteSafeCardId,
+} = require('./cardIdentifier');
 
 function isObjectRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function isNonBlankString(value) {
-  return typeof value === 'string' && value.trim().length > 0;
-}
-
 function hasUsableCardId(value) {
-  if (typeof value === 'number') {
-    return Number.isSafeInteger(value) && value > 0;
-  }
-
-  return isNonBlankString(value);
+  return hasRouteSafeCardId(value);
 }
 
 function hasSameCardId(leftId, rightId) {
-  return String(leftId) === String(rightId);
+  return hasSameRouteSafeCardId(leftId, rightId);
 }
 
 function hasDeckCardMutationPayload(payload, options = {}) {

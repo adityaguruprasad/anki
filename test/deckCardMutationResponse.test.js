@@ -17,7 +17,7 @@ function assertMalformed(payload, options) {
 
 test('parseDeckCardMutationResponsePayload preserves valid cards and extra fields', () => {
   const payload = {
-    id: 'card-1',
+    id: '0007',
     front_content: 'Front',
     back_content: 'Back',
     next_review: '2026-05-10T12:00:00.000Z',
@@ -43,13 +43,14 @@ test('parseDeckCardMutationResponsePayload accepts numeric ids and blank string 
 
 test('parseDeckCardMutationResponsePayload accepts matching expected card ids', () => {
   const payload = {
-    id: 7,
+    id: '0007',
     front_content: 'Front',
     back_content: 'Back',
   };
 
   assert.equal(parseDeckCardMutationResponsePayload(payload, { expectedId: 7 }), payload);
   assert.equal(parseDeckCardMutationResponsePayload(payload, { expectedId: '7' }), payload);
+  assert.equal(parseDeckCardMutationResponsePayload(payload, { expectedId: ' 0007 ' }), payload);
   assert.equal(hasDeckCardMutationPayload(payload, { expectedId: '7' }), true);
 });
 
@@ -70,6 +71,11 @@ test('parseDeckCardMutationResponsePayload rejects missing or unusable card ids'
     { id: null, front_content: 'Front', back_content: 'Back' },
     { id: '', front_content: 'Front', back_content: 'Back' },
     { id: '  ', front_content: 'Front', back_content: 'Back' },
+    { id: 'card-1', front_content: 'Front', back_content: 'Back' },
+    { id: '0', front_content: 'Front', back_content: 'Back' },
+    { id: '-1', front_content: 'Front', back_content: 'Back' },
+    { id: '1.5', front_content: 'Front', back_content: 'Back' },
+    { id: '9007199254740992', front_content: 'Front', back_content: 'Back' },
     { id: 0, front_content: 'Front', back_content: 'Back' },
     { id: -1, front_content: 'Front', back_content: 'Back' },
     { id: 1.5, front_content: 'Front', back_content: 'Back' },
@@ -106,6 +112,10 @@ test('hasDeckCardMutationPayload accepts only single-card mutation objects', () 
   assert.equal(hasDeckCardMutationPayload([]), false);
   assert.equal(
     hasDeckCardMutationPayload({ id: '', front_content: 'Front', back_content: 'Back' }),
+    false,
+  );
+  assert.equal(
+    hasDeckCardMutationPayload({ id: 'card-1', front_content: 'Front', back_content: 'Back' }),
     false,
   );
   assert.equal(
