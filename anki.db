@@ -32,12 +32,12 @@ CREATE TABLE cards (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   last_reviewed TIMESTAMP,
   next_review TIMESTAMP,
-  interval INTEGER DEFAULT 1,
-  review_count INTEGER DEFAULT 0,
-  ease_factor FLOAT DEFAULT 2.5,
+  interval INTEGER NOT NULL DEFAULT 1,
+  review_count INTEGER NOT NULL DEFAULT 0,
+  ease_factor FLOAT NOT NULL DEFAULT 2.5,
   -- anki.db is the canonical bootstrap schema for new databases. Existing
-  -- deployments need an explicit data-normalizing migration before applying
-  -- these constraints to legacy card rows.
+  -- deployments must apply the scheduling metadata migration before relying
+  -- on these persisted scheduling invariants.
   CONSTRAINT cards_interval_min_check CHECK (interval >= 1),
   CONSTRAINT cards_review_count_non_negative_check CHECK (review_count >= 0),
   CONSTRAINT cards_ease_factor_min_check CHECK (ease_factor >= 1.3)
