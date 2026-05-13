@@ -2343,6 +2343,31 @@ test('POST /api/study-session returns 400 for invalid cardId and skips db query'
   }
 });
 
+test('POST /api/study-session returns 400 for absent body before db or scheduler work', async () => {
+  const invalidRequests = [
+    { user: { userId: 'user-1' } },
+    { body: undefined, user: { userId: 'user-1' } },
+    { body: null, user: { userId: 'user-1' } },
+  ];
+
+  for (const req of invalidRequests) {
+    const db = addUnexpectedConnect(createDb([]));
+    const res = createRes();
+    let schedulerCalled = false;
+
+    await submitStudySession(req, res, db, () => {
+      schedulerCalled = true;
+      return {};
+    });
+
+    assert.equal(res.statusCode, 400);
+    assert.deepEqual(res.body, { error: 'Invalid cardId: must be a positive integer' });
+    assert.equal(db.calls.length, 0);
+    assert.equal(db.connectCalls, 0);
+    assert.equal(schedulerCalled, false);
+  }
+});
+
 test('POST /api/study-session returns 400 for invalid quality', async () => {
   const db = createDb([]);
   const req = { body: { cardId: 10, quality: 6 }, user: { userId: 'user-1' } };

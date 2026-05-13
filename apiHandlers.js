@@ -638,7 +638,7 @@ async function submitStudySession(req, res, db, calculateNextReview) {
       }
     };
 
-    const { cardId, quality } = req.body;
+    const { cardId, quality } = req.body ?? {};
     const cardIdValidation = validatePositiveIntegerIdentifier(cardId, 'cardId');
     if (!cardIdValidation.ok) {
       return res.status(400).json({ error: cardIdValidation.error });
