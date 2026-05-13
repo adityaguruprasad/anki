@@ -1,3 +1,8 @@
+const {
+  hasRouteSafeCardId,
+  hasSameRouteSafeCardId,
+} = require('./cardIdentifier');
+
 const QUALITY_LABELS = Object.freeze({
   1: 'Hard',
   3: 'Good',
@@ -49,8 +54,12 @@ function getValidNextReviewDate(nextReview) {
   return nextReviewDate;
 }
 
-function getValidatedStudySessionSubmissionResponse(response) {
+function getValidatedStudySessionSubmissionResponse(response, options = {}) {
   if (!isObjectRecord(response)) {
+    return null;
+  }
+
+  if (response.success !== true) {
     return null;
   }
 
@@ -61,6 +70,17 @@ function getValidatedStudySessionSubmissionResponse(response) {
   }
 
   if (!Number.isSafeInteger(card.id) || card.id <= 0) {
+    return null;
+  }
+
+  // expectedId opts callers into submitted-card matching; omitting it preserves legacy shape validation.
+  if (
+    options.expectedId !== undefined
+    && (
+      !hasRouteSafeCardId(options.expectedId)
+      || !hasSameRouteSafeCardId(card.id, options.expectedId)
+    )
+  ) {
     return null;
   }
 

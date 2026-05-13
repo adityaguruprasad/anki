@@ -286,7 +286,10 @@ const StudySession = ({ env, onAuthExpired }) => {
       }
 
       const parsedSubmissionResponse = parseStudySessionSubmissionResponse(responseText);
-      const submissionResponse = getValidatedStudySessionSubmissionResponse(parsedSubmissionResponse);
+      const submissionResponse = getValidatedStudySessionSubmissionResponse(
+        parsedSubmissionResponse,
+        { expectedId: currentCard.id },
+      );
 
       if (!submissionResponse) {
         throw new Error('Invalid study session submission response');

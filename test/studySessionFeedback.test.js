@@ -108,6 +108,11 @@ test('getValidatedStudySessionSubmissionResponse preserves valid submission payl
   };
 
   assert.equal(getValidatedStudySessionSubmissionResponse(response), response);
+  // Passing expectedId matches the submitted card; omitting it keeps legacy helper behavior.
+  assert.equal(
+    getValidatedStudySessionSubmissionResponse(response, { expectedId: ' 0007 ' }),
+    response,
+  );
 });
 
 test('getValidatedStudySessionSubmissionResponse rejects malformed submission payloads', () => {
@@ -121,6 +126,9 @@ test('getValidatedStudySessionSubmissionResponse rejects malformed submission pa
     [],
     'response',
     { success: true },
+    { card: validCard },
+    { success: false, card: validCard },
+    { success: 'true', card: validCard },
     { success: true, card: null },
     { success: true, card: [] },
     { success: true, card: { ...validCard, id: 0 } },
@@ -134,4 +142,30 @@ test('getValidatedStudySessionSubmissionResponse rejects malformed submission pa
   ].forEach((response) => {
     assert.equal(getValidatedStudySessionSubmissionResponse(response), null);
   });
+});
+
+test('getValidatedStudySessionSubmissionResponse rejects malformed card ids even when expected', () => {
+  const response = {
+    success: true,
+    card: {
+      id: '../7',
+      next_review: '2026-05-09T14:30:00.000Z',
+    },
+  };
+
+  assert.equal(getValidatedStudySessionSubmissionResponse(response, { expectedId: '7' }), null);
+});
+
+test('getValidatedStudySessionSubmissionResponse rejects stale card ids when expected', () => {
+  const response = {
+    success: true,
+    card: {
+      id: 8,
+      next_review: '2026-05-09T14:30:00.000Z',
+    },
+  };
+
+  assert.equal(getValidatedStudySessionSubmissionResponse(response, { expectedId: 7 }), null);
+  assert.equal(getValidatedStudySessionSubmissionResponse(response, { expectedId: '7' }), null);
+  assert.equal(getValidatedStudySessionSubmissionResponse(response, { expectedId: null }), null);
 });

@@ -18,8 +18,8 @@ test('StudySession consumes submission feedback helper output', () => {
   );
   assert.match(
     studySessionSource,
-    /getValidatedStudySessionSubmissionResponse\(parsedSubmissionResponse\)/,
-    'studySession.js should validate successful submission responses through the helper',
+    /getValidatedStudySessionSubmissionResponse\(\s*parsedSubmissionResponse,\s*\{\s*expectedId:\s*currentCard\.id\s*\},\s*\)/,
+    'studySession.js should validate successful submission responses for the submitted card',
   );
   assert.match(
     studySessionSource,

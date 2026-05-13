@@ -124,8 +124,14 @@ test('handleAnswer preserves current submit success behavior behind lifecycle gu
   );
   const validationIndex = requiredIndex(
     body,
-    'const submissionResponse = getValidatedStudySessionSubmissionResponse(parsedSubmissionResponse);',
-    'Expected successful answer submission to validate parsed success data',
+    'const submissionResponse = getValidatedStudySessionSubmissionResponse(',
+    'Expected successful answer submission to validate parsed success data for the submitted card',
+  );
+  const expectedIdIndex = requiredIndex(
+    body,
+    '{ expectedId: currentCard.id },',
+    'Expected successful answer submission validation to require the submitted card id',
+    validationIndex,
   );
   const feedbackIndex = requiredIndex(
     body,
@@ -147,6 +153,7 @@ test('handleAnswer preserves current submit success behavior behind lifecycle gu
   );
   assert.ok(currentGuardAfterTextIndex < parseIndex, 'Expected lifecycle guard before parsing success data');
   assert.ok(parseIndex < validationIndex, 'Expected parsed success data before validation');
+  assert.ok(validationIndex < expectedIdIndex, 'Expected submitted card id to be part of validation');
   assert.ok(validationIndex < feedbackIndex, 'Expected validated success data before feedback');
   assert.ok(feedbackIndex < nextCardIndex, 'Expected feedback before next-card fetch');
 });
@@ -166,8 +173,14 @@ test('handleAnswer rejects malformed successful submit responses before fetching
   );
   const validationIndex = requiredIndex(
     body,
-    'const submissionResponse = getValidatedStudySessionSubmissionResponse(parsedSubmissionResponse);',
+    'const submissionResponse = getValidatedStudySessionSubmissionResponse(',
     'Expected successful submit responses to be validated',
+  );
+  requiredIndex(
+    body,
+    '{ expectedId: currentCard.id },',
+    'Expected successful submit responses to be matched to the submitted card',
+    validationIndex,
   );
   const rejectionIndex = requiredIndex(
     body,
