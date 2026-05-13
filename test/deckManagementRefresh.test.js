@@ -285,7 +285,9 @@ test('card mutations validate successful payloads before updating visible state'
   const saveAuthExpiredIndex = saveBody.indexOf('if (handleAuthExpiredResponse(response, onAuthExpired))');
   const saveJsonIndex = saveBody.indexOf('const data = await response.json().catch(() => ({}));');
   const saveResponseOkIndex = saveBody.indexOf('if (!response.ok) {');
-  const saveValidationIndex = saveBody.indexOf('savedCard = parseDeckCardMutationResponsePayload(data);');
+  const saveValidationIndex = saveBody.indexOf(
+    'savedCard = parseDeckCardMutationResponsePayload(data, { expectedId: card.id });',
+  );
   const saveMergeIndex = saveBody.indexOf('updateLoadedCard(deckId, card.id, savedCard);');
   const saveEditFormIndex = saveBody.indexOf('frontContent: savedCard.front_content ?? frontContent,');
 
@@ -507,7 +509,9 @@ test('deleteCard validates successful removal payloads before updating visible s
   const authExpiredIndex = body.indexOf('if (handleAuthExpiredResponse(response, onAuthExpired))');
   const jsonIndex = body.indexOf('const data = await response.json().catch(() => ({}));');
   const responseOkIndex = body.indexOf('if (!response.ok) {');
-  const validationIndex = body.indexOf('removalResult = parseDeckCardRemovalSuccessPayload(data);');
+  const validationIndex = body.indexOf(
+    'removalResult = parseDeckCardRemovalSuccessPayload(data, { expectedId: cardId });',
+  );
   const removeCardIndex = body.indexOf('removeLoadedCard(deckId, cardId);');
   const decrementCountsIndex = body.indexOf('decrementDeckCardCounts(currentDecks, deckId, removalResult.card)');
   const clearEditFormIndex = body.indexOf('delete nextForms[cardId];');

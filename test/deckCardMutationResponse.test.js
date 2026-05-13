@@ -7,11 +7,12 @@ const {
   parseDeckCardMutationResponsePayload,
 } = require('../deckCardMutationResponse');
 
-function assertMalformed(payload) {
+function assertMalformed(payload, options) {
   assert.throws(
-    () => parseDeckCardMutationResponsePayload(payload),
+    () => parseDeckCardMutationResponsePayload(payload, options),
     new RegExp(MALFORMED_DECK_CARD_MUTATION_PAYLOAD_ERROR),
   );
+  assert.equal(hasDeckCardMutationPayload(payload, options), false);
 }
 
 test('parseDeckCardMutationResponsePayload preserves valid cards and extra fields', () => {
@@ -40,6 +41,18 @@ test('parseDeckCardMutationResponsePayload accepts numeric ids and blank string 
   assert.equal(parseDeckCardMutationResponsePayload(payload), payload);
 });
 
+test('parseDeckCardMutationResponsePayload accepts matching expected card ids', () => {
+  const payload = {
+    id: 7,
+    front_content: 'Front',
+    back_content: 'Back',
+  };
+
+  assert.equal(parseDeckCardMutationResponsePayload(payload, { expectedId: 7 }), payload);
+  assert.equal(parseDeckCardMutationResponsePayload(payload, { expectedId: '7' }), payload);
+  assert.equal(hasDeckCardMutationPayload(payload, { expectedId: '7' }), true);
+});
+
 test('parseDeckCardMutationResponsePayload rejects malformed top-level payloads', () => {
   [
     undefined,
@@ -57,8 +70,12 @@ test('parseDeckCardMutationResponsePayload rejects missing or unusable card ids'
     { id: null, front_content: 'Front', back_content: 'Back' },
     { id: '', front_content: 'Front', back_content: 'Back' },
     { id: '  ', front_content: 'Front', back_content: 'Back' },
+    { id: 0, front_content: 'Front', back_content: 'Back' },
+    { id: -1, front_content: 'Front', back_content: 'Back' },
+    { id: 1.5, front_content: 'Front', back_content: 'Back' },
     { id: Number.NaN, front_content: 'Front', back_content: 'Back' },
     { id: Number.POSITIVE_INFINITY, front_content: 'Front', back_content: 'Back' },
+    { id: Number.MAX_SAFE_INTEGER + 1, front_content: 'Front', back_content: 'Back' },
     { id: {}, front_content: 'Front', back_content: 'Back' },
   ].forEach(assertMalformed);
 });
@@ -95,4 +112,18 @@ test('hasDeckCardMutationPayload accepts only single-card mutation objects', () 
     hasDeckCardMutationPayload({ id: 1, front_content: 'Front', back_content: undefined }),
     false,
   );
+});
+
+test('parseDeckCardMutationResponsePayload rejects responses for a different expected card id', () => {
+  const payload = {
+    id: 8,
+    front_content: 'Front',
+    back_content: 'Back',
+  };
+
+  assertMalformed(payload, { expectedId: 7 });
+  assertMalformed(payload, { expectedId: '7' });
+  assert.equal(hasDeckCardMutationPayload(payload, { expectedId: 7 }), false);
+  assert.equal(hasDeckCardMutationPayload(payload, { expectedId: '7' }), false);
+  assert.equal(hasDeckCardMutationPayload({ ...payload, id: 7 }, { expectedId: null }), false);
 });

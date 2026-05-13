@@ -1168,7 +1168,7 @@ const DeckManagement = ({ env, onAuthExpired }) => {
 
       let savedCard;
       try {
-        savedCard = parseDeckCardMutationResponsePayload(data);
+        savedCard = parseDeckCardMutationResponsePayload(data, { expectedId: card.id });
       } catch {
         if (!isCurrentMutation()) {
           return;
@@ -1272,7 +1272,7 @@ const DeckManagement = ({ env, onAuthExpired }) => {
 
       let removalResult;
       try {
-        removalResult = parseDeckCardRemovalSuccessPayload(data);
+        removalResult = parseDeckCardRemovalSuccessPayload(data, { expectedId: cardId });
       } catch {
         if (!isCurrentMutation()) {
           return;

@@ -6,16 +6,16 @@ function isObjectRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function hasDeckCardRemovalSuccessPayload(payload) {
+function hasDeckCardRemovalSuccessPayload(payload, options = {}) {
   return (
     isObjectRecord(payload)
     && payload.success === true
-    && hasDeckCardMutationPayload(payload.card)
+    && hasDeckCardMutationPayload(payload.card, options)
   );
 }
 
-function parseDeckCardRemovalSuccessPayload(payload) {
-  if (!hasDeckCardRemovalSuccessPayload(payload)) {
+function parseDeckCardRemovalSuccessPayload(payload, options = {}) {
+  if (!hasDeckCardRemovalSuccessPayload(payload, options)) {
     throw new Error(MALFORMED_DECK_CARD_REMOVAL_PAYLOAD_ERROR);
   }
 
