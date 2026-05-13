@@ -7,10 +7,11 @@ CREATE TABLE users (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create decks table
+-- Create decks table. Users own decks; the cascade supports future account erasure
+-- by removing personal learning content owned by a deleted user.
 CREATE TABLE decks (
   id SERIAL PRIMARY KEY,
-  user_id INTEGER REFERENCES users(id),
+  user_id INTEGER NOT NULL CONSTRAINT decks_user_id_fkey REFERENCES users(id) ON DELETE CASCADE,
   name VARCHAR(100) NOT NULL,
   description TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -22,10 +23,10 @@ CREATE UNIQUE INDEX decks_user_id_normalized_name_unique_idx
 CREATE INDEX decks_user_id_created_at_id_idx
   ON decks (user_id, created_at DESC, id DESC);
 
--- Create cards table
+-- Create cards table. Decks own cards; deleting a deck removes its card content.
 CREATE TABLE cards (
   id SERIAL PRIMARY KEY,
-  deck_id INTEGER REFERENCES decks(id),
+  deck_id INTEGER NOT NULL CONSTRAINT cards_deck_id_fkey REFERENCES decks(id) ON DELETE CASCADE,
   front_content TEXT NOT NULL,
   back_content TEXT NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
