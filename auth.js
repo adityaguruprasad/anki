@@ -13,6 +13,9 @@ const JWT_SECRET_DEFAULT_PRODUCTION_ERROR =
   'JWT_SECRET must not use the default development secret in production';
 const JWT_SECRET_EMPTY_ERROR = 'JWT_SECRET must not be empty';
 const JWT_SECRET_TYPE_ERROR = 'JWT_SECRET must be a string';
+const JWT_SECRET_MIN_PRODUCTION_BYTES = 32;
+const JWT_SECRET_MIN_PRODUCTION_BYTES_ERROR =
+  `JWT_SECRET must be at least ${JWT_SECRET_MIN_PRODUCTION_BYTES} UTF-8 bytes in production`;
 const JWT_EXPIRES_IN_SECONDS_ERROR =
   'JWT_EXPIRES_IN_SECONDS must be a positive integer not greater than Number.MAX_SAFE_INTEGER';
 // App-issued HS256 JWTs carry only compact userId/iat/exp claims; 4096 leaves generous
@@ -53,6 +56,13 @@ function resolveJwtSecret(env = process.env) {
 
     if (env.NODE_ENV === 'production' && jwtSecret === DEFAULT_DEV_JWT_SECRET) {
       throw new Error(JWT_SECRET_DEFAULT_PRODUCTION_ERROR);
+    }
+
+    if (
+      env.NODE_ENV === 'production'
+      && Buffer.byteLength(jwtSecret, 'utf8') < JWT_SECRET_MIN_PRODUCTION_BYTES
+    ) {
+      throw new Error(JWT_SECRET_MIN_PRODUCTION_BYTES_ERROR);
     }
 
     return jwtSecret;
@@ -503,6 +513,8 @@ module.exports = {
   DEFAULT_JWT_EXPIRES_IN_SECONDS,
   DEFAULT_DEV_JWT_SECRET,
   LOGIN_RATE_LIMIT_ERROR,
+  JWT_SECRET_MIN_PRODUCTION_BYTES,
+  JWT_SECRET_MIN_PRODUCTION_BYTES_ERROR,
   JWT_TOKEN_TOO_LONG_ERROR,
   MAX_JWT_TOKEN_LENGTH,
   MISSING_ACCOUNT_DUMMY_PASSWORD_HASH,

@@ -8,6 +8,8 @@ const {
   AUTH_USERNAME_MAX_LENGTH,
   DEFAULT_JWT_EXPIRES_IN_SECONDS,
   DEFAULT_DEV_JWT_SECRET,
+  JWT_SECRET_MIN_PRODUCTION_BYTES,
+  JWT_SECRET_MIN_PRODUCTION_BYTES_ERROR,
   JWT_TOKEN_TOO_LONG_ERROR,
   LOGIN_RATE_LIMIT_ERROR,
   MAX_JWT_TOKEN_LENGTH,
@@ -1087,6 +1089,30 @@ test('resolveJwtSecret rejects the deterministic development secret in productio
   );
 });
 
+test('resolveJwtSecret rejects short production secrets after trimming', () => {
+  assert.equal(JWT_SECRET_MIN_PRODUCTION_BYTES, 32);
+
+  const shortProductionSecret = 'a'.repeat(JWT_SECRET_MIN_PRODUCTION_BYTES - 1);
+  const boundaryProductionSecret = 'b'.repeat(JWT_SECRET_MIN_PRODUCTION_BYTES);
+
+  assert.equal(Buffer.byteLength(shortProductionSecret, 'utf8'), JWT_SECRET_MIN_PRODUCTION_BYTES - 1);
+  assert.equal(Buffer.byteLength(boundaryProductionSecret, 'utf8'), JWT_SECRET_MIN_PRODUCTION_BYTES);
+
+  assert.throws(
+    () => resolveJwtSecret({ JWT_SECRET: `  ${shortProductionSecret}\n`, NODE_ENV: 'production' }),
+    { message: JWT_SECRET_MIN_PRODUCTION_BYTES_ERROR }
+  );
+
+  assert.equal(
+    resolveJwtSecret({ JWT_SECRET: `  ${boundaryProductionSecret}\n`, NODE_ENV: 'production' }),
+    boundaryProductionSecret
+  );
+});
+
+test('resolveJwtSecret continues to allow short explicit secrets outside production', () => {
+  assert.equal(resolveJwtSecret({ JWT_SECRET: 'short-secret', NODE_ENV: 'test' }), 'short-secret');
+});
+
 test('resolveJwtSecret falls back to the deterministic dev secret outside production', () => {
   assert.equal(resolveJwtSecret({ NODE_ENV: 'test' }), DEFAULT_DEV_JWT_SECRET);
   assert.equal(resolveJwtSecret({ NODE_ENV: 'development' }), DEFAULT_DEV_JWT_SECRET);
@@ -1101,6 +1127,17 @@ test('createAuthHandlers rejects an explicit development JWT secret in productio
       passwordHasher: createPasswordHasher(),
     }),
     /JWT_SECRET must not use the default development secret in production/
+  );
+});
+
+test('createAuthHandlers rejects an explicit short JWT secret in production', () => {
+  assert.throws(
+    () => createAuthHandlers(createDb([]), {
+      env: { NODE_ENV: 'production' },
+      jwtSecret: 'a'.repeat(JWT_SECRET_MIN_PRODUCTION_BYTES - 1),
+      passwordHasher: createPasswordHasher(),
+    }),
+    { message: JWT_SECRET_MIN_PRODUCTION_BYTES_ERROR }
   );
 });
 
