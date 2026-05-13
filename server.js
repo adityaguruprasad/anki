@@ -5,12 +5,14 @@ const { createAuthHandlers } = require('./auth');
 const { handleApiNotFound } = require('./apiNotFound');
 const { buildCorsOptions, handleCorsError } = require('./corsPolicy');
 const { createJsonBodyParser, handleJsonBodyError } = require('./jsonBodyError');
+const { createSecurityHeadersMiddleware } = require('./securityHeaders');
 const { calculateNextReview } = require('./spacedRepetition');
 const { createCard, createDeck, deleteCard, deleteDeck, getCardsByDeck, getDecks, getDueCardsByDeck, getStats, getSchedulingInsights, renameDeck, submitStudySession, updateCard } = require('./apiHandlers');
 
 const app = express();
 const port = process.env.PORT || 3001;
 
+app.use(createSecurityHeadersMiddleware());
 app.use(cors(buildCorsOptions()));
 app.use(handleCorsError);
 app.use(createJsonBodyParser(express));
