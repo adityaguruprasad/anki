@@ -12,6 +12,18 @@ const {
   shouldRunCardCreateFinallyCleanup,
 } = require('../deckCardCreateState');
 
+const VALID_NEXT_REVIEW = '2026-05-10T12:00:00.000Z';
+
+function createValidCreatedCard(overrides = {}) {
+  return {
+    id: 11,
+    front_content: 'Front',
+    back_content: 'Back',
+    next_review: VALID_NEXT_REVIEW,
+    ...overrides,
+  };
+}
+
 test('createCardSubmission returns trimmed content for valid input', () => {
   assert.deepEqual(
     createCardSubmission({
@@ -187,11 +199,7 @@ test('card-create response completion preserves current non-OK error behavior', 
 });
 
 test('card-create response completion returns current validated success plans', () => {
-  const createdCard = {
-    id: 11,
-    front_content: 'Front',
-    back_content: 'Back',
-  };
+  const createdCard = createValidCreatedCard();
 
   assert.deepEqual(
     getCardCreateResponseCompletion({
@@ -208,6 +216,30 @@ test('card-create response completion returns current validated success plans', 
   );
 });
 
+test('card-create response completion accepts null, past, and future next_review metadata', () => {
+  [
+    null,
+    '2026-05-08T12:00:00.000Z',
+    '2026-05-10T12:00:00.000Z',
+  ].forEach((nextReview) => {
+    const createdCard = createValidCreatedCard({ next_review: nextReview });
+
+    assert.deepEqual(
+      getCardCreateResponseCompletion({
+        isCurrent: true,
+        responseOk: true,
+        payload: createdCard,
+      }),
+      {
+        type: CARD_CREATE_COMPLETION_TYPES.SUCCESS,
+        ignored: false,
+        createdCard,
+        success: CARD_CREATE_MESSAGES.success,
+      },
+    );
+  });
+});
+
 test('card-create response completion converts malformed current successes to generic error plans', () => {
   assert.deepEqual(
     getCardCreateResponseCompletion({
@@ -221,6 +253,35 @@ test('card-create response completion converts malformed current successes to ge
       error: CARD_CREATE_MESSAGES.createFailed,
     },
   );
+});
+
+test('card-create response completion rejects untrustworthy next_review metadata', () => {
+  [
+    { id: 11, front_content: 'Front', back_content: 'Back' },
+    createValidCreatedCard({ next_review: undefined }),
+    createValidCreatedCard({ next_review: '' }),
+    createValidCreatedCard({ next_review: '  ' }),
+    createValidCreatedCard({ next_review: 'not-a-date' }),
+    createValidCreatedCard({ next_review: '2026-05-10' }),
+    createValidCreatedCard({ next_review: '2026-05-10T12:00:00.000Z ' }),
+    createValidCreatedCard({ next_review: 0 }),
+    createValidCreatedCard({ next_review: false }),
+    createValidCreatedCard({ next_review: new Date(VALID_NEXT_REVIEW) }),
+    createValidCreatedCard({ next_review: ['2026-05-10T12:00:00.000Z'] }),
+  ].forEach((payload) => {
+    assert.deepEqual(
+      getCardCreateResponseCompletion({
+        isCurrent: true,
+        responseOk: true,
+        payload,
+      }),
+      {
+        type: CARD_CREATE_COMPLETION_TYPES.INVALID_RESPONSE,
+        ignored: false,
+        error: CARD_CREATE_MESSAGES.createFailed,
+      },
+    );
+  });
 });
 
 test('card-create network and finally completions honor the current guard', () => {

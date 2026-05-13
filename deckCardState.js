@@ -10,10 +10,25 @@ function decrementCount(value) {
   return typeof value === 'number' && Number.isFinite(value) ? Math.max(value - 1, 0) : 0;
 }
 
+function hasSchedulingMetadata(card) {
+  return card !== null
+    && typeof card === 'object'
+    && !Array.isArray(card)
+    && Object.prototype.hasOwnProperty.call(card, 'next_review');
+}
+
 function isCardCurrentlyDue(card, now = new Date()) {
+  if (!hasSchedulingMetadata(card)) {
+    return false;
+  }
+
   const nextReview = card?.next_review;
-  if (!nextReview) {
+  if (nextReview === null) {
     return true;
+  }
+
+  if (typeof nextReview !== 'string' || nextReview.trim() === '') {
+    return false;
   }
 
   const nextReviewTime = new Date(nextReview).getTime();

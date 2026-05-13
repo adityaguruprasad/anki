@@ -9,14 +9,32 @@ const {
   mergeUniqueCards,
 } = require('../deckCardState');
 
-test('isCardCurrentlyDue treats missing or past next_review values as due', () => {
+test('isCardCurrentlyDue treats unscheduled or past next_review values as due', () => {
   const now = new Date('2026-05-09T12:00:00.000Z');
 
-  assert.equal(isCardCurrentlyDue({}, now), true);
   assert.equal(isCardCurrentlyDue({ next_review: null }, now), true);
   assert.equal(isCardCurrentlyDue({ next_review: '2026-05-09T12:00:00.000Z' }, now), true);
   assert.equal(isCardCurrentlyDue({ next_review: '2026-05-09T11:59:59.999Z' }, now), true);
   assert.equal(isCardCurrentlyDue({ next_review: '2026-05-09T12:00:00.001Z' }, now), false);
+});
+
+test('isCardCurrentlyDue treats missing or invalid next_review metadata as unknown', () => {
+  const now = new Date('2026-05-09T12:00:00.000Z');
+
+  [
+    undefined,
+    null,
+    [],
+    {},
+    { next_review: undefined },
+    { next_review: '' },
+    { next_review: '  ' },
+    { next_review: 'not-a-date' },
+    { next_review: 0 },
+    { next_review: false },
+  ].forEach((card) => {
+    assert.equal(isCardCurrentlyDue(card, now), false);
+  });
 });
 
 test('incrementDeckCardCounts increments total and only increments due count for currently due cards', () => {
@@ -80,6 +98,30 @@ test('decrementDeckCardCounts decrements total and only decrements due count for
     ),
     [
       decks[0],
+      { id: 2, name: 'Biology', totalCards: 3, dueCards: 3 },
+    ],
+  );
+});
+
+test('optimistic card count updates leave due counts unchanged without trustworthy scheduling metadata', () => {
+  const decks = [
+    { id: 2, name: 'Biology', totalCards: 4, dueCards: 3 },
+  ];
+
+  assert.deepEqual(
+    incrementDeckCardCounts(decks, 2, { id: 10 }, new Date('2026-05-09T12:00:00.000Z')),
+    [
+      { id: 2, name: 'Biology', totalCards: 5, dueCards: 3 },
+    ],
+  );
+  assert.deepEqual(
+    decrementDeckCardCounts(
+      decks,
+      2,
+      { id: 9, next_review: '' },
+      new Date('2026-05-09T12:00:00.000Z'),
+    ),
+    [
       { id: 2, name: 'Biology', totalCards: 3, dueCards: 3 },
     ],
   );
