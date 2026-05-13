@@ -31,6 +31,7 @@ const AUTH_USERNAME_MAX_LENGTH = 50;
 const AUTH_EMAIL_MAX_LENGTH = 100;
 const PASSWORD_HASH_COST = 10;
 const DUPLICATE_ACCOUNT_CONSTRAINTS = new Set(['users_username_key', 'users_email_key']);
+const EMAIL_UNSAFE_CHARACTER_PATTERN = /[\s\x00-\x1F\x7F]/u;
 // Bcrypt hash of a non-secret placeholder; used only to equalize missing-account login work.
 const MISSING_ACCOUNT_DUMMY_PASSWORD_HASH =
   '$2b$10$xnS.9dA.hjbGf20CAaG6xuMuScJF.XYy.xwfX5K5UHddi5gJdzBKK';
@@ -241,6 +242,10 @@ function normalizeEmail(value) {
   }
 
   const email = value.trim().toLowerCase();
+  if (EMAIL_UNSAFE_CHARACTER_PATTERN.test(email)) {
+    return null;
+  }
+
   const parts = email.split('@');
   if (parts.length !== 2 || parts[0] === '' || parts[1] === '') {
     return null;

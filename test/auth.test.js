@@ -169,6 +169,16 @@ test('register rejects invalid input before hashing or querying', async (t) => {
       error: 'Valid email is required',
     },
     {
+      name: 'email with embedded whitespace',
+      body: { username: 'ada', email: 'ada \n@example.com', password: 'valid-pass' },
+      error: 'Valid email is required',
+    },
+    {
+      name: 'email with control character',
+      body: { username: 'ada', email: 'ada\u0000@example.com', password: 'valid-pass' },
+      error: 'Valid email is required',
+    },
+    {
       name: 'email too long',
       body: {
         username: 'ada',
@@ -232,7 +242,7 @@ test('register accepts a password exactly at the bcrypt byte limit', async () =>
   assert.equal(db.calls.length, 1);
 });
 
-test('register trims username and normalizes email before storing', async () => {
+test('register trims username and surrounding email whitespace before storing', async () => {
   const db = createDb([{ rowCount: 1, rows: [{ id: 43 }] }]);
   const passwordHasher = createPasswordHasher();
   const { register } = createAuthHandlers(db, {
@@ -242,7 +252,7 @@ test('register trims username and normalizes email before storing', async () => 
   const req = {
     body: {
       username: '  Ada Lovelace  ',
-      email: '  ADA@Example.COM  ',
+      email: '\n\t ADA@Example.COM \r\n',
       password: 'correct horse battery staple',
     },
   };
@@ -637,6 +647,16 @@ test('login rejects invalid input before querying or comparing', async (t) => {
       error: 'Valid email is required',
     },
     {
+      name: 'email with embedded whitespace',
+      body: { email: 'grace\t@example.com', password: 's3cret' },
+      error: 'Valid email is required',
+    },
+    {
+      name: 'email with control character',
+      body: { email: 'grace@example\u007f.com', password: 's3cret' },
+      error: 'Valid email is required',
+    },
+    {
       name: 'email too long',
       body: {
         email: `  ${createEmailWithLength(AUTH_EMAIL_MAX_LENGTH + 1).toUpperCase()}  `,
@@ -671,7 +691,7 @@ test('login rejects invalid input before querying or comparing', async (t) => {
   }
 });
 
-test('login normalizes email before credential lookup', async () => {
+test('login trims surrounding email whitespace before credential lookup', async () => {
   const db = createDb([
     {
       rowCount: 1,
@@ -685,7 +705,7 @@ test('login normalizes email before credential lookup', async () => {
   });
   const res = createRes();
 
-  await login({ body: { email: '  GRACE@Example.COM ', password: 's3cret' } }, res);
+  await login({ body: { email: '\r\n\t GRACE@Example.COM \n', password: 's3cret' } }, res);
 
   assert.equal(res.statusCode, 200);
   assert.deepEqual(db.calls[0].params, ['grace@example.com']);
