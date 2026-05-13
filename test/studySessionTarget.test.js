@@ -100,23 +100,13 @@ test('getStudySessionRequest uses an explicit deck id without requiring deck loa
 });
 
 test('getValidatedStudySessionDeckListRequest rejects malformed deck lists instead of selecting from them', () => {
-  const malformedSelectablePayload = [
-    { id: 1, name: 'Malformed', totalCards: '2', dueCards: 10 },
+  const malformedPayload = [
+    { id: 1, name: 'Impossible due count', totalCards: 2, dueCards: 10 },
     { id: 2, name: 'Due deck', totalCards: 5, dueCards: 3 },
   ];
 
-  assert.deepEqual(
-    getStudySessionRequest('', malformedSelectablePayload),
-    {
-      type: STUDY_SESSION_REQUESTS.LOAD_CARDS,
-      deckId: 1,
-      deck: malformedSelectablePayload[0],
-      source: 'selected',
-    },
-    'The unvalidated selector would use this malformed due deck',
-  );
   assert.throws(
-    () => getValidatedStudySessionDeckListRequest('', malformedSelectablePayload),
+    () => getValidatedStudySessionDeckListRequest('', malformedPayload),
     /Malformed deck list payload/,
   );
 
@@ -125,6 +115,7 @@ test('getValidatedStudySessionDeckListRequest rejects malformed deck lists inste
     {},
     { id: 1, totalCards: 2, dueCards: 1 },
     [{ id: 1, name: 'Missing total', dueCards: 1 }],
+    [{ id: 1, name: 'Impossible due count', totalCards: 1, dueCards: 2 }],
     [{ id: 'science deck', name: 'Unrouteable id', totalCards: 2, dueCards: 1 }],
   ].forEach((payload) => {
     assert.throws(

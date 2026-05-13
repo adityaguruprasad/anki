@@ -6,6 +6,12 @@ function hasPositiveSafeIntegerCount(deck, key) {
   return hasNonNegativeSafeIntegerCount(deck, key) && deck[key] > 0;
 }
 
+function hasConsistentDeckCounts(deck) {
+  return hasNonNegativeSafeIntegerCount(deck, 'totalCards')
+    && hasNonNegativeSafeIntegerCount(deck, 'dueCards')
+    && deck.dueCards <= deck.totalCards;
+}
+
 const MAX_SAFE_INTEGER_STRING = String(Number.MAX_SAFE_INTEGER);
 
 // Returns the canonical positive safe-integer deck id string used in study routes.
@@ -48,13 +54,12 @@ function hasDashboardDeckListPayload(decks) {
       && typeof deck === 'object'
       && !Array.isArray(deck)
       && hasUsableDeckId(deck)
-      && hasNonNegativeSafeIntegerCount(deck, 'totalCards')
-      && hasNonNegativeSafeIntegerCount(deck, 'dueCards')
+      && hasConsistentDeckCounts(deck)
     ));
 }
 
 function hasDueCards(deck) {
-  return hasPositiveSafeIntegerCount(deck, 'dueCards');
+  return hasConsistentDeckCounts(deck) && hasPositiveSafeIntegerCount(deck, 'dueCards');
 }
 
 function selectDeckWithMostDueCards(decks) {
@@ -82,6 +87,7 @@ function selectStudyDeckTarget(decks) {
     selectDeckWithMostDueCards(decks) ||
     decks.find((deck) => (
       hasUsableDeckId(deck)
+      && hasConsistentDeckCounts(deck)
       && hasPositiveSafeIntegerCount(deck, 'totalCards')
     )) ||
     null

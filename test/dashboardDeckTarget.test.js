@@ -51,7 +51,7 @@ test('normalizeStudyDeckId rejects ids outside the study route contract', () => 
   });
 });
 
-test('hasDashboardDeckListPayload accepts arrays of deck-like objects with usable ids and non-negative safe integer counts', () => {
+test('hasDashboardDeckListPayload accepts arrays of deck-like objects with usable ids and consistent counts', () => {
   assert.equal(hasDashboardDeckListPayload([]), true);
   assert.equal(hasDashboardDeckListPayload([
     { id: 1, name: 'Math', totalCards: 20, dueCards: 0 },
@@ -59,7 +59,7 @@ test('hasDashboardDeckListPayload accepts arrays of deck-like objects with usabl
   ]), true);
 });
 
-test('hasDashboardDeckListPayload rejects non-integer, negative, and unsafe count fields', () => {
+test('hasDashboardDeckListPayload rejects non-integer, negative, unsafe, and impossible count fields', () => {
   [
     -1,
     1.5,
@@ -79,6 +79,15 @@ test('hasDashboardDeckListPayload rejects non-integer, negative, and unsafe coun
       `Expected dueCards=${String(count)} to be rejected`
     );
   });
+
+  assert.equal(
+    hasDashboardDeckListPayload([{ id: 1, name: 'Impossible due', totalCards: 1, dueCards: 2 }]),
+    false,
+  );
+  assert.equal(
+    hasDashboardDeckListPayload([{ id: 1, name: 'Empty but due', totalCards: 0, dueCards: 1 }]),
+    false,
+  );
 });
 
 test('hasDashboardDeckListPayload rejects deck ids that cannot round-trip through study routes', () => {
@@ -200,6 +209,22 @@ test('selectStudyDeckTarget ignores invalid counts', () => {
   ]), numericDeck);
 });
 
+test('selectStudyDeckTarget ignores decks with impossible due counts', () => {
+  const validDueDeck = { id: 3, name: 'Biology', totalCards: 2, dueCards: 1 };
+  const validFallbackDeck = { id: 4, name: 'History', totalCards: 5, dueCards: 0 };
+
+  assert.equal(selectStudyDeckTarget([
+    { id: 1, name: 'Impossible Due', totalCards: 1, dueCards: 2 },
+    validDueDeck,
+    validFallbackDeck,
+  ]), validDueDeck);
+
+  assert.equal(selectStudyDeckTarget([
+    { id: 1, name: 'Impossible Due', totalCards: 1, dueCards: 2 },
+    validFallbackDeck,
+  ]), validFallbackDeck);
+});
+
 test('selectStudyDeckTarget ignores decks with unusable study route ids', () => {
   const validDueDeck = { id: ' 42 ', name: 'Biology', totalCards: 2, dueCards: 1 };
 
@@ -222,8 +247,10 @@ test('selectStudyDeckTarget returns null when there is no study target', () => {
 test('hasDueCards distinguishes due targets from fallback targets', () => {
   assert.equal(hasDueCards({ totalCards: 5, dueCards: 1 }), true);
   assert.equal(hasDueCards({ totalCards: 5, dueCards: 0 }), false);
+  assert.equal(hasDueCards({ totalCards: 1, dueCards: 2 }), false);
   assert.equal(hasDueCards({ totalCards: 5, dueCards: 1.5 }), false);
   assert.equal(hasDueCards({ totalCards: 5, dueCards: '1' }), false);
+  assert.equal(hasDueCards({ dueCards: 1 }), false);
 });
 
 test('getStudyDeckTargetPath only routes due targets to study sessions', () => {
@@ -232,6 +259,7 @@ test('getStudyDeckTargetPath only routes due targets to study sessions', () => {
     '/study?deckId=42',
   );
   assert.equal(getStudyDeckTargetPath({ id: 'science deck', totalCards: 5, dueCards: 2 }), '/decks');
+  assert.equal(getStudyDeckTargetPath({ id: 3, totalCards: 1, dueCards: 2 }), '/decks');
   assert.equal(getStudyDeckTargetPath({ id: 3, totalCards: 5, dueCards: 0 }), '/decks');
   assert.equal(getStudyDeckTargetPath(null), '/decks');
 });
