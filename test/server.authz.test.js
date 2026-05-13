@@ -103,6 +103,13 @@ const EXPECTED_PUBLIC_CARD_READ_FIELDS = Object.freeze([
   'review_count',
   'ease_factor',
 ]);
+const EXPECTED_PUBLIC_DECK_READ_FIELDS = Object.freeze([
+  'id',
+  'user_id',
+  'name',
+  'description',
+  'created_at',
+]);
 
 function assertExplicitPublicCardReadSelect(sql) {
   const selectMatch = /\bSELECT\b/i.exec(sql);
@@ -118,6 +125,40 @@ function assertExplicitPublicCardReadSelect(sql) {
       selectClause,
       new RegExp(`(?:^|,)\\s*c\\.${field}\\s*(?:,|$)`, 'i'),
       `expected card read SELECT to include explicit c.${field}`,
+    );
+  }
+}
+
+function assertExplicitPublicDeckReadSelect(sql) {
+  const selectMatch = /\bSELECT\b/i.exec(sql);
+  const fromMatch = /\bFROM\s+decks\s+d\b/i.exec(sql);
+  assert.ok(selectMatch, 'expected SQL to contain SELECT');
+  assert.ok(fromMatch, 'expected deck read SQL to select from decks d');
+
+  const selectClause = sql.slice(selectMatch.index + selectMatch[0].length, fromMatch.index);
+  assert.doesNotMatch(selectClause, /\bd\.\*/i);
+
+  for (const field of EXPECTED_PUBLIC_DECK_READ_FIELDS) {
+    assert.match(
+      selectClause,
+      new RegExp(`(?:^|,)\\s*d\\.${field}\\s*(?:,|$)`, 'i'),
+      `expected deck read SELECT to include explicit d.${field}`,
+    );
+  }
+}
+
+function assertExplicitPublicDeckReturning(sql) {
+  const returningMatch = /\bRETURNING\b/i.exec(sql);
+  assert.ok(returningMatch, 'expected SQL to contain RETURNING');
+
+  const returningClause = sql.slice(returningMatch.index + returningMatch[0].length);
+  assert.doesNotMatch(returningClause, /\*/);
+
+  for (const field of EXPECTED_PUBLIC_DECK_READ_FIELDS) {
+    assert.match(
+      returningClause,
+      new RegExp(`(?:^|,)\\s*(?:d\\.)?${field}\\s*(?:,|\\)|$)`, 'i'),
+      `expected deck RETURNING to include explicit ${field}`,
     );
   }
 }
@@ -235,7 +276,7 @@ test('POST /api/decks returns 409 for duplicate user deck name with one query', 
 
 test('POST /api/decks creates normalized deck with one query', async () => {
   const deck = { id: 12, user_id: 'user-1', name: 'Biology' };
-  const db = createDb([{ rowCount: 1, rows: [deck] }]);
+  const db = createDb([{ rowCount: 1, rows: [{ ...deck, private_note: 'do not expose' }] }]);
   const req = { body: { name: ' Biology ' }, user: { userId: 'user-1' } };
   const res = createRes();
 
@@ -243,8 +284,10 @@ test('POST /api/decks creates normalized deck with one query', async () => {
 
   assert.equal(res.statusCode, 201);
   assert.deepEqual(res.body, deck);
+  assert.equal(Object.hasOwn(res.body, 'private_note'), false);
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, ['user-1', 'Biology']);
+  assertExplicitPublicDeckReturning(db.calls[0].sql);
 });
 
 test('POST /api/decks uses atomic conflict handling for duplicate deck names', async () => {
@@ -258,7 +301,8 @@ test('POST /api/decks uses atomic conflict handling for duplicate deck names', a
   assert.match(db.calls[0].sql, /INSERT\s+INTO\s+decks\s+\(user_id,\s+name\)/i);
   assert.match(db.calls[0].sql, /VALUES\s*\(\$1,\s*\$2\)/i);
   assert.match(db.calls[0].sql, /ON\s+CONFLICT\s*\(\s*user_id\s*,\s*\(\s*LOWER\(TRIM\(name\)\)\s*\)\s*\)\s+DO\s+NOTHING/i);
-  assert.match(db.calls[0].sql, /RETURNING\s+\*/i);
+  assertExplicitPublicDeckReturning(db.calls[0].sql);
+  assert.doesNotMatch(db.calls[0].sql, /RETURNING\s+\*/i);
   assert.doesNotMatch(db.calls[0].sql, /NOT\s+EXISTS/i);
 });
 
@@ -322,7 +366,7 @@ test('PATCH /api/decks/:deckId renames an owned deck with one atomic query', asy
   const db = createDb([
     {
       rowCount: 1,
-      rows: [{ deckExists: true, duplicateExists: false, deck }],
+      rows: [{ deckExists: true, duplicateExists: false, deck: { ...deck, private_note: 'do not expose' } }],
     },
   ]);
   const req = { params: { deckId: '42' }, body: { name: ' Organic Chemistry ' }, user: { userId: 'user-1' } };
@@ -332,6 +376,7 @@ test('PATCH /api/decks/:deckId renames an owned deck with one atomic query', asy
 
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, deck);
+  assert.equal(Object.hasOwn(res.body, 'private_note'), false);
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, [42, 'user-1', 'Organic Chemistry']);
   assert.match(db.calls[0].sql, /WITH\s+target\s+AS/i);
@@ -340,7 +385,8 @@ test('PATCH /api/decks/:deckId renames an owned deck with one atomic query', asy
   assert.match(db.calls[0].sql, /WHERE\s+id\s+=\s+\$1\s+AND\s+user_id\s+=\s+\$2/i);
   assert.match(db.calls[0].sql, /LOWER\(TRIM\(name\)\)\s+=\s+LOWER\(TRIM\(\$3\)\)/i);
   assert.match(db.calls[0].sql, /NOT\s+EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+duplicate\s*\)/i);
-  assert.match(db.calls[0].sql, /RETURNING\s+d\.\*/i);
+  assertExplicitPublicDeckReturning(db.calls[0].sql);
+  assert.doesNotMatch(db.calls[0].sql, /RETURNING\s+d\.\*/i);
 });
 
 test('PATCH /api/decks/:deckId returns 404 for missing or unowned deck', async () => {
@@ -393,8 +439,8 @@ test('GET /api/decks returns decks with one user-scoped aggregate query', async 
     {
       rowCount: 2,
       rows: [
-        { id: 1, user_id: 'user-1', name: 'Biology', description: null, created_at: '2026-05-08', totalCards: '10', dueCards: '3' },
-        { id: 2, user_id: 'user-1', name: 'Math', description: 'Algebra', created_at: '2026-05-08', totalCards: '4', dueCards: '0' },
+        { id: 1, user_id: 'user-1', name: 'Biology', description: null, created_at: '2026-05-08', totalCards: '10', dueCards: '3', private_note: 'do not expose' },
+        { id: 2, user_id: 'user-1', name: 'Math', description: 'Algebra', created_at: '2026-05-08', totalCards: '4', dueCards: '0', private_note: 'do not expose' },
       ],
     },
   ]);
@@ -408,8 +454,10 @@ test('GET /api/decks returns decks with one user-scoped aggregate query', async 
     { id: 1, user_id: 'user-1', name: 'Biology', description: null, created_at: '2026-05-08', totalCards: 10, dueCards: 3 },
     { id: 2, user_id: 'user-1', name: 'Math', description: 'Algebra', created_at: '2026-05-08', totalCards: 4, dueCards: 0 },
   ]);
+  assert.equal(Object.hasOwn(res.body[0], 'private_note'), false);
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, ['user-1']);
+  assertExplicitPublicDeckReadSelect(db.calls[0].sql);
   assert.match(db.calls[0].sql, /FROM decks d/);
   assert.match(db.calls[0].sql, /LEFT JOIN cards c ON c\.deck_id = d\.id/);
   assert.match(db.calls[0].sql, /WHERE d\.user_id = \$1/);

@@ -20,6 +20,16 @@ const CARD_READ_FIELDS = Object.freeze([
 const CARD_READ_SELECT_LIST = CARD_READ_FIELDS
   .map((field) => `c.${field}`)
   .join(',\n              ');
+const DECK_READ_FIELDS = Object.freeze([
+  'id',
+  'user_id',
+  'name',
+  'description',
+  'created_at',
+]);
+const DECK_READ_SELECT_LIST = DECK_READ_FIELDS
+  .map((field) => `d.${field}`)
+  .join(',\n         ');
 
 function isValidQuality(quality) {
   return Number.isInteger(quality) && quality >= 0 && quality <= 5;
@@ -153,6 +163,18 @@ function toCardReadPayload(row) {
   }
 
   return card;
+}
+
+function toDeckReadPayload(row) {
+  const deck = {};
+
+  for (const field of DECK_READ_FIELDS) {
+    if (Object.hasOwn(row, field)) {
+      deck[field] = row[field];
+    }
+  }
+
+  return deck;
 }
 
 function validateBrowseCardsLimit(value) {
@@ -802,7 +824,11 @@ async function createDeck(req, res, db) {
       `INSERT INTO decks (user_id, name)
        VALUES ($1, $2)
        ON CONFLICT (user_id, (LOWER(TRIM(name)))) DO NOTHING
-       RETURNING *`,
+       RETURNING id,
+                 user_id,
+                 name,
+                 description,
+                 created_at`,
       [req.user.userId, deckName]
     );
 
@@ -810,7 +836,7 @@ async function createDeck(req, res, db) {
       return res.status(409).json({ error: 'Deck name already exists for this user' });
     }
 
-    return res.status(201).json(rows[0]);
+    return res.status(201).json(toDeckReadPayload(rows[0]));
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Internal server error' });
@@ -851,7 +877,11 @@ async function renameDeck(req, res, db) {
          FROM target
          WHERE d.id = target.id
            AND NOT EXISTS (SELECT 1 FROM duplicate)
-         RETURNING d.*
+         RETURNING d.id,
+                   d.user_id,
+                   d.name,
+                   d.description,
+                   d.created_at
        )
        SELECT
          EXISTS (SELECT 1 FROM target) AS "deckExists",
@@ -869,7 +899,7 @@ async function renameDeck(req, res, db) {
       return res.status(409).json({ error: 'Deck name already exists for this user' });
     }
 
-    return res.json(result.deck);
+    return res.json(toDeckReadPayload(result.deck));
   } catch (err) {
     if (err?.code === '23505') {
       return res.status(409).json({ error: 'Deck name already exists for this user' });
@@ -883,8 +913,7 @@ async function renameDeck(req, res, db) {
 async function getDecks(req, res, db) {
   try {
     const { rows } = await db.query(
-      `SELECT
-         d.*,
+      `SELECT ${DECK_READ_SELECT_LIST},
          COUNT(c.id) AS "totalCards",
          COUNT(c.id) FILTER (WHERE ${getDueCardPredicate('c')}) AS "dueCards"
        FROM decks d
@@ -896,7 +925,7 @@ async function getDecks(req, res, db) {
     );
 
     return res.json(rows.map((deck) => ({
-      ...deck,
+      ...toDeckReadPayload(deck),
       totalCards: toAggregateCount(deck.totalCards),
       dueCards: toAggregateCount(deck.dueCards),
     })));
