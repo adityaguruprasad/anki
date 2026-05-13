@@ -1,3 +1,5 @@
+const { normalizeAuthToken } = require('./authTokenValidation');
+
 const AUTH_TOKEN_STORAGE_KEY = 'token';
 
 function readToken(tokenSource) {
@@ -21,18 +23,13 @@ function buildAuthHeaders(tokenSource) {
     return {};
   }
 
-  if (typeof token !== 'string') {
-    return {};
-  }
-
-  const trimmedToken = token.trim();
-
-  if (!trimmedToken) {
+  const normalizedToken = normalizeAuthToken(token);
+  if (normalizedToken === null) {
     return {};
   }
 
   return {
-    Authorization: `Bearer ${trimmedToken}`,
+    Authorization: `Bearer ${normalizedToken}`,
   };
 }
 

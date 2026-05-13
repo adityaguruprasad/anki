@@ -17,6 +17,7 @@ const {
   resolveApiBaseUrl,
   validateAuthInput,
 } = require('../authFormState');
+const { AUTH_TOKEN_MAX_LENGTH } = require('../authTokenValidation');
 
 const LOCAL_ENV = Object.freeze({});
 
@@ -47,6 +48,16 @@ test('createInitialAuthSession reads and trims a usable stored token', () => {
   assert.deepEqual(requestedKeys, [AUTH_TOKEN_STORAGE_KEY]);
 });
 
+test('createInitialAuthSession accepts a max-length stored token', () => {
+  const token = 'a'.repeat(AUTH_TOKEN_MAX_LENGTH);
+
+  assert.deepEqual(createInitialAuthSession({ getItem: () => token }), {
+    isLoggedIn: true,
+    token,
+    cleanupNeeded: false,
+  });
+});
+
 test('createInitialAuthSession treats missing tokens as logged out without cleanup', () => {
   for (const token of [null, undefined]) {
     assert.deepEqual(createInitialAuthSession({ getItem: () => token }), {
@@ -70,6 +81,28 @@ test('createInitialAuthSession treats blank stored tokens as cleanup-needed logo
       token: '',
       cleanupNeeded: true,
     });
+  }
+});
+
+test('createInitialAuthSession treats unsafe stored tokens as cleanup-needed logout', () => {
+  for (const token of [
+    'abc.def ghi',
+    'abc.def\tghi',
+    'abc.def\nghi',
+    'abc.def\rghi',
+    'abc.def\u0000ghi',
+    'abc.def\u007fghi',
+    'a'.repeat(AUTH_TOKEN_MAX_LENGTH + 1),
+  ]) {
+    assert.deepEqual(
+      createInitialAuthSession({ getItem: () => token }),
+      {
+        isLoggedIn: false,
+        token: '',
+        cleanupNeeded: true,
+      },
+      `Expected token ${JSON.stringify(token.slice(0, 24))} to require cleanup`
+    );
   }
 });
 
@@ -468,11 +501,31 @@ test('parseAuthResponse returns a trimmed token for successful auth responses', 
   );
 });
 
+test('parseAuthResponse accepts a max-length token for successful auth responses', () => {
+  const token = 'a'.repeat(AUTH_TOKEN_MAX_LENGTH);
+
+  assert.deepEqual(
+    parseAuthResponse({
+      mode: AUTH_MODES.LOGIN,
+      ok: true,
+      body: { token },
+    }),
+    { ok: true, token }
+  );
+});
+
 test('parseAuthResponse rejects malformed successful auth payloads', () => {
   for (const body of [
     {},
     { token: '' },
     { token: '   ' },
+    { token: 'abc.def ghi' },
+    { token: 'abc.def\tghi' },
+    { token: 'abc.def\nghi' },
+    { token: 'abc.def\rghi' },
+    { token: 'abc.def\u0000ghi' },
+    { token: 'abc.def\u007fghi' },
+    { token: 'a'.repeat(AUTH_TOKEN_MAX_LENGTH + 1) },
     { token: 123 },
     null,
     undefined,

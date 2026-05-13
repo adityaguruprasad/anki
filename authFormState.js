@@ -4,6 +4,7 @@ const {
   validateLoginPassword,
   validateRegistrationPassword,
 } = require('./authPasswordValidation');
+const { normalizeAuthToken } = require('./authTokenValidation');
 
 const AUTH_MODES = Object.freeze({
   LOGIN: 'login',
@@ -82,8 +83,8 @@ function parseAuthResponse({ mode, ok, body, bodyParseError }) {
     return { ok: false, error: INVALID_AUTH_RESPONSE_ERROR };
   }
 
-  const token = typeof body.token === 'string' ? body.token.trim() : '';
-  if (token.length === 0) {
+  const token = normalizeAuthToken(body.token);
+  if (token === null) {
     return { ok: false, error: INVALID_AUTH_RESPONSE_ERROR };
   }
 
@@ -132,18 +133,14 @@ function createInitialAuthSession(tokenSource) {
     return loggedOutInitialAuthSession();
   }
 
-  if (typeof token !== 'string') {
-    return loggedOutInitialAuthSession(true);
-  }
-
-  const trimmedToken = token.trim();
-  if (trimmedToken.length === 0) {
+  const normalizedToken = normalizeAuthToken(token);
+  if (normalizedToken === null) {
     return loggedOutInitialAuthSession(true);
   }
 
   return {
     isLoggedIn: true,
-    token: trimmedToken,
+    token: normalizedToken,
     cleanupNeeded: false,
   };
 }

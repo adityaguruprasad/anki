@@ -13,6 +13,7 @@ const FRONTEND_MODULES = Object.freeze([
   'authPasswordValidation.js',
   'authReturnDestination.js',
   'authSubmissionLifecycle.js',
+  'authTokenValidation.js',
   'cardIdentifier.js',
   'isoTimestampValidation.js',
   'dashboardApiRequests.js',
