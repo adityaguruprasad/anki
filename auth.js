@@ -17,6 +17,10 @@ const JWT_EXPIRES_IN_SECONDS_ERROR =
 // headroom while bounding split, JSON parsing, and HMAC work before verification.
 const MAX_JWT_TOKEN_LENGTH = 4096;
 const JWT_TOKEN_TOO_LONG_ERROR = `JWT token must be ${MAX_JWT_TOKEN_LENGTH} characters or fewer`;
+const LOGIN_RATE_LIMIT_ERROR = 'Too many login attempts. Please try again later.';
+const DEFAULT_LOGIN_RATE_LIMIT_MAX_FAILURES = 5;
+const DEFAULT_LOGIN_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
+const DEFAULT_LOGIN_RATE_LIMIT_MAX_KEYS = 10000;
 // Keep these aligned with anki.db users.username VARCHAR(50) and users.email VARCHAR(100).
 const AUTH_USERNAME_MAX_LENGTH = 50;
 const AUTH_EMAIL_MAX_LENGTH = 100;
@@ -233,6 +237,125 @@ function isDuplicateAccountError(error) {
   return error?.code === '23505' && DUPLICATE_ACCOUNT_CONSTRAINTS.has(error.constraint);
 }
 
+function resolvePositiveIntegerOption(options, fieldName, defaultValue) {
+  const value = options[fieldName];
+  if (value == null) {
+    return defaultValue;
+  }
+
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`loginRateLimit.${fieldName} must be a positive safe integer`);
+  }
+
+  return value;
+}
+
+function resolveLoginRateLimitNow(options) {
+  if (options.now == null) {
+    return () => Date.now();
+  }
+
+  if (typeof options.now !== 'function') {
+    throw new TypeError('loginRateLimit.now must be a function');
+  }
+
+  return options.now;
+}
+
+function createLoginFailureTracker(options = {}) {
+  const config = options ?? {};
+  const maxFailures = resolvePositiveIntegerOption(
+    config,
+    'maxFailures',
+    DEFAULT_LOGIN_RATE_LIMIT_MAX_FAILURES
+  );
+  const windowMs = resolvePositiveIntegerOption(
+    config,
+    'windowMs',
+    DEFAULT_LOGIN_RATE_LIMIT_WINDOW_MS
+  );
+  const maxKeys = resolvePositiveIntegerOption(
+    config,
+    'maxKeys',
+    DEFAULT_LOGIN_RATE_LIMIT_MAX_KEYS
+  );
+  const now = resolveLoginRateLimitNow(config);
+  const records = new Map();
+
+  function isExpired(record, currentTime) {
+    return currentTime - record.firstFailureAt >= windowMs;
+  }
+
+  function trimOldestRecordIfNeeded() {
+    if (records.size < maxKeys) {
+      return;
+    }
+
+    const oldestKey = records.keys().next().value;
+    if (oldestKey !== undefined) {
+      records.delete(oldestKey);
+    }
+  }
+
+  function getActiveRecord(key, currentTime) {
+    const record = records.get(key);
+    if (!record) {
+      return null;
+    }
+
+    if (isExpired(record, currentTime)) {
+      records.delete(key);
+      return null;
+    }
+
+    return record;
+  }
+
+  return {
+    isBlocked(key) {
+      const record = getActiveRecord(key, now());
+      return record !== null && record.failures >= maxFailures;
+    },
+    recordFailure(key) {
+      const currentTime = now();
+      let record = getActiveRecord(key, currentTime);
+
+      if (record === null) {
+        trimOldestRecordIfNeeded();
+        record = { failures: 0, firstFailureAt: currentTime };
+      }
+
+      record.failures += 1;
+      records.set(key, record);
+    },
+    recordSuccess(key) {
+      records.delete(key);
+    },
+  };
+}
+
+function getRequestIp(req = {}) {
+  const candidates = [
+    req.ip,
+    req.socket?.remoteAddress,
+    req.connection?.remoteAddress,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim() !== '') {
+      return candidate.trim();
+    }
+  }
+
+  return 'unknown';
+}
+
+function getLoginRateLimitKey(req, normalizedEmail) {
+  // Bounded in-memory per-normalized-email + per-source-IP mitigation; multi-instance
+  // deployments still need shared or edge rate limiting.
+  return `${normalizedEmail}\n${getRequestIp(req)}`;
+}
+
 function resolveAuthHandlerJwtSecret(options = {}) {
   // Only undefined means "not provided"; other falsy values must fail closed.
   if (options.jwtSecret !== undefined) {
@@ -256,6 +379,7 @@ function createAuthHandlers(db, options = {}) {
       ? resolveJwtExpiresInSeconds(options.env)
       : validateJwtExpiresInSeconds(options.jwtExpiresInSeconds);
   const passwordHasher = options.passwordHasher || getDefaultPasswordHasher();
+  const loginFailureTracker = createLoginFailureTracker(options.loginRateLimit);
 
   const register = async (req, res) => {
     const { username, email, password } = req.body || {};
@@ -317,6 +441,11 @@ function createAuthHandlers(db, options = {}) {
       return res.status(400).json({ error: passwordValidation.error });
     }
 
+    const loginRateLimitKey = getLoginRateLimitKey(req, normalizedEmail);
+    if (loginFailureTracker.isBlocked(loginRateLimitKey)) {
+      return res.status(429).json({ error: LOGIN_RATE_LIMIT_ERROR });
+    }
+
     try {
       const result = await db.query(
         'SELECT id, email, password_hash FROM users WHERE email = $1',
@@ -325,13 +454,16 @@ function createAuthHandlers(db, options = {}) {
       if (result.rows.length === 0) {
         // Ignore the dummy result; missing accounts must never authenticate.
         await passwordHasher.compare(password, MISSING_ACCOUNT_DUMMY_PASSWORD_HASH);
+        loginFailureTracker.recordFailure(loginRateLimitKey);
         return res.status(401).json({ error: 'Invalid credentials' });
       }
       const user = result.rows[0];
       const isValidPassword = await passwordHasher.compare(password, user.password_hash);
       if (!isValidPassword) {
+        loginFailureTracker.recordFailure(loginRateLimitKey);
         return res.status(401).json({ error: 'Invalid credentials' });
       }
+      loginFailureTracker.recordSuccess(loginRateLimitKey);
       const token = signToken({ userId: user.id }, jwtSecret, {
         expiresInSeconds: jwtExpiresInSeconds,
       });
@@ -364,6 +496,7 @@ module.exports = {
   AUTH_USERNAME_MAX_LENGTH,
   DEFAULT_JWT_EXPIRES_IN_SECONDS,
   DEFAULT_DEV_JWT_SECRET,
+  LOGIN_RATE_LIMIT_ERROR,
   JWT_TOKEN_TOO_LONG_ERROR,
   MAX_JWT_TOKEN_LENGTH,
   MISSING_ACCOUNT_DUMMY_PASSWORD_HASH,

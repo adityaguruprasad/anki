@@ -9,6 +9,7 @@ const {
   DEFAULT_JWT_EXPIRES_IN_SECONDS,
   DEFAULT_DEV_JWT_SECRET,
   JWT_TOKEN_TOO_LONG_ERROR,
+  LOGIN_RATE_LIMIT_ERROR,
   MAX_JWT_TOKEN_LENGTH,
   MISSING_ACCOUNT_DUMMY_PASSWORD_HASH,
   PASSWORD_HASH_COST,
@@ -79,6 +80,18 @@ function createPasswordHasher({ compareResult = true } = {}) {
       return compareResult;
     },
   };
+}
+
+function createSequencePasswordHasher(compareResults) {
+  const passwordHasher = createPasswordHasher();
+  const results = [...compareResults];
+
+  passwordHasher.compare = async function compare(password, passwordHash) {
+    this.compareCalls.push({ password, passwordHash });
+    return results.length > 0 ? results.shift() : false;
+  };
+
+  return passwordHasher;
 }
 
 function base64UrlJson(value) {
@@ -397,6 +410,193 @@ test('login compares an existing user password only against the stored hash', as
   ]);
   assert.notEqual(passwordHasher.compareCalls[0].passwordHash, MISSING_ACCOUNT_DUMMY_PASSWORD_HASH);
   assert.equal(verifyToken(res.body.token, 'existing-login-secret').userId, 79);
+});
+
+test('login throttles repeated credential failures before additional database work', async () => {
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [{ id: 80, email: 'ada@example.com', password_hash: 'stored-user-hash' }],
+    },
+    {
+      rowCount: 1,
+      rows: [{ id: 80, email: 'ada@example.com', password_hash: 'stored-user-hash' }],
+    },
+  ]);
+  const passwordHasher = createPasswordHasher({ compareResult: false });
+  const { login } = createAuthHandlers(db, {
+    jwtSecret: 'rate-limit-secret',
+    passwordHasher,
+    loginRateLimit: {
+      maxFailures: 2,
+      windowMs: 60000,
+      now: () => 1000,
+    },
+  });
+  const req = {
+    ip: '203.0.113.10',
+    body: { email: ' ADA@Example.COM ', password: 'wrong-password' },
+  };
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const res = createRes();
+
+    await login(req, res);
+
+    assert.equal(res.statusCode, 401);
+    assert.deepEqual(res.body, { error: 'Invalid credentials' });
+  }
+
+  const blockedRes = createRes();
+  await login(req, blockedRes);
+
+  assert.equal(blockedRes.statusCode, 429);
+  assert.deepEqual(blockedRes.body, { error: LOGIN_RATE_LIMIT_ERROR });
+  assert.equal(db.calls.length, 2);
+  assert.equal(passwordHasher.compareCalls.length, 2);
+  assert.deepEqual(db.calls.map((call) => call.params), [
+    ['ada@example.com'],
+    ['ada@example.com'],
+  ]);
+});
+
+test('login throttles repeated missing-account failures before extra dummy work', async () => {
+  const db = createDb([
+    { rowCount: 0, rows: [] },
+    { rowCount: 0, rows: [] },
+  ]);
+  const passwordHasher = createPasswordHasher({ compareResult: true });
+  const { login } = createAuthHandlers(db, {
+    jwtSecret: 'missing-rate-limit-secret',
+    passwordHasher,
+    loginRateLimit: {
+      maxFailures: 2,
+      windowMs: 60000,
+      now: () => 1500,
+    },
+  });
+  const req = {
+    ip: '203.0.113.11',
+    body: { email: ' MISSING@Example.COM ', password: 'candidate-password' },
+  };
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const res = createRes();
+
+    await login(req, res);
+
+    assert.equal(res.statusCode, 401);
+    assert.deepEqual(res.body, { error: 'Invalid credentials' });
+  }
+
+  const blockedRes = createRes();
+  await login(req, blockedRes);
+
+  assert.equal(blockedRes.statusCode, 429);
+  assert.deepEqual(blockedRes.body, { error: LOGIN_RATE_LIMIT_ERROR });
+  assert.equal(db.calls.length, 2);
+  assert.equal(passwordHasher.compareCalls.length, 2);
+  assert.deepEqual(db.calls.map((call) => call.params), [
+    ['missing@example.com'],
+    ['missing@example.com'],
+  ]);
+  assert.deepEqual(passwordHasher.compareCalls, [
+    {
+      password: 'candidate-password',
+      passwordHash: MISSING_ACCOUNT_DUMMY_PASSWORD_HASH,
+    },
+    {
+      password: 'candidate-password',
+      passwordHash: MISSING_ACCOUNT_DUMMY_PASSWORD_HASH,
+    },
+  ]);
+});
+
+test('login clears previous credential failures after a successful login', async () => {
+  const userRow = { id: 81, email: 'ada@example.com', password_hash: 'stored-user-hash' };
+  const db = createDb([
+    { rowCount: 1, rows: [userRow] },
+    { rowCount: 1, rows: [userRow] },
+    { rowCount: 1, rows: [userRow] },
+    { rowCount: 1, rows: [userRow] },
+  ]);
+  const passwordHasher = createSequencePasswordHasher([false, true, false, false]);
+  const { login } = createAuthHandlers(db, {
+    jwtSecret: 'rate-limit-reset-secret',
+    passwordHasher,
+    loginRateLimit: {
+      maxFailures: 2,
+      windowMs: 60000,
+      now: () => 2000,
+    },
+  });
+  const req = {
+    ip: '203.0.113.20',
+    body: { email: 'ada@example.com', password: 'candidate-password' },
+  };
+
+  const firstFailure = createRes();
+  await login(req, firstFailure);
+  assert.equal(firstFailure.statusCode, 401);
+
+  const success = createRes();
+  await login(req, success);
+  assert.equal(success.statusCode, 200);
+  assert.equal(verifyToken(success.body.token, 'rate-limit-reset-secret').userId, 81);
+
+  const secondFailure = createRes();
+  await login(req, secondFailure);
+  assert.equal(secondFailure.statusCode, 401);
+
+  const thirdFailure = createRes();
+  await login(req, thirdFailure);
+  assert.equal(thirdFailure.statusCode, 401);
+
+  const blockedRes = createRes();
+  await login(req, blockedRes);
+  assert.equal(blockedRes.statusCode, 429);
+  assert.deepEqual(blockedRes.body, { error: LOGIN_RATE_LIMIT_ERROR });
+  assert.equal(db.calls.length, 4);
+  assert.equal(passwordHasher.compareCalls.length, 4);
+});
+
+test('login allows attempts after the failure throttle window expires', async () => {
+  let now = 3000;
+  const userRow = { id: 82, email: 'ada@example.com', password_hash: 'stored-user-hash' };
+  const db = createDb([
+    { rowCount: 1, rows: [userRow] },
+    { rowCount: 1, rows: [userRow] },
+    { rowCount: 1, rows: [userRow] },
+  ]);
+  const passwordHasher = createPasswordHasher({ compareResult: false });
+  const { login } = createAuthHandlers(db, {
+    jwtSecret: 'rate-limit-window-secret',
+    passwordHasher,
+    loginRateLimit: {
+      maxFailures: 2,
+      windowMs: 60000,
+      now: () => now,
+    },
+  });
+  const req = {
+    ip: '203.0.113.30',
+    body: { email: 'ada@example.com', password: 'wrong-password' },
+  };
+
+  await login(req, createRes());
+  await login(req, createRes());
+
+  const blockedRes = createRes();
+  await login(req, blockedRes);
+  assert.equal(blockedRes.statusCode, 429);
+
+  now += 60000;
+  const retriedRes = createRes();
+  await login(req, retriedRes);
+
+  assert.equal(retriedRes.statusCode, 401);
+  assert.equal(db.calls.length, 3);
+  assert.equal(passwordHasher.compareCalls.length, 3);
 });
 
 test('login invalid input short-circuits before lookup or dummy comparison', async () => {
