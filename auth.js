@@ -122,6 +122,24 @@ function validateJwtExpirationTimestamp(exp) {
   return exp;
 }
 
+function validateJwtPayloadUserId(payload) {
+  if (
+    payload === null ||
+    typeof payload !== 'object' ||
+    Array.isArray(payload) ||
+    !Object.hasOwn(payload, 'userId')
+  ) {
+    throw new Error('Token userId is required');
+  }
+
+  const normalizedUserId = normalizeTokenUserId(payload.userId);
+  if (normalizedUserId == null) {
+    throw new Error('Token userId is required');
+  }
+
+  return normalizedUserId;
+}
+
 function validateJwtTokenText(token) {
   if (typeof token !== 'string' || token.length === 0) {
     throw new Error('Invalid token');
@@ -141,9 +159,11 @@ function signToken(payload, secret = resolveJwtSecret(), options = {}) {
   // Duration inputs are checked independently, and the computed NumericDate is checked too
   // so large safe durations cannot overflow past the safe integer range after adding now.
   const exp = validateJwtExpirationTimestamp(now + expiresInSeconds);
+  const userId = validateJwtPayloadUserId(payload);
   const header = { alg: 'HS256', typ: 'JWT' };
   const tokenPayload = {
     ...payload,
+    userId,
     iat: now,
     exp,
   };

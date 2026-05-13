@@ -147,6 +147,32 @@ test('register uses injected db and returns a signed token with inserted user id
   assert.equal(authReq.user.userId, 42);
 });
 
+test('register does not mint a token when the inserted user id is invalid', async () => {
+  const db = createDb([{ rowCount: 1, rows: [{ id: 'not-a-number' }] }]);
+  const passwordHasher = createPasswordHasher();
+  const { register } = createAuthHandlers(db, {
+    jwtSecret: 'invalid-register-user-secret',
+    passwordHasher,
+  });
+  const res = createRes();
+
+  await register({
+    body: {
+      username: 'ada',
+      email: 'ada@example.com',
+      password: 'correct horse battery staple',
+    },
+  }, res);
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Error registering user' });
+  assert.equal(res.body.token, undefined);
+  assert.deepEqual(passwordHasher.hashCalls, [
+    { password: 'correct horse battery staple', rounds: PASSWORD_HASH_COST },
+  ]);
+  assert.equal(db.calls.length, 1);
+});
+
 test('register rejects invalid input before hashing or querying', async (t) => {
   const cases = [
     {
@@ -422,6 +448,31 @@ test('login compares an existing user password only against the stored hash', as
   ]);
   assert.notEqual(passwordHasher.compareCalls[0].passwordHash, MISSING_ACCOUNT_DUMMY_PASSWORD_HASH);
   assert.equal(verifyToken(res.body.token, 'existing-login-secret').userId, 79);
+});
+
+test('login does not mint a token when the stored user id is invalid', async () => {
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [{ id: 'not-a-number', email: 'ada@example.com', password_hash: 'stored-user-hash' }],
+    },
+  ]);
+  const passwordHasher = createPasswordHasher({ compareResult: true });
+  const { login } = createAuthHandlers(db, {
+    jwtSecret: 'invalid-login-user-secret',
+    passwordHasher,
+  });
+  const res = createRes();
+
+  await login({ body: { email: 'ada@example.com', password: 'stored-password' } }, res);
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Error logging in' });
+  assert.equal(res.body.token, undefined);
+  assert.deepEqual(passwordHasher.compareCalls, [
+    { password: 'stored-password', passwordHash: 'stored-user-hash' },
+  ]);
+  assert.equal(db.calls.length, 1);
 });
 
 test('login throttles repeated credential failures before additional database work', async () => {
@@ -737,6 +788,50 @@ test('signToken rejects expiration math that would produce an unsafe exp', () =>
       }),
     /Token expiration must be a positive safe integer/
   );
+});
+
+test('signToken requires a usable userId claim before issuing a token', () => {
+  const invalidPayloads = [
+    undefined,
+    null,
+    {},
+    [],
+    { userId: null },
+    { userId: '' },
+    { userId: '   ' },
+    { userId: 'not-a-number' },
+    { userId: '1.5' },
+    { userId: '0' },
+    { userId: 0 },
+    { userId: -1 },
+    { userId: 1.5 },
+    { userId: String(Number.MAX_SAFE_INTEGER + 1) },
+    { userId: Number.MAX_SAFE_INTEGER + 1 },
+  ];
+
+  for (const payload of invalidPayloads) {
+    assert.throws(
+      () => signToken(payload, 'sign-user-secret', { now: 1000, expiresInSeconds: 60 }),
+      /Token userId is required/
+    );
+  }
+});
+
+test('signToken canonicalizes signed userId claims to positive integers', () => {
+  const token = signToken({ userId: ' 00042 ', role: 'learner' }, 'canonical-user-secret', {
+    now: 1000,
+    expiresInSeconds: 60,
+  });
+  const [, encodedPayload] = token.split('.');
+  const payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8'));
+
+  assert.deepEqual(payload, {
+    userId: 42,
+    role: 'learner',
+    iat: 1000,
+    exp: 1060,
+  });
+  assert.deepEqual(verifyToken(token, 'canonical-user-secret', { now: 1000 }), payload);
 });
 
 test('verifyToken rejects non-integer, string, and unsafe exp claims before expiry checks', () => {
