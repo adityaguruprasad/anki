@@ -34,7 +34,13 @@ CREATE TABLE cards (
   next_review TIMESTAMP,
   interval INTEGER DEFAULT 1,
   review_count INTEGER DEFAULT 0,
-  ease_factor FLOAT DEFAULT 2.5
+  ease_factor FLOAT DEFAULT 2.5,
+  -- anki.db is the canonical bootstrap schema for new databases. Existing
+  -- deployments need an explicit data-normalizing migration before applying
+  -- these constraints to legacy card rows.
+  CONSTRAINT cards_interval_min_check CHECK (interval >= 1),
+  CONSTRAINT cards_review_count_non_negative_check CHECK (review_count >= 0),
+  CONSTRAINT cards_ease_factor_min_check CHECK (ease_factor >= 1.3)
 );
 
 CREATE INDEX cards_deck_id_next_review_idx
