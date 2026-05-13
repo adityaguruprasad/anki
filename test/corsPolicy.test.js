@@ -34,10 +34,12 @@ function createRes() {
   };
 }
 
-test('buildCorsOptions preserves permissive behavior when no allowlist is configured', () => {
+test('buildCorsOptions preserves permissive behavior outside production when no allowlist is configured', () => {
   assert.deepEqual(buildCorsOptions({}), {});
   assert.deepEqual(buildCorsOptions({ CORS_ALLOWED_ORIGINS: '' }), {});
   assert.deepEqual(buildCorsOptions({ CORS_ALLOWED_ORIGINS: ' , , ' }), {});
+  assert.deepEqual(buildCorsOptions({ NODE_ENV: 'test' }), {});
+  assert.deepEqual(buildCorsOptions({ NODE_ENV: 'development' }), {});
 });
 
 test('normalizeAllowedOrigins trims whitespace and ignores empty entries', () => {
@@ -58,8 +60,30 @@ test('configured CORS allowlist allows requests with no Origin header', async ()
   assert.equal(decision.allowed, true);
 });
 
+test('production CORS rejects browser origins when no allowlist is configured', async () => {
+  for (const CORS_ALLOWED_ORIGINS of [undefined, '', ' , , ']) {
+    const options = buildCorsOptions({
+      NODE_ENV: 'production',
+      CORS_ALLOWED_ORIGINS,
+    });
+
+    assert.equal(typeof options.origin, 'function');
+
+    const noOriginDecision = await runOriginDecision(options, undefined);
+    assert.equal(noOriginDecision.error, null);
+    assert.equal(noOriginDecision.allowed, true);
+
+    const browserOriginDecision = await runOriginDecision(options, 'https://app.example.com');
+    assert.equal(browserOriginDecision.allowed, undefined);
+    assert.equal(isCorsOriginRejectedError(browserOriginDecision.error), true);
+    assert.equal(browserOriginDecision.error.message, CORS_ORIGIN_REJECTED_ERROR);
+    assert.doesNotMatch(browserOriginDecision.error.message, /app\.example/i);
+  }
+});
+
 test('configured CORS allowlist allows exact matching origins', async () => {
   const options = buildCorsOptions({
+    NODE_ENV: 'production',
     CORS_ALLOWED_ORIGINS: 'https://app.example.com, https://admin.example.com',
   });
 

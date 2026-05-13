@@ -28,6 +28,19 @@ function buildCorsOptions(config = process.env) {
   const allowedOrigins = normalizeAllowedOrigins(config[CORS_ALLOWED_ORIGINS_ENV]);
 
   if (allowedOrigins.length === 0) {
+    if (config.NODE_ENV === 'production') {
+      return {
+        origin(origin, callback) {
+          if (!origin) {
+            callback(null, true);
+            return;
+          }
+
+          callback(createCorsOriginRejectedError());
+        },
+      };
+    }
+
     return {};
   }
 
