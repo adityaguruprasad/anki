@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
 const { createAuthHandlers } = require('./auth');
+const { handleApiError } = require('./apiErrorBoundary');
 const { handleApiNotFound } = require('./apiNotFound');
 const { buildCorsOptions, handleCorsError } = require('./corsPolicy');
 const { buildDatabasePoolConfig } = require('./databaseConfig');
@@ -50,6 +51,7 @@ app.get('/api/stats', (req, res) => getStats(req, res, pool));
 app.get('/api/scheduling-insights', (req, res) => getSchedulingInsights(req, res, pool));
 
 app.use('/api', handleApiNotFound);
+app.use('/api', handleApiError);
 
 if (require.main === module) {
   app.listen(port, () => {
