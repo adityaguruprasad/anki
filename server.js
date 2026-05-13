@@ -4,6 +4,7 @@ const { Pool } = require('pg');
 const { createAuthHandlers } = require('./auth');
 const { handleApiNotFound } = require('./apiNotFound');
 const { buildCorsOptions, handleCorsError } = require('./corsPolicy');
+const { buildDatabasePoolConfig } = require('./databaseConfig');
 const { createJsonBodyParser, handleJsonBodyError } = require('./jsonBodyError');
 const { createSecurityHeadersMiddleware } = require('./securityHeaders');
 const { calculateNextReview } = require('./spacedRepetition');
@@ -18,9 +19,7 @@ app.use(handleCorsError);
 app.use(createJsonBodyParser(express));
 app.use(handleJsonBodyError);
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
+const pool = new Pool(buildDatabasePoolConfig());
 const { register, login, authenticateToken } = createAuthHandlers(pool);
 
 // Auth routes
