@@ -9,6 +9,8 @@ const {
 
 const DEFAULT_DEV_JWT_SECRET = 'your_secret_key';
 const DEFAULT_JWT_EXPIRES_IN_SECONDS = 60 * 60 * 24;
+const JWT_SECRET_DEFAULT_PRODUCTION_ERROR =
+  'JWT_SECRET must not use the default development secret in production';
 const JWT_SECRET_EMPTY_ERROR = 'JWT_SECRET must not be empty';
 const JWT_SECRET_TYPE_ERROR = 'JWT_SECRET must be a string';
 const JWT_EXPIRES_IN_SECONDS_ERROR =
@@ -47,6 +49,10 @@ function resolveJwtSecret(env = process.env) {
     const jwtSecret = env.JWT_SECRET.trim();
     if (jwtSecret === '') {
       throw new Error(JWT_SECRET_EMPTY_ERROR);
+    }
+
+    if (env.NODE_ENV === 'production' && jwtSecret === DEFAULT_DEV_JWT_SECRET) {
+      throw new Error(JWT_SECRET_DEFAULT_PRODUCTION_ERROR);
     }
 
     return jwtSecret;

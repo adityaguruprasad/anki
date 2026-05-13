@@ -1076,10 +1076,32 @@ test('resolveJwtSecret requires JWT_SECRET in production', () => {
   );
 });
 
+test('resolveJwtSecret rejects the deterministic development secret in production', () => {
+  assert.throws(
+    () => resolveJwtSecret({ JWT_SECRET: DEFAULT_DEV_JWT_SECRET, NODE_ENV: 'production' }),
+    /JWT_SECRET must not use the default development secret in production/
+  );
+  assert.throws(
+    () => resolveJwtSecret({ JWT_SECRET: `  ${DEFAULT_DEV_JWT_SECRET}\n`, NODE_ENV: 'production' }),
+    /JWT_SECRET must not use the default development secret in production/
+  );
+});
+
 test('resolveJwtSecret falls back to the deterministic dev secret outside production', () => {
   assert.equal(resolveJwtSecret({ NODE_ENV: 'test' }), DEFAULT_DEV_JWT_SECRET);
   assert.equal(resolveJwtSecret({ NODE_ENV: 'development' }), DEFAULT_DEV_JWT_SECRET);
   assert.equal(resolveJwtSecret({}), DEFAULT_DEV_JWT_SECRET);
+});
+
+test('createAuthHandlers rejects an explicit development JWT secret in production', () => {
+  assert.throws(
+    () => createAuthHandlers(createDb([]), {
+      env: { NODE_ENV: 'production' },
+      jwtSecret: DEFAULT_DEV_JWT_SECRET,
+      passwordHasher: createPasswordHasher(),
+    }),
+    /JWT_SECRET must not use the default development secret in production/
+  );
 });
 
 test('resolveJwtExpiresInSeconds supports a configurable positive integer default', () => {
