@@ -5,7 +5,9 @@ const test = require('node:test');
 
 const {
   INVALID_JSON_REQUEST_BODY_ERROR,
+  JSON_BODY_LIMIT,
   JSON_REQUEST_BODY_TOO_LARGE_ERROR,
+  createJsonBodyParser,
   handleJsonBodyError,
   isJsonBodyTooLargeError,
   isMalformedJsonBodyError,
@@ -40,6 +42,28 @@ function createJsonTooLargeError() {
   error.type = 'entity.too.large';
   return error;
 }
+
+test('createJsonBodyParser configures an explicit JSON request budget', () => {
+  const middleware = () => {};
+  let receivedOptions = null;
+  const fakeExpress = {
+    json(options) {
+      receivedOptions = options;
+      return middleware;
+    },
+  };
+
+  assert.equal(createJsonBodyParser(fakeExpress), middleware);
+  assert.equal(JSON_BODY_LIMIT, '96kb');
+  assert.deepEqual(receivedOptions, { limit: JSON_BODY_LIMIT });
+});
+
+test('createJsonBodyParser rejects invalid Express modules', () => {
+  assert.throws(
+    () => createJsonBodyParser({}),
+    { name: 'TypeError', message: 'createJsonBodyParser requires an Express module with a json method' },
+  );
+});
 
 test('handleJsonBodyError returns the API JSON error shape for invalid JSON bodies', () => {
   const error = createJsonParseError();
@@ -113,9 +137,9 @@ test('handleJsonBodyError forwards arbitrary 413 errors without the parser overs
   assert.equal(isJsonBodyTooLargeError(error), false);
 });
 
-test('server mounts JSON body error handling immediately after express.json and before auth', () => {
+test('server mounts bounded JSON body parsing immediately before JSON body error handling and auth', () => {
   const serverSource = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
-  const jsonParserIndex = serverSource.indexOf('app.use(express.json());');
+  const jsonParserIndex = serverSource.indexOf('app.use(createJsonBodyParser(express));');
   const jsonBodyErrorHandlerIndex = serverSource.indexOf('app.use(handleJsonBodyError);');
   const registerRouteIndex = serverSource.indexOf("app.post('/api/register', register);");
   const loginRouteIndex = serverSource.indexOf("app.post('/api/login', login);");
@@ -123,11 +147,16 @@ test('server mounts JSON body error handling immediately after express.json and 
 
   assert.match(
     serverSource,
-    /app\.use\(express\.json\(\)\);\s*app\.use\(handleJsonBodyError\);/,
-    'Expected JSON body error handling to be mounted immediately after express.json()',
+    /app\.use\(createJsonBodyParser\(express\)\);\s*app\.use\(handleJsonBodyError\);/,
+    'Expected JSON body error handling to be mounted immediately after bounded JSON parsing',
   );
-  assert.ok(jsonParserIndex >= 0, 'Expected server.js to mount express.json()');
-  assert.ok(jsonBodyErrorHandlerIndex > jsonParserIndex, 'Expected handler after express.json()');
+  assert.match(
+    serverSource,
+    /const\s+\{\s*createJsonBodyParser,\s*handleJsonBodyError\s*\}\s*=\s*require\(['"]\.\/jsonBodyError['"]\);/,
+    'Expected server.js to import the bounded JSON parser helper',
+  );
+  assert.ok(jsonParserIndex >= 0, 'Expected server.js to mount bounded JSON parsing');
+  assert.ok(jsonBodyErrorHandlerIndex > jsonParserIndex, 'Expected handler after bounded JSON parsing');
   assert.ok(
     registerRouteIndex > jsonBodyErrorHandlerIndex && loginRouteIndex > jsonBodyErrorHandlerIndex,
     'Expected public auth routes to run after JSON body error handling',

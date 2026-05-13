@@ -98,11 +98,11 @@ test('server mounts configurable CORS policy before JSON parsing and auth', () =
   const serverSource = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
   const corsIndex = serverSource.indexOf('app.use(cors(buildCorsOptions()));');
   const corsErrorIndex = serverSource.indexOf('app.use(handleCorsError);');
-  const jsonParserIndex = serverSource.indexOf('app.use(express.json());');
+  const jsonParserIndex = serverSource.indexOf('app.use(createJsonBodyParser(express));');
   const protectedAuthIndex = serverSource.indexOf('app.use(authenticateToken);');
 
   assert.ok(corsIndex >= 0, 'Expected server.js to mount CORS with generated options');
   assert.ok(corsErrorIndex > corsIndex, 'Expected CORS error handler after CORS middleware');
-  assert.ok(jsonParserIndex > corsErrorIndex, 'Expected JSON parser after CORS middleware');
+  assert.ok(jsonParserIndex > corsErrorIndex, 'Expected bounded JSON parser after CORS middleware');
   assert.ok(protectedAuthIndex > jsonParserIndex, 'Expected auth middleware after body parsing');
 });

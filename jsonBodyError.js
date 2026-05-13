@@ -1,5 +1,15 @@
 const INVALID_JSON_REQUEST_BODY_ERROR = 'Invalid JSON request body';
 const JSON_REQUEST_BODY_TOO_LARGE_ERROR = 'JSON request body too large';
+// Above the current largest intended card payload, below Express' broad default.
+const JSON_BODY_LIMIT = '96kb';
+
+function createJsonBodyParser(expressModule) {
+  if (!expressModule || typeof expressModule.json !== 'function') {
+    throw new TypeError('createJsonBodyParser requires an Express module with a json method');
+  }
+
+  return expressModule.json({ limit: JSON_BODY_LIMIT });
+}
 
 function isMalformedJsonBodyError(error) {
   return Boolean(
@@ -31,7 +41,9 @@ function handleJsonBodyError(error, req, res, next) {
 
 module.exports = {
   INVALID_JSON_REQUEST_BODY_ERROR,
+  JSON_BODY_LIMIT,
   JSON_REQUEST_BODY_TOO_LARGE_ERROR,
+  createJsonBodyParser,
   handleJsonBodyError,
   handleMalformedJsonBody: handleJsonBodyError,
   isJsonBodyTooLargeError,
