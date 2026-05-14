@@ -9,6 +9,7 @@ const {
 const {
   FRONTEND_MODULES,
 } = require('../scripts/sync-cra-src');
+const { MAX_POSTGRES_SERIAL_ID } = require('../cardIdentifier');
 const { getTableDefinition } = require('./schemaHelpers');
 
 test('parseDeckManagementDeckListPayload preserves valid deck rows and extra fields', () => {
@@ -36,6 +37,16 @@ test('parseDeckManagementDeckListPayload preserves valid deck rows and extra fie
 
 test('parseDeckManagementDeckListPayload accepts due counts equal to total counts', () => {
   const decks = [{ id: 7, name: 'Review Ready', totalCards: 4, dueCards: 4 }];
+
+  assert.equal(parseDeckManagementDeckListPayload(decks), decks);
+  assert.equal(hasDeckManagementDeckListPayload(decks), true);
+});
+
+test('parseDeckManagementDeckListPayload accepts PostgreSQL SERIAL id boundaries', () => {
+  const decks = [
+    { id: MAX_POSTGRES_SERIAL_ID, name: 'Numeric boundary', totalCards: 1, dueCards: 0 },
+    { id: String(MAX_POSTGRES_SERIAL_ID), name: 'String boundary', totalCards: 1, dueCards: 1 },
+  ];
 
   assert.equal(parseDeckManagementDeckListPayload(decks), decks);
   assert.equal(hasDeckManagementDeckListPayload(decks), true);
@@ -102,6 +113,22 @@ test('parseDeckManagementDeckListPayload rejects any malformed row without filte
     ],
     [
       { id: 1, name: 'Valid', totalCards: 1, dueCards: 0 },
+      { id: MAX_POSTGRES_SERIAL_ID + 1, name: 'Bad id', totalCards: 0, dueCards: 0 },
+    ],
+    [
+      { id: 1, name: 'Valid', totalCards: 1, dueCards: 0 },
+      { id: Number.MAX_SAFE_INTEGER, name: 'Bad id', totalCards: 0, dueCards: 0 },
+    ],
+    [
+      { id: 1, name: 'Valid', totalCards: 1, dueCards: 0 },
+      { id: String(MAX_POSTGRES_SERIAL_ID + 1), name: 'Bad id', totalCards: 0, dueCards: 0 },
+    ],
+    [
+      { id: 1, name: 'Valid', totalCards: 1, dueCards: 0 },
+      { id: String(Number.MAX_SAFE_INTEGER), name: 'Bad id', totalCards: 0, dueCards: 0 },
+    ],
+    [
+      { id: 1, name: 'Valid', totalCards: 1, dueCards: 0 },
       { id: {}, name: 'Bad id', totalCards: 0, dueCards: 0 },
     ],
   ].forEach((payload) => {
@@ -114,7 +141,7 @@ test('parseDeckManagementDeckListPayload rejects any malformed row without filte
 });
 
 test('parseDeckManagementDeckListPayload rejects ambiguous leading-zero deck ids', () => {
-  ['01', '00042', '000', `000${Number.MAX_SAFE_INTEGER}`].forEach((id) => {
+  ['01', '00042', '000', `000${MAX_POSTGRES_SERIAL_ID}`].forEach((id) => {
     const payload = [{ id, name: 'Math', totalCards: 0, dueCards: 0 }];
 
     assert.throws(

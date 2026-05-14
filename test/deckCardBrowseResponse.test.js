@@ -7,6 +7,7 @@ const {
   hasMatchingCursorFamilies,
   parseDeckCardBrowseResponsePayload,
 } = require('../deckCardBrowseResponse');
+const { MAX_POSTGRES_SERIAL_ID } = require('../cardIdentifier');
 
 function assertMalformed(payload) {
   assert.throws(
@@ -52,6 +53,7 @@ test('parseDeckCardBrowseResponsePayload preserves valid card rows and extra fie
 test('parseDeckCardBrowseResponsePayload preserves valid cursor objects', () => {
   [
     { cursorCreatedAt: '2026-05-08T13:00:00.000Z', cursorId: 3 },
+    { cursorCreatedAt: '2026-05-08T13:00:00.000Z', cursorId: MAX_POSTGRES_SERIAL_ID },
     { beforeCreatedAt: '2026-05-08T13:00:00.000Z', beforeId: '3' },
     {
       cursorCreatedAt: '2026-05-08T13:00:00.000Z',
@@ -99,11 +101,14 @@ test('parseDeckCardBrowseResponsePayload rejects invalid card rows', () => {
     { id: '0', front_content: 'Front', back_content: 'Back' },
     { id: '-1', front_content: 'Front', back_content: 'Back' },
     { id: '1.2', front_content: 'Front', back_content: 'Back' },
+    { id: String(MAX_POSTGRES_SERIAL_ID + 1), front_content: 'Front', back_content: 'Back' },
     { id: '9007199254740992', front_content: 'Front', back_content: 'Back' },
     { id: 0, front_content: 'Front', back_content: 'Back' },
     { id: -1, front_content: 'Front', back_content: 'Back' },
     { id: 1.5, front_content: 'Front', back_content: 'Back' },
     { id: Number.NaN, front_content: 'Front', back_content: 'Back' },
+    { id: MAX_POSTGRES_SERIAL_ID + 1, front_content: 'Front', back_content: 'Back' },
+    { id: Number.MAX_SAFE_INTEGER, front_content: 'Front', back_content: 'Back' },
     { id: Number.MAX_SAFE_INTEGER + 1, front_content: 'Front', back_content: 'Back' },
     { id: {}, front_content: 'Front', back_content: 'Back' },
     { id: 1, front_content: '', back_content: 'Back' },
@@ -207,6 +212,9 @@ test('parseDeckCardBrowseResponsePayload rejects invalid cursor timestamps and i
     { nextCursor: { cursorCreatedAt: '2026-05-08T13:00:00.000Z', cursorId: -1 } },
     { nextCursor: { cursorCreatedAt: '2026-05-08T13:00:00.000Z', cursorId: 'abc' } },
     { nextCursor: { cursorCreatedAt: '2026-05-08T13:00:00.000Z', cursorId: '1.2' } },
+    { nextCursor: { cursorCreatedAt: '2026-05-08T13:00:00.000Z', cursorId: MAX_POSTGRES_SERIAL_ID + 1 } },
+    { nextCursor: { cursorCreatedAt: '2026-05-08T13:00:00.000Z', cursorId: String(MAX_POSTGRES_SERIAL_ID + 1) } },
+    { nextCursor: { cursorCreatedAt: '2026-05-08T13:00:00.000Z', cursorId: Number.MAX_SAFE_INTEGER } },
     { nextCursor: { cursorCreatedAt: '2026-05-08T13:00:00.000Z', cursorId: Number.MAX_SAFE_INTEGER + 1 } },
     { nextCursor: { cursorCreatedAt: '2026-05-08T13:00:00.000Z', cursorId: String(Number.MAX_SAFE_INTEGER + 1) } },
     {

@@ -6,6 +6,7 @@ const {
   hasDeckCardMutationPayload,
   parseDeckCardMutationResponsePayload,
 } = require('../deckCardMutationResponse');
+const { MAX_POSTGRES_SERIAL_ID } = require('../cardIdentifier');
 
 const VALID_NEXT_REVIEW = '2026-05-10T12:00:00.000Z';
 
@@ -53,6 +54,19 @@ test('parseDeckCardMutationResponsePayload accepts numeric ids and non-blank str
   assert.equal(parseDeckCardMutationResponsePayload(payload), payload);
 });
 
+test('parseDeckCardMutationResponsePayload accepts PostgreSQL SERIAL id boundaries', () => {
+  [
+    MAX_POSTGRES_SERIAL_ID,
+    String(MAX_POSTGRES_SERIAL_ID),
+    `000${MAX_POSTGRES_SERIAL_ID}`,
+  ].forEach((id) => {
+    const payload = createValidCardPayload({ id });
+
+    assert.equal(parseDeckCardMutationResponsePayload(payload), payload);
+    assert.equal(hasDeckCardMutationPayload(payload), true);
+  });
+});
+
 test('parseDeckCardMutationResponsePayload accepts matching expected card ids', () => {
   const payload = createValidCardPayload({
     id: '0007',
@@ -85,12 +99,15 @@ test('parseDeckCardMutationResponsePayload rejects missing or unusable card ids'
     createValidCardPayload({ id: '0' }),
     createValidCardPayload({ id: '-1' }),
     createValidCardPayload({ id: '1.5' }),
+    createValidCardPayload({ id: String(MAX_POSTGRES_SERIAL_ID + 1) }),
     createValidCardPayload({ id: '9007199254740992' }),
     createValidCardPayload({ id: 0 }),
     createValidCardPayload({ id: -1 }),
     createValidCardPayload({ id: 1.5 }),
     createValidCardPayload({ id: Number.NaN }),
     createValidCardPayload({ id: Number.POSITIVE_INFINITY }),
+    createValidCardPayload({ id: MAX_POSTGRES_SERIAL_ID + 1 }),
+    createValidCardPayload({ id: Number.MAX_SAFE_INTEGER }),
     createValidCardPayload({ id: Number.MAX_SAFE_INTEGER + 1 }),
     createValidCardPayload({ id: {} }),
   ].forEach(assertMalformed);

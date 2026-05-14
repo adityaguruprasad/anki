@@ -1,4 +1,5 @@
 const MALFORMED_DECK_MANAGEMENT_DECK_LIST_PAYLOAD_ERROR = 'Malformed deck-management deck-list payload';
+const { MAX_POSTGRES_SERIAL_ID } = require('./cardIdentifier');
 
 function isObjectRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -8,21 +9,21 @@ function isNonBlankString(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
-const MAX_SAFE_INTEGER_STRING = String(Number.MAX_SAFE_INTEGER);
+const MAX_POSTGRES_SERIAL_ID_STRING = String(MAX_POSTGRES_SERIAL_ID);
 
 function hasRouteSafeDeckManagementDeckId(value) {
   if (typeof value === 'number') {
-    return Number.isSafeInteger(value) && value > 0;
+    return Number.isSafeInteger(value) && value > 0 && value <= MAX_POSTGRES_SERIAL_ID;
   }
 
   if (typeof value === 'string') {
     return (
       /^[1-9]\d*$/.test(value)
       && (
-        value.length < MAX_SAFE_INTEGER_STRING.length
+        value.length < MAX_POSTGRES_SERIAL_ID_STRING.length
         || (
-          value.length === MAX_SAFE_INTEGER_STRING.length
-          && value <= MAX_SAFE_INTEGER_STRING
+          value.length === MAX_POSTGRES_SERIAL_ID_STRING.length
+          && value <= MAX_POSTGRES_SERIAL_ID_STRING
         )
       )
     );

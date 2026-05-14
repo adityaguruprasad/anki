@@ -9,6 +9,7 @@ const {
   getValidatedStudySessionSubmissionResponse,
   parseStudySessionSubmissionResponse,
 } = require('../studySessionFeedback');
+const { MAX_POSTGRES_SERIAL_ID } = require('../cardIdentifier');
 
 test('getStudySessionQualityLabel maps visible study answer qualities', () => {
   assert.equal(getStudySessionQualityLabel(1), 'Hard');
@@ -113,6 +114,15 @@ test('getValidatedStudySessionSubmissionResponse preserves valid submission payl
     getValidatedStudySessionSubmissionResponse(response, { expectedId: ' 0007 ' }),
     response,
   );
+
+  const boundaryResponse = {
+    success: true,
+    card: {
+      id: MAX_POSTGRES_SERIAL_ID,
+      next_review: '2026-05-09T14:30:00.000Z',
+    },
+  };
+  assert.equal(getValidatedStudySessionSubmissionResponse(boundaryResponse), boundaryResponse);
 });
 
 test('getValidatedStudySessionSubmissionResponse rejects malformed submission payloads', () => {
@@ -134,6 +144,8 @@ test('getValidatedStudySessionSubmissionResponse rejects malformed submission pa
     { success: true, card: { ...validCard, id: 0 } },
     { success: true, card: { ...validCard, id: -1 } },
     { success: true, card: { ...validCard, id: 1.5 } },
+    { success: true, card: { ...validCard, id: MAX_POSTGRES_SERIAL_ID + 1 } },
+    { success: true, card: { ...validCard, id: Number.MAX_SAFE_INTEGER } },
     { success: true, card: { ...validCard, id: Number.MAX_SAFE_INTEGER + 1 } },
     { success: true, card: { ...validCard, id: '1' } },
     { success: true, card: { ...validCard, next_review: '' } },

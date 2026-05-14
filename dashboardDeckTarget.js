@@ -1,3 +1,7 @@
+const { MAX_POSTGRES_SERIAL_ID } = require('./cardIdentifier');
+
+const MAX_POSTGRES_SERIAL_ID_STRING = String(MAX_POSTGRES_SERIAL_ID);
+
 function hasNonNegativeSafeIntegerCount(deck, key) {
   return Boolean(deck) && Number.isSafeInteger(deck[key]) && deck[key] >= 0;
 }
@@ -12,12 +16,12 @@ function hasConsistentDeckCounts(deck) {
     && deck.dueCards <= deck.totalCards;
 }
 
-const MAX_SAFE_INTEGER_STRING = String(Number.MAX_SAFE_INTEGER);
-
-// Returns the canonical positive safe-integer deck id string used in study routes.
+// Returns the canonical positive PostgreSQL SERIAL deck id string used in study routes.
 function normalizeStudyDeckId(value) {
   if (typeof value === 'number') {
-    return Number.isSafeInteger(value) && value > 0 ? String(value) : null;
+    return Number.isSafeInteger(value) && value > 0 && value <= MAX_POSTGRES_SERIAL_ID
+      ? String(value)
+      : null;
   }
 
   if (typeof value !== 'string') {
@@ -31,10 +35,10 @@ function normalizeStudyDeckId(value) {
   if (
     !/^\d+$/.test(trimmed)
     || candidate === '0'
-    || candidate.length > MAX_SAFE_INTEGER_STRING.length
+    || candidate.length > MAX_POSTGRES_SERIAL_ID_STRING.length
     || (
-      candidate.length === MAX_SAFE_INTEGER_STRING.length
-      && candidate > MAX_SAFE_INTEGER_STRING
+      candidate.length === MAX_POSTGRES_SERIAL_ID_STRING.length
+      && candidate > MAX_POSTGRES_SERIAL_ID_STRING
     )
   ) {
     return null;

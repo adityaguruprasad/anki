@@ -8,18 +8,19 @@ const {
   normalizeStudyDeckId,
   selectStudyDeckTarget,
 } = require('../dashboardDeckTarget');
+const { MAX_POSTGRES_SERIAL_ID } = require('../cardIdentifier');
 
-test('normalizeStudyDeckId canonicalizes route-safe deck ids', () => {
+test('normalizeStudyDeckId canonicalizes PostgreSQL SERIAL route ids', () => {
   assert.equal(normalizeStudyDeckId(42), '42');
-  assert.equal(normalizeStudyDeckId(Number.MAX_SAFE_INTEGER), String(Number.MAX_SAFE_INTEGER));
+  assert.equal(normalizeStudyDeckId(MAX_POSTGRES_SERIAL_ID), String(MAX_POSTGRES_SERIAL_ID));
   assert.equal(normalizeStudyDeckId(' 00042 '), '42');
   assert.equal(
-    normalizeStudyDeckId(`\t000${Number.MAX_SAFE_INTEGER}\n`),
-    String(Number.MAX_SAFE_INTEGER),
+    normalizeStudyDeckId(`\t000${MAX_POSTGRES_SERIAL_ID}\n`),
+    String(MAX_POSTGRES_SERIAL_ID),
   );
 });
 
-test('normalizeStudyDeckId rejects ids outside the study route contract', () => {
+test('normalizeStudyDeckId rejects ids outside the backend SERIAL contract', () => {
   [
     '',
     '   ',
@@ -29,6 +30,7 @@ test('normalizeStudyDeckId rejects ids outside the study route contract', () => 
     '1.2',
     '1e2',
     '42abc',
+    String(MAX_POSTGRES_SERIAL_ID + 1),
     '9007199254740992',
     '90071992547409910',
     0,
@@ -36,6 +38,8 @@ test('normalizeStudyDeckId rejects ids outside the study route contract', () => 
     1.5,
     Number.NaN,
     Number.POSITIVE_INFINITY,
+    MAX_POSTGRES_SERIAL_ID + 1,
+    Number.MAX_SAFE_INTEGER,
     Number.MAX_SAFE_INTEGER + 1,
     null,
     undefined,
@@ -108,6 +112,7 @@ test('hasDashboardDeckListPayload rejects deck ids that cannot round-trip throug
     '1e2',
     '0',
     '-1',
+    String(MAX_POSTGRES_SERIAL_ID + 1),
     String(Number.MAX_SAFE_INTEGER + 1),
     '9007199254740993',
     0,
@@ -115,6 +120,8 @@ test('hasDashboardDeckListPayload rejects deck ids that cannot round-trip throug
     1.5,
     Number.NaN,
     Number.POSITIVE_INFINITY,
+    MAX_POSTGRES_SERIAL_ID + 1,
+    Number.MAX_SAFE_INTEGER,
     Number.MAX_SAFE_INTEGER + 1,
   ].forEach((id) => {
     assert.equal(
@@ -229,6 +236,7 @@ test('selectStudyDeckTarget ignores decks with unusable study route ids', () => 
   const validDueDeck = { id: ' 42 ', name: 'Biology', totalCards: 2, dueCards: 1 };
 
   assert.equal(selectStudyDeckTarget([
+    { id: MAX_POSTGRES_SERIAL_ID + 1, name: 'Impossible id', totalCards: 5, dueCards: 5 },
     { id: 'science deck', name: 'String id', totalCards: 5, dueCards: 4 },
     { id: 0, name: 'Zero id', totalCards: 5, dueCards: 3 },
     { id: 1.5, name: 'Decimal id', totalCards: 5, dueCards: 2 },
@@ -257,6 +265,10 @@ test('getStudyDeckTargetPath only routes due targets to study sessions', () => {
   assert.equal(
     getStudyDeckTargetPath({ id: ' 42 ', totalCards: 5, dueCards: 2 }),
     '/study?deckId=42',
+  );
+  assert.equal(
+    getStudyDeckTargetPath({ id: MAX_POSTGRES_SERIAL_ID + 1, totalCards: 5, dueCards: 2 }),
+    '/decks',
   );
   assert.equal(getStudyDeckTargetPath({ id: 'science deck', totalCards: 5, dueCards: 2 }), '/decks');
   assert.equal(getStudyDeckTargetPath({ id: 3, totalCards: 1, dueCards: 2 }), '/decks');

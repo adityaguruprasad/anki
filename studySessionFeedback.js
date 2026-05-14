@@ -69,7 +69,7 @@ function getValidatedStudySessionSubmissionResponse(response, options = {}) {
     return null;
   }
 
-  if (!Number.isSafeInteger(card.id) || card.id <= 0) {
+  if (typeof card.id !== 'number' || !hasRouteSafeCardId(card.id)) {
     return null;
   }
 

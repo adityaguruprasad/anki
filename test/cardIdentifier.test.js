@@ -5,22 +5,23 @@ const {
   FRONTEND_MODULES,
 } = require('../scripts/sync-cra-src');
 const {
+  MAX_POSTGRES_SERIAL_ID,
   hasRouteSafeCardId,
   hasSameRouteSafeCardId,
   normalizeRouteSafeCardId,
 } = require('../cardIdentifier');
 
-test('normalizeRouteSafeCardId canonicalizes positive safe integer card ids', () => {
+test('normalizeRouteSafeCardId canonicalizes PostgreSQL SERIAL card ids', () => {
   assert.equal(normalizeRouteSafeCardId(7), '7');
-  assert.equal(normalizeRouteSafeCardId(Number.MAX_SAFE_INTEGER), String(Number.MAX_SAFE_INTEGER));
+  assert.equal(normalizeRouteSafeCardId(MAX_POSTGRES_SERIAL_ID), String(MAX_POSTGRES_SERIAL_ID));
   assert.equal(normalizeRouteSafeCardId(' 0007 '), '7');
   assert.equal(
-    normalizeRouteSafeCardId(`\t000${Number.MAX_SAFE_INTEGER}\n`),
-    String(Number.MAX_SAFE_INTEGER),
+    normalizeRouteSafeCardId(`\t000${MAX_POSTGRES_SERIAL_ID}\n`),
+    String(MAX_POSTGRES_SERIAL_ID),
   );
 });
 
-test('normalizeRouteSafeCardId rejects card ids that cannot round-trip through API routes', () => {
+test('normalizeRouteSafeCardId rejects card ids outside the backend SERIAL contract', () => {
   [
     undefined,
     null,
@@ -32,12 +33,15 @@ test('normalizeRouteSafeCardId rejects card ids that cannot round-trip through A
     '0',
     '000',
     '-1',
+    String(MAX_POSTGRES_SERIAL_ID + 1),
     '9007199254740992',
     0,
     -1,
     1.5,
     Number.NaN,
     Number.POSITIVE_INFINITY,
+    MAX_POSTGRES_SERIAL_ID + 1,
+    Number.MAX_SAFE_INTEGER,
     Number.MAX_SAFE_INTEGER + 1,
     {},
     [],

@@ -7,6 +7,7 @@ const {
   hasStudySessionDueCardRowPayload,
   selectValidatedStudySessionDueCard,
 } = require('../studySessionDueCards');
+const { MAX_POSTGRES_SERIAL_ID } = require('../cardIdentifier');
 
 test('selectValidatedStudySessionDueCard keeps empty arrays on the no-due path', () => {
   assert.equal(selectValidatedStudySessionDueCard([]), null);
@@ -58,12 +59,12 @@ test('selectValidatedStudySessionDueCard rejects blank or missing content', () =
   });
 });
 
-test('hasSafeStudySessionCardId accepts only IDs safe for study submissions', () => {
+test('hasSafeStudySessionCardId accepts only backend SERIAL IDs safe for study submissions', () => {
   assert.equal(hasSafeStudySessionCardId(1), true);
-  assert.equal(hasSafeStudySessionCardId(Number.MAX_SAFE_INTEGER), true);
+  assert.equal(hasSafeStudySessionCardId(MAX_POSTGRES_SERIAL_ID), true);
   assert.equal(hasSafeStudySessionCardId('42'), true);
   assert.equal(hasSafeStudySessionCardId(' 42 '), true);
-  assert.equal(hasSafeStudySessionCardId(String(Number.MAX_SAFE_INTEGER)), true);
+  assert.equal(hasSafeStudySessionCardId(String(MAX_POSTGRES_SERIAL_ID)), true);
 
   [
     undefined,
@@ -75,10 +76,13 @@ test('hasSafeStudySessionCardId accepts only IDs safe for study submissions', ()
     '1e2',
     '0',
     '-1',
+    String(MAX_POSTGRES_SERIAL_ID + 1),
     '9007199254740992',
     0,
     -1,
     1.5,
+    MAX_POSTGRES_SERIAL_ID + 1,
+    Number.MAX_SAFE_INTEGER,
     Number.MAX_SAFE_INTEGER + 1,
   ].forEach((id) => {
     assert.equal(hasSafeStudySessionCardId(id), false);
@@ -104,7 +108,10 @@ test('selectValidatedStudySessionDueCard rejects invalid IDs anywhere in the pay
     { id: '', front_content: 'Front', back_content: 'Back' },
     { id: '0', front_content: 'Front', back_content: 'Back' },
     { id: 'abc', front_content: 'Front', back_content: 'Back' },
+    { id: String(MAX_POSTGRES_SERIAL_ID + 1), front_content: 'Front', back_content: 'Back' },
     { id: 0, front_content: 'Front', back_content: 'Back' },
+    { id: MAX_POSTGRES_SERIAL_ID + 1, front_content: 'Front', back_content: 'Back' },
+    { id: Number.MAX_SAFE_INTEGER, front_content: 'Front', back_content: 'Back' },
     { id: Number.MAX_SAFE_INTEGER + 1, front_content: 'Front', back_content: 'Back' },
   ].forEach((card) => {
     assert.throws(

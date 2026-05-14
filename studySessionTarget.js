@@ -4,6 +4,7 @@ const {
   normalizeStudyDeckId,
   selectStudyDeckTarget,
 } = require('./dashboardDeckTarget');
+const { MAX_POSTGRES_SERIAL_ID } = require('./cardIdentifier');
 
 const STUDY_SESSION_REQUESTS = {
   LOAD_CARDS: 'load-cards',
@@ -19,7 +20,13 @@ function parseDeckId(search) {
   }
 
   const parsedDeckId = Number(deckIdParam);
-  return Number.isSafeInteger(parsedDeckId) && parsedDeckId > 0 ? parsedDeckId : null;
+  return (
+    Number.isSafeInteger(parsedDeckId)
+    && parsedDeckId > 0
+    && parsedDeckId <= MAX_POSTGRES_SERIAL_ID
+  )
+    ? parsedDeckId
+    : null;
 }
 
 function selectDueDeckForRecovery(decks) {

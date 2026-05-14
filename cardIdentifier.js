@@ -1,8 +1,11 @@
-const MAX_SAFE_INTEGER_TEXT = String(Number.MAX_SAFE_INTEGER);
+const MAX_POSTGRES_SERIAL_ID = 2147483647;
+const MAX_POSTGRES_SERIAL_ID_TEXT = String(MAX_POSTGRES_SERIAL_ID);
 
 function normalizeRouteSafeCardId(value) {
   if (typeof value === 'number') {
-    return Number.isSafeInteger(value) && value > 0 ? String(value) : null;
+    return Number.isSafeInteger(value) && value > 0 && value <= MAX_POSTGRES_SERIAL_ID
+      ? String(value)
+      : null;
   }
 
   if (typeof value !== 'string') {
@@ -20,10 +23,10 @@ function normalizeRouteSafeCardId(value) {
   }
 
   if (
-    normalized.length > MAX_SAFE_INTEGER_TEXT.length
+    normalized.length > MAX_POSTGRES_SERIAL_ID_TEXT.length
     || (
-      normalized.length === MAX_SAFE_INTEGER_TEXT.length
-      && normalized > MAX_SAFE_INTEGER_TEXT
+      normalized.length === MAX_POSTGRES_SERIAL_ID_TEXT.length
+      && normalized > MAX_POSTGRES_SERIAL_ID_TEXT
     )
   ) {
     return null;
@@ -44,6 +47,7 @@ function hasSameRouteSafeCardId(leftId, rightId) {
 }
 
 module.exports = {
+  MAX_POSTGRES_SERIAL_ID,
   hasRouteSafeCardId,
   hasSameRouteSafeCardId,
   normalizeRouteSafeCardId,

@@ -8,12 +8,16 @@ const {
   parseDeckId,
   shouldShowNoDueNoticeForInitialStudySessionRequest,
 } = require('../studySessionTarget');
+const { MAX_POSTGRES_SERIAL_ID } = require('../cardIdentifier');
 
-test('parseDeckId returns a positive safe integer deck id from the route', () => {
+test('parseDeckId returns a positive PostgreSQL SERIAL deck id from the route', () => {
   assert.equal(parseDeckId('?deckId=123'), 123);
+  assert.equal(parseDeckId(`?deckId=${MAX_POSTGRES_SERIAL_ID}`), MAX_POSTGRES_SERIAL_ID);
   assert.equal(parseDeckId('?deckId=00042'), 42);
   assert.equal(parseDeckId('?deckId=%2042%20'), null);
   assert.equal(parseDeckId('?deckId=0'), null);
+  assert.equal(parseDeckId(`?deckId=${MAX_POSTGRES_SERIAL_ID + 1}`), null);
+  assert.equal(parseDeckId(`?deckId=${Number.MAX_SAFE_INTEGER}`), null);
   assert.equal(parseDeckId('?deckId=-1'), null);
   assert.equal(parseDeckId('?deckId=abc'), null);
   assert.equal(parseDeckId(''), null);
@@ -24,6 +28,9 @@ test('getStudySessionRequest fetches decks when no valid deck id is present', ()
     type: STUDY_SESSION_REQUESTS.LOAD_DECKS,
   });
   assert.deepEqual(getStudySessionRequest('?deckId=abc'), {
+    type: STUDY_SESSION_REQUESTS.LOAD_DECKS,
+  });
+  assert.deepEqual(getStudySessionRequest(`?deckId=${MAX_POSTGRES_SERIAL_ID + 1}`), {
     type: STUDY_SESSION_REQUESTS.LOAD_DECKS,
   });
 });
