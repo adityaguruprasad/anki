@@ -1,4 +1,6 @@
 const MALFORMED_DECK_MUTATION_PAYLOAD_ERROR = 'Malformed deck mutation payload';
+const MAX_POSTGRES_SERIAL_ID = 2147483647;
+const MAX_POSTGRES_SERIAL_ID_STRING = String(MAX_POSTGRES_SERIAL_ID);
 
 function isObjectRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -10,14 +12,30 @@ function isNonBlankString(value) {
 
 function hasUsableDeckId(value) {
   if (typeof value === 'number') {
-    return Number.isFinite(value);
+    return Number.isInteger(value) && value >= 1 && value <= MAX_POSTGRES_SERIAL_ID;
   }
 
-  return isNonBlankString(value);
+  if (typeof value === 'string') {
+    return (
+      /^[1-9]\d*$/.test(value)
+      && (
+        value.length < MAX_POSTGRES_SERIAL_ID_STRING.length
+        || (
+          value.length === MAX_POSTGRES_SERIAL_ID_STRING.length
+          // PostgreSQL SERIAL stores int4 ids, so equal-length digit strings can be compared lexicographically.
+          && value <= MAX_POSTGRES_SERIAL_ID_STRING
+        )
+      )
+    );
+  }
+
+  return false;
 }
 
 function hasSameDeckId(leftId, rightId) {
-  return String(leftId) === String(rightId);
+  return hasUsableDeckId(leftId)
+    && hasUsableDeckId(rightId)
+    && String(leftId) === String(rightId);
 }
 
 function hasDeckMutationResponsePayload(payload, options = {}) {
