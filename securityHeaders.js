@@ -6,6 +6,12 @@ const DEFAULT_SECURITY_HEADERS = Object.freeze({
   'Cross-Origin-Opener-Policy': 'same-origin',
   'X-Permitted-Cross-Domain-Policies': 'none',
 });
+// Keep the production HSTS default conservative: subdomain and preload readiness
+// depends on the deployment, so the built-in policy is max-age only.
+const STRICT_TRANSPORT_SECURITY_HEADER = 'max-age=15552000';
+const PRODUCTION_SECURITY_HEADERS = Object.freeze({
+  'Strict-Transport-Security': STRICT_TRANSPORT_SECURITY_HEADER,
+});
 
 function isPlainObject(value) {
   if (value == null || typeof value !== 'object') {
@@ -36,10 +42,18 @@ function validateHeaderValue(name, value) {
   }
 }
 
-function buildSecurityHeaders(options) {
+function isProductionEnvironment(config = process.env) {
+  return config?.NODE_ENV === 'production';
+}
+
+function buildSecurityHeaders(options, config = process.env) {
   validateOptions(options);
 
   const headers = { ...DEFAULT_SECURITY_HEADERS };
+  if (isProductionEnvironment(config)) {
+    Object.assign(headers, PRODUCTION_SECURITY_HEADERS);
+  }
+
   const overrides = options || {};
 
   for (const [name, value] of Object.entries(overrides)) {
@@ -56,8 +70,8 @@ function buildSecurityHeaders(options) {
   return Object.freeze(headers);
 }
 
-function createSecurityHeadersMiddleware(options) {
-  const headers = buildSecurityHeaders(options);
+function createSecurityHeadersMiddleware(options, config = process.env) {
+  const headers = buildSecurityHeaders(options, config);
 
   return function securityHeadersMiddleware(req, res, next) {
     for (const [name, value] of Object.entries(headers)) {
@@ -70,6 +84,8 @@ function createSecurityHeadersMiddleware(options) {
 
 module.exports = {
   DEFAULT_SECURITY_HEADERS,
+  PRODUCTION_SECURITY_HEADERS,
+  STRICT_TRANSPORT_SECURITY_HEADER,
   buildSecurityHeaders,
   createSecurityHeadersMiddleware,
 };

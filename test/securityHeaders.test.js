@@ -5,6 +5,8 @@ const test = require('node:test');
 
 const {
   DEFAULT_SECURITY_HEADERS,
+  PRODUCTION_SECURITY_HEADERS,
+  STRICT_TRANSPORT_SECURITY_HEADER,
   buildSecurityHeaders,
   createSecurityHeadersMiddleware,
 } = require('../securityHeaders');
@@ -30,24 +32,81 @@ function createRes() {
 test('default security headers are immutable and exactly match the API baseline', () => {
   assert.equal(Object.isFrozen(DEFAULT_SECURITY_HEADERS), true);
   assert.deepEqual(DEFAULT_SECURITY_HEADERS, EXPECTED_DEFAULT_SECURITY_HEADERS);
-  assert.deepEqual(buildSecurityHeaders(), EXPECTED_DEFAULT_SECURITY_HEADERS);
+  assert.deepEqual(
+    buildSecurityHeaders(undefined, { NODE_ENV: 'test' }),
+    EXPECTED_DEFAULT_SECURITY_HEADERS,
+  );
+});
+
+test('unset environment config keeps the non-production security header baseline', () => {
+  const headers = buildSecurityHeaders(undefined, {});
+
+  assert.equal(Object.hasOwn(headers, 'Strict-Transport-Security'), false);
+  assert.deepEqual(headers, EXPECTED_DEFAULT_SECURITY_HEADERS);
 });
 
 test('security headers middleware emits the exact default header set', () => {
   const res = createRes();
 
-  createSecurityHeadersMiddleware()({}, res, () => {});
+  createSecurityHeadersMiddleware(undefined, { NODE_ENV: 'test' })({}, res, () => {});
 
   assert.deepEqual(res.headers, EXPECTED_DEFAULT_SECURITY_HEADERS);
 });
 
-test('security header overrides replace values and false/null/undefined disable defaults', () => {
-  const headers = buildSecurityHeaders({
-    'Referrer-Policy': 'same-origin',
-    'X-Frame-Options': false,
-    'Cross-Origin-Resource-Policy': null,
-    'Cross-Origin-Opener-Policy': undefined,
+test('production security headers add conservative HSTS by default', () => {
+  assert.equal(Object.isFrozen(PRODUCTION_SECURITY_HEADERS), true);
+  assert.deepEqual(PRODUCTION_SECURITY_HEADERS, {
+    'Strict-Transport-Security': STRICT_TRANSPORT_SECURITY_HEADER,
   });
+
+  assert.deepEqual(buildSecurityHeaders(undefined, { NODE_ENV: 'production' }), {
+    ...EXPECTED_DEFAULT_SECURITY_HEADERS,
+    'Strict-Transport-Security': STRICT_TRANSPORT_SECURITY_HEADER,
+  });
+});
+
+test('security header overrides can replace or disable production HSTS', () => {
+  assert.deepEqual(
+    buildSecurityHeaders(
+      { 'Strict-Transport-Security': 'max-age=0' },
+      { NODE_ENV: 'production' },
+    ),
+    {
+      ...EXPECTED_DEFAULT_SECURITY_HEADERS,
+      'Strict-Transport-Security': 'max-age=0',
+    },
+  );
+
+  const headers = buildSecurityHeaders(
+    { 'Strict-Transport-Security': false },
+    { NODE_ENV: 'production' },
+  );
+
+  assert.equal(Object.hasOwn(headers, 'Strict-Transport-Security'), false);
+  assert.deepEqual(headers, EXPECTED_DEFAULT_SECURITY_HEADERS);
+});
+
+test('security headers middleware emits production HSTS from injected environment config', () => {
+  const res = createRes();
+
+  createSecurityHeadersMiddleware(undefined, { NODE_ENV: 'production' })({}, res, () => {});
+
+  assert.deepEqual(res.headers, {
+    ...EXPECTED_DEFAULT_SECURITY_HEADERS,
+    'Strict-Transport-Security': STRICT_TRANSPORT_SECURITY_HEADER,
+  });
+});
+
+test('security header overrides replace values and false/null/undefined disable defaults', () => {
+  const headers = buildSecurityHeaders(
+    {
+      'Referrer-Policy': 'same-origin',
+      'X-Frame-Options': false,
+      'Cross-Origin-Resource-Policy': null,
+      'Cross-Origin-Opener-Policy': undefined,
+    },
+    { NODE_ENV: 'test' },
+  );
 
   assert.equal(headers['Referrer-Policy'], 'same-origin');
   assert.equal(Object.hasOwn(headers, 'X-Frame-Options'), false);
@@ -61,9 +120,10 @@ test('security header overrides replace values and false/null/undefined disable 
 });
 
 test('security header overrides can add new headers', () => {
-  const headers = buildSecurityHeaders({
-    'Permissions-Policy': 'geolocation=()',
-  });
+  const headers = buildSecurityHeaders(
+    { 'Permissions-Policy': 'geolocation=()' },
+    { NODE_ENV: 'test' },
+  );
 
   assert.equal(headers['Permissions-Policy'], 'geolocation=()');
   assert.deepEqual(headers, {
@@ -140,7 +200,7 @@ test('security headers middleware calls next exactly once', () => {
   const res = createRes();
   let nextCalls = 0;
 
-  createSecurityHeadersMiddleware()({}, res, () => {
+  createSecurityHeadersMiddleware(undefined, { NODE_ENV: 'test' })({}, res, () => {
     nextCalls += 1;
   });
 
