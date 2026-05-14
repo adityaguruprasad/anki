@@ -39,8 +39,12 @@ CREATE TABLE cards (
   review_count INTEGER NOT NULL DEFAULT 0,
   ease_factor FLOAT NOT NULL DEFAULT 2.5,
   -- anki.db is the canonical bootstrap schema for new databases. Existing
-  -- deployments must apply the scheduling metadata migration before relying
-  -- on these persisted scheduling invariants.
+  -- deployments must apply the matching migrations before relying on these
+  -- persisted content and scheduling invariants.
+  CONSTRAINT cards_front_content_non_blank_check CHECK (front_content ~ '[^[:space:]]'),
+  CONSTRAINT cards_back_content_non_blank_check CHECK (back_content ~ '[^[:space:]]'),
+  CONSTRAINT cards_front_content_max_length_check CHECK (char_length(front_content) <= 10000),
+  CONSTRAINT cards_back_content_max_length_check CHECK (char_length(back_content) <= 10000),
   CONSTRAINT cards_interval_min_check CHECK (interval >= 1),
   CONSTRAINT cards_interval_max_check CHECK (interval <= 36500),
   CONSTRAINT cards_review_count_non_negative_check CHECK (review_count >= 0),
