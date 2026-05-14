@@ -299,6 +299,7 @@ test('register returns 409 for duplicate username or email unique violations wit
   const cases = [
     { name: 'duplicate username', constraint: 'users_username_key' },
     { name: 'duplicate email', constraint: 'users_email_key' },
+    { name: 'duplicate normalized email', constraint: 'users_normalized_email_unique_idx' },
   ];
 
   for (const { name, constraint } of cases) {

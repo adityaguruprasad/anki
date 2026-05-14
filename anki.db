@@ -7,6 +7,9 @@ CREATE TABLE users (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE UNIQUE INDEX users_normalized_email_unique_idx
+  ON users ((LOWER(TRIM(email))));
+
 -- Create decks table. Users own decks; the cascade supports future account erasure
 -- by removing personal learning content owned by a deleted user.
 CREATE TABLE decks (
