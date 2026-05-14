@@ -92,4 +92,4 @@ const calculateNextReview = (card, quality, reviewedAt) => {
   };
 };
 
-module.exports = { calculateNextReview, MAX_INTERVAL_DAYS };
+module.exports = { calculateNextReview, MAX_INTERVAL_DAYS, MIN_EASE_FACTOR };

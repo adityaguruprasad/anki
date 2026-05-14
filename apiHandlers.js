@@ -1,5 +1,6 @@
 const { validateDeckName } = require('./deckNameValidation');
 const { isValidIsoTimestamp } = require('./isoTimestampValidation');
+const { MAX_INTERVAL_DAYS, MIN_EASE_FACTOR } = require('./spacedRepetition');
 
 const BROWSE_CARDS_DEFAULT_LIMIT = 50;
 const BROWSE_CARDS_MAX_LIMIT = 100;
@@ -43,9 +44,46 @@ const STUDY_SESSION_RESPONSE_CARD_FIELDS = Object.freeze([
   'review_count',
   'last_reviewed',
 ]);
+const INVALID_SCHEDULER_OUTPUT_ERROR = 'Invalid scheduler output';
 
 function isValidQuality(quality) {
   return Number.isInteger(quality) && quality >= 0 && quality <= 5;
+}
+
+function isValidSchedulerNextReview(value) {
+  if (value instanceof Date) {
+    return !Number.isNaN(value.getTime());
+  }
+
+  return isValidIsoTimestamp(value);
+}
+
+function assertValidSchedulingUpdate(schedule) {
+  if (schedule === null || typeof schedule !== 'object' || Array.isArray(schedule)) {
+    throw new TypeError(INVALID_SCHEDULER_OUTPUT_ERROR);
+  }
+
+  const { interval, ease_factor, next_review } = schedule;
+
+  if (
+    !Number.isSafeInteger(interval)
+    || interval < 1
+    || interval > MAX_INTERVAL_DAYS
+  ) {
+    throw new TypeError(INVALID_SCHEDULER_OUTPUT_ERROR);
+  }
+
+  if (
+    typeof ease_factor !== 'number'
+    || !Number.isFinite(ease_factor)
+    || ease_factor < MIN_EASE_FACTOR
+  ) {
+    throw new TypeError(INVALID_SCHEDULER_OUTPUT_ERROR);
+  }
+
+  if (!isValidSchedulerNextReview(next_review)) {
+    throw new TypeError(INVALID_SCHEDULER_OUTPUT_ERROR);
+  }
 }
 
 function validatePositiveIntegerIdentifier(value, fieldName) {
@@ -702,7 +740,9 @@ async function submitStudySession(req, res, db, calculateNextReview) {
     }
 
     const reviewedAt = new Date();
-    const { ease_factor, interval, next_review } = calculateNextReview(card, quality, reviewedAt);
+    const schedule = calculateNextReview(card, quality, reviewedAt);
+    assertValidSchedulingUpdate(schedule);
+    const { ease_factor, interval, next_review } = schedule;
 
     // CTE contract: no row -> missing/unowned 404; updated row -> success; target-only sentinel -> owned but no longer due 409.
     const updateResult = await client.query(

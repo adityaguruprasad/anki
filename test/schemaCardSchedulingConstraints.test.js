@@ -278,3 +278,49 @@ test('study session update writes scheduler output within card scheduling constr
   assert.equal(updateCall.params[2] <= intervalCeiling, true);
   assert.equal(updateCall.params[3] >= easeFactorFloor, true);
 });
+
+test('study session rejects invalid scheduler output before updating card scheduling state', async (t) => {
+  const validNextReview = '2026-05-11T14:30:00.000Z';
+  const invalidSchedules = [
+    { name: 'missing schedule', schedule: null },
+    { name: 'fractional interval', schedule: { interval: 1.5, ease_factor: 2.5, next_review: validNextReview } },
+    { name: 'interval below floor', schedule: { interval: 0, ease_factor: 2.5, next_review: validNextReview } },
+    { name: 'interval above ceiling', schedule: { interval: MAX_INTERVAL_DAYS + 1, ease_factor: 2.5, next_review: validNextReview } },
+    { name: 'ease factor below floor', schedule: { interval: 1, ease_factor: 1.29, next_review: validNextReview } },
+    { name: 'non-finite ease factor', schedule: { interval: 1, ease_factor: Number.NaN, next_review: validNextReview } },
+    { name: 'invalid next review', schedule: { interval: 1, ease_factor: 2.5, next_review: 'not-a-date' } },
+  ];
+
+  for (const { name, schedule } of invalidSchedules) {
+    await t.test(name, async () => {
+      const db = createStudySessionDb({
+        id: 17,
+        deck_id: 3,
+        front_content: 'Front',
+        back_content: 'Back',
+        created_at: '2026-05-01T12:00:00.000Z',
+        last_reviewed: null,
+        next_review: null,
+        interval: 1,
+        ease_factor: 2.5,
+        review_count: 0,
+        __is_due: true,
+      });
+      const req = { body: { cardId: 17, quality: 3 }, user: { userId: 'user-1' } };
+      const res = createRes();
+      const originalError = console.error;
+      console.error = () => {};
+
+      try {
+        await submitStudySession(req, res, db, () => schedule);
+      } finally {
+        console.error = originalError;
+      }
+
+      assert.equal(res.statusCode, 500);
+      assert.deepEqual(res.body, { error: 'Internal server error' });
+      assert.equal(db.calls.length, 1);
+      assert.doesNotMatch(db.calls[0].sql, /\bUPDATE\s+cards\b/i);
+    });
+  }
+});
