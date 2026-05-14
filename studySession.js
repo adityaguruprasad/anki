@@ -97,6 +97,8 @@ const StudySession = ({ env, onAuthExpired }) => {
       if (!isCurrentRequest()) return;
 
       if (handleAuthExpiredResponse(response, onAuthExpired)) {
+        setSubmitInFlight(false);
+        setIsLoading(false);
         return;
       }
 
@@ -179,6 +181,8 @@ const StudySession = ({ env, onAuthExpired }) => {
       if (!isCurrentRequest()) return;
 
       if (handleAuthExpiredResponse(response, onAuthExpired)) {
+        setSubmitInFlight(false);
+        setIsLoading(false);
         return;
       }
 
@@ -258,6 +262,7 @@ const StudySession = ({ env, onAuthExpired }) => {
       }
 
       if (handleAuthExpiredResponse(response, onAuthExpired)) {
+        setSubmitInFlight(false);
         return;
       }
 
