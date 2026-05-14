@@ -1127,6 +1127,10 @@ test('GET /api/decks/:deckId/cards returns 400 for invalid cursor and skips db q
       error: 'Invalid beforeCreatedAt: must be a valid date',
     },
     {
+      query: { beforeCreatedAt: '2026-05-08T13:00:00.1234567Z', beforeId: '3' },
+      error: 'Invalid beforeCreatedAt: must be a valid date',
+    },
+    {
       query: { beforeCreatedAt: '2026-02-31T13:00:00.000Z', beforeId: '3' },
       error: 'Invalid beforeCreatedAt: must be a valid date',
     },
@@ -1148,6 +1152,10 @@ test('GET /api/decks/:deckId/cards returns 400 for invalid cursor and skips db q
     },
     {
       query: { cursorCreatedAt: 'not-a-date', cursorId: '3' },
+      error: 'Invalid cursorCreatedAt: must be a valid date',
+    },
+    {
+      query: { cursorCreatedAt: `2026-05-08T13:00:00.${'1'.repeat(200)}Z`, cursorId: '3' },
       error: 'Invalid cursorCreatedAt: must be a valid date',
     },
     {

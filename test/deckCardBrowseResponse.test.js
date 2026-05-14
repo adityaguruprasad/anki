@@ -198,6 +198,8 @@ test('parseDeckCardBrowseResponsePayload rejects invalid cursor timestamps and i
     { nextCursor: { cursorCreatedAt: 'not-a-date', cursorId: 3 } },
     { nextCursor: { cursorCreatedAt: '2026-05-08', cursorId: 3 } },
     { nextCursor: { cursorCreatedAt: '2026-05-08T13:00:00', cursorId: 3 } },
+    { nextCursor: { cursorCreatedAt: '2026-05-08T13:00:00.1234567Z', cursorId: 3 } },
+    { nextCursor: { cursorCreatedAt: `2026-05-08T13:00:00.${'1'.repeat(200)}Z`, cursorId: 3 } },
     { nextCursor: { cursorCreatedAt: '2026-02-31T13:00:00.000Z', cursorId: 3 } },
     { nextCursor: { cursorCreatedAt: '2026-05-08T13:00:00.000Z ', cursorId: 3 } },
     { nextCursor: { cursorCreatedAt: '2026-05-08T13:00:00.000Z', cursorId: 0 } },
