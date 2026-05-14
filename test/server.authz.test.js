@@ -1937,6 +1937,37 @@ test('DELETE /api/cards/:cardId deletes an owned card with one user-scoped query
   assert.doesNotMatch(db.calls[0].sql, /SELECT[\s\S]+FROM\s+cards/i);
 });
 
+test('DELETE /api/cards/:cardId response omits unexpected returned card fields', async () => {
+  const deletedRow = {
+    id: 77,
+    front_content: 'Front',
+    back_content: 'Back',
+    next_review: '2026-05-08T12:00:00.000Z',
+    deck_id: 12,
+    user_id: 'user-1',
+    private_notes: 'do not expose',
+  };
+  const db = createDb([{ rowCount: 1, rows: [deletedRow] }]);
+  const req = { params: { cardId: '77' }, user: { userId: 'user-1' } };
+  const res = createRes();
+
+  await deleteCard(req, res, db);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, {
+    success: true,
+    card: {
+      id: 77,
+      front_content: 'Front',
+      back_content: 'Back',
+      next_review: '2026-05-08T12:00:00.000Z',
+    },
+  });
+  assert.equal(Object.hasOwn(res.body.card, 'deck_id'), false);
+  assert.equal(Object.hasOwn(res.body.card, 'user_id'), false);
+  assert.equal(Object.hasOwn(res.body.card, 'private_notes'), false);
+});
+
 test('DELETE /api/cards/:cardId returns 400 for invalid cardId and skips db query', async () => {
   const invalidCardIds = [
     undefined,

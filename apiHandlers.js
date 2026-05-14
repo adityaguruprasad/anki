@@ -44,6 +44,12 @@ const STUDY_SESSION_RESPONSE_CARD_FIELDS = Object.freeze([
   'review_count',
   'last_reviewed',
 ]);
+const DELETE_CARD_RESPONSE_CARD_FIELDS = Object.freeze([
+  'id',
+  'front_content',
+  'back_content',
+  'next_review',
+]);
 const INVALID_SCHEDULER_OUTPUT_ERROR = 'Invalid scheduler output';
 
 function isValidQuality(quality) {
@@ -232,6 +238,18 @@ function toStudySessionResponseCardPayload(row) {
   const card = {};
 
   for (const field of STUDY_SESSION_RESPONSE_CARD_FIELDS) {
+    if (Object.hasOwn(row, field)) {
+      card[field] = row[field];
+    }
+  }
+
+  return card;
+}
+
+function toDeleteCardResponseCardPayload(row) {
+  const card = {};
+
+  for (const field of DELETE_CARD_RESPONSE_CARD_FIELDS) {
     if (Object.hasOwn(row, field)) {
       card[field] = row[field];
     }
@@ -680,7 +698,10 @@ async function deleteCard(req, res, db) {
       return res.status(404).json({ error: 'Card not found' });
     }
 
-    return res.json({ success: true, card: deleteResult.rows[0] });
+    return res.json({
+      success: true,
+      card: toDeleteCardResponseCardPayload(deleteResult.rows[0]),
+    });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Internal server error' });
