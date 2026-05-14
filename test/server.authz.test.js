@@ -19,6 +19,9 @@ const {
 } = require('../apiHandlers');
 const { getVarcharColumnLength, readAnkiSchema } = require('./schemaHelpers');
 
+const UNSAFE_DECK_NAME_ERROR =
+  'Invalid deck name: cannot contain line breaks, control characters, or invisible formatting characters';
+
 function createRes() {
   return {
     statusCode: 200,
@@ -242,6 +245,11 @@ test('POST /api/decks returns 400 for invalid deck name and skips db query', asy
     [42, 'Invalid deck name: must be a string'],
     ['', 'Invalid deck name: cannot be blank'],
     ['   ', 'Invalid deck name: cannot be blank'],
+    ['Biology\n101', UNSAFE_DECK_NAME_ERROR],
+    ['Biology\u0085101', UNSAFE_DECK_NAME_ERROR],
+    ['Biology\u2028101', UNSAFE_DECK_NAME_ERROR],
+    ['Biology\u202e101', UNSAFE_DECK_NAME_ERROR],
+    ['Biology\uFEFF101', UNSAFE_DECK_NAME_ERROR],
     [
       'a'.repeat(deckNameColumnLength + 1),
       `Invalid deck name: must be at most ${deckNameColumnLength} characters`,
@@ -344,6 +352,11 @@ test('PATCH /api/decks/:deckId returns 400 for invalid deck name and skips db qu
     [42, 'Invalid deck name: must be a string'],
     ['', 'Invalid deck name: cannot be blank'],
     ['   ', 'Invalid deck name: cannot be blank'],
+    ['Biology\n101', UNSAFE_DECK_NAME_ERROR],
+    ['Biology\u0085101', UNSAFE_DECK_NAME_ERROR],
+    ['Biology\u2029101', UNSAFE_DECK_NAME_ERROR],
+    ['Biology\u2066101', UNSAFE_DECK_NAME_ERROR],
+    ['Biology\uFEFF101', UNSAFE_DECK_NAME_ERROR],
     [
       'a'.repeat(deckNameColumnLength + 1),
       `Invalid deck name: must be at most ${deckNameColumnLength} characters`,

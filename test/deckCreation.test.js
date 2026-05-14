@@ -9,6 +9,9 @@ const {
 } = require('../deckNameValidation');
 const { getVarcharColumnLength } = require('./schemaHelpers');
 
+const UNSAFE_DECK_NAME_ERROR =
+  'Invalid deck name: cannot contain line breaks, control characters, or invisible formatting characters';
+
 function createRes() {
   return {
     statusCode: 200,
@@ -65,6 +68,50 @@ test('validateDeckName rejects blank names after trim', () => {
   });
 });
 
+test('validateDeckName preserves ordinary trimmed Unicode names', () => {
+  assert.deepEqual(
+    validateDeckName('  Fran\u00e7ais \u65e5\u672c\u8a9e \u0627\u0644\u0639\u0631\u0628\u064a\u0629 101  '),
+    {
+      ok: true,
+      value: 'Fran\u00e7ais \u65e5\u672c\u8a9e \u0627\u0644\u0639\u0631\u0628\u064a\u0629 101',
+    },
+  );
+});
+
+test('validateDeckName rejects embedded invisible and control characters after trim', () => {
+  assert.deepEqual(validateDeckName('\n\tBiology 101\t\n'), {
+    ok: true,
+    value: 'Biology 101',
+  });
+
+  for (const [name, description] of [
+    ['Biology\n101', 'line feed'],
+    ['Biology\t101', 'tab'],
+    ['Biology\r101', 'carriage return'],
+    ['Biology\u0000101', 'NUL'],
+    ['Biology\u007f101', 'DEL'],
+    ['Biology\u0085101', 'C1 next line'],
+    ['Biology\u009f101', 'C1 application program command'],
+    ['Biology\u2028101', 'Unicode line separator'],
+    ['Biology\u2029101', 'Unicode paragraph separator'],
+    ['Biology\u061c101', 'Arabic letter mark'],
+    ['Biology\u200e101', 'left-to-right mark'],
+    ['Biology\u202e101', 'right-to-left override'],
+    ['Biology\u2066101', 'left-to-right isolate'],
+    ['Biology\uFEFF101', 'zero-width no-break space'],
+  ]) {
+    assert.deepEqual(
+      validateDeckName(name),
+      {
+        ok: false,
+        code: DECK_NAME_VALIDATION_ERROR_CODES.UNSAFE_CHARACTERS,
+        error: UNSAFE_DECK_NAME_ERROR,
+      },
+      description,
+    );
+  }
+});
+
 test('validateDeckName rejects over-length names', () => {
   const longName = 'a'.repeat(MAX_DECK_NAME_LENGTH + 1);
   assert.deepEqual(validateDeckName(longName), {
@@ -101,13 +148,22 @@ test('POST /api/decks returns 409 when a case-insensitive duplicate exists', asy
 
 test('POST /api/decks returns 400 when validation fails', async () => {
   const db = createDb([]);
-  const req = { body: { name: '   ' }, user: { userId: 'user-1' } };
-  const res = createRes();
+  const invalidCases = [
+    ['   ', 'Invalid deck name: cannot be blank'],
+    ['Biology\n101', UNSAFE_DECK_NAME_ERROR],
+    ['Biology\u202e101', UNSAFE_DECK_NAME_ERROR],
+    ['Biology\uFEFF101', UNSAFE_DECK_NAME_ERROR],
+  ];
 
-  await createDeck(req, res, db);
+  for (const [name, error] of invalidCases) {
+    const req = { body: { name }, user: { userId: 'user-1' } };
+    const res = createRes();
 
-  assert.equal(res.statusCode, 400);
-  assert.deepEqual(res.body, { error: 'Invalid deck name: cannot be blank' });
+    await createDeck(req, res, db);
+
+    assert.equal(res.statusCode, 400);
+    assert.deepEqual(res.body, { error });
+  }
   assert.equal(db.calls.length, 0);
 });
 
