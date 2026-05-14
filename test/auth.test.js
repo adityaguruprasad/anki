@@ -575,52 +575,222 @@ test('login throttles repeated missing-account failures before extra dummy work'
   ]);
 });
 
+test('login keeps source IP spray threshold independent from credential threshold', async () => {
+  const db = createDb([
+    { rowCount: 0, rows: [] },
+    { rowCount: 0, rows: [] },
+  ]);
+  const passwordHasher = createPasswordHasher({ compareResult: true });
+  const now = () => 1750;
+  const { login } = createAuthHandlers(db, {
+    jwtSecret: 'source-rate-limit-secret',
+    passwordHasher,
+    loginRateLimit: {
+      maxFailures: 1,
+      windowMs: 60000,
+      now,
+    },
+    loginSourceRateLimit: {
+      maxFailures: 2,
+      windowMs: 60000,
+      now,
+    },
+  });
+  const sourceIp = '203.0.113.12';
+  const password = 'candidate-password';
+
+  for (const email of ['first@example.com', 'second@example.com']) {
+    const res = createRes();
+
+    await login({ ip: sourceIp, body: { email, password } }, res);
+
+    assert.equal(res.statusCode, 401);
+    assert.deepEqual(res.body, { error: 'Invalid credentials' });
+  }
+
+  const blockedRes = createRes();
+  await login({ ip: sourceIp, body: { email: 'third@example.com', password } }, blockedRes);
+
+  assert.equal(blockedRes.statusCode, 429);
+  assert.deepEqual(blockedRes.body, { error: LOGIN_RATE_LIMIT_ERROR });
+  assert.equal(db.calls.length, 2);
+  assert.equal(passwordHasher.compareCalls.length, 2);
+  assert.deepEqual(db.calls.map((call) => call.params), [
+    ['first@example.com'],
+    ['second@example.com'],
+  ]);
+  assert.deepEqual(passwordHasher.compareCalls, [
+    { password, passwordHash: MISSING_ACCOUNT_DUMMY_PASSWORD_HASH },
+    { password, passwordHash: MISSING_ACCOUNT_DUMMY_PASSWORD_HASH },
+  ]);
+});
+
+test('login throttles unknown source password spraying before extra work', async () => {
+  const db = createDb([
+    { rowCount: 0, rows: [] },
+    { rowCount: 0, rows: [] },
+    { rowCount: 0, rows: [] },
+  ]);
+  const passwordHasher = createPasswordHasher({ compareResult: true });
+  const { login } = createAuthHandlers(db, {
+    jwtSecret: 'unknown-source-rate-limit-secret',
+    passwordHasher,
+    loginSourceRateLimit: {
+      maxFailures: 2,
+      windowMs: 60000,
+      now: () => 1800,
+    },
+  });
+  const password = 'candidate-password';
+
+  for (const email of ['first@example.com', 'second@example.com']) {
+    const res = createRes();
+
+    await login({ body: { email, password } }, res);
+
+    assert.equal(res.statusCode, 401);
+    assert.deepEqual(res.body, { error: 'Invalid credentials' });
+  }
+
+  const blockedRes = createRes();
+  await login({ body: { email: 'third@example.com', password } }, blockedRes);
+
+  assert.equal(blockedRes.statusCode, 429);
+  assert.deepEqual(blockedRes.body, { error: LOGIN_RATE_LIMIT_ERROR });
+  assert.equal(db.calls.length, 2);
+  assert.equal(passwordHasher.compareCalls.length, 2);
+  assert.deepEqual(db.calls.map((call) => call.params), [
+    ['first@example.com'],
+    ['second@example.com'],
+  ]);
+  assert.deepEqual(passwordHasher.compareCalls, [
+    { password, passwordHash: MISSING_ACCOUNT_DUMMY_PASSWORD_HASH },
+    { password, passwordHash: MISSING_ACCOUNT_DUMMY_PASSWORD_HASH },
+  ]);
+});
+
+test('login success does not clear source IP failures from rotated emails', async () => {
+  const userRow = { id: 83, email: 'ada@example.com', password_hash: 'stored-user-hash' };
+  const db = createDb([
+    { rowCount: 0, rows: [] },
+    { rowCount: 1, rows: [userRow] },
+    { rowCount: 0, rows: [] },
+    { rowCount: 0, rows: [] },
+  ]);
+  const passwordHasher = createSequencePasswordHasher([false, true, false, false]);
+  const { login } = createAuthHandlers(db, {
+    jwtSecret: 'source-rate-limit-reset-secret',
+    passwordHasher,
+    loginSourceRateLimit: {
+      maxFailures: 2,
+      windowMs: 60000,
+      now: () => 1900,
+    },
+  });
+  const sourceIp = '203.0.113.13';
+  const password = 'candidate-password';
+
+  const firstFailure = createRes();
+  await login({ ip: sourceIp, body: { email: 'first@example.com', password } }, firstFailure);
+  assert.equal(firstFailure.statusCode, 401);
+
+  const success = createRes();
+  await login(
+    { ip: sourceIp, body: { email: 'ada@example.com', password: 'correct-password' } },
+    success
+  );
+  assert.equal(success.statusCode, 200);
+  assert.equal(verifyToken(success.body.token, 'source-rate-limit-reset-secret').userId, 83);
+
+  const secondFailure = createRes();
+  await login({ ip: sourceIp, body: { email: 'second@example.com', password } }, secondFailure);
+  assert.equal(secondFailure.statusCode, 401);
+
+  const blockedRes = createRes();
+  await login({ ip: sourceIp, body: { email: 'third@example.com', password } }, blockedRes);
+
+  assert.equal(blockedRes.statusCode, 429);
+  assert.deepEqual(blockedRes.body, { error: LOGIN_RATE_LIMIT_ERROR });
+  assert.equal(db.calls.length, 3);
+  assert.equal(passwordHasher.compareCalls.length, 3);
+  assert.deepEqual(db.calls.map((call) => call.params), [
+    ['first@example.com'],
+    ['ada@example.com'],
+    ['second@example.com'],
+  ]);
+});
+
 test('login clears previous credential failures after a successful login', async () => {
+  let now = 0;
   const userRow = { id: 81, email: 'ada@example.com', password_hash: 'stored-user-hash' };
   const db = createDb([
+    { rowCount: 0, rows: [] },
+    { rowCount: 1, rows: [userRow] },
     { rowCount: 1, rows: [userRow] },
     { rowCount: 1, rows: [userRow] },
     { rowCount: 1, rows: [userRow] },
     { rowCount: 1, rows: [userRow] },
   ]);
-  const passwordHasher = createSequencePasswordHasher([false, true, false, false]);
+  const passwordHasher = createSequencePasswordHasher([false, false, true, false, false, false]);
   const { login } = createAuthHandlers(db, {
     jwtSecret: 'rate-limit-reset-secret',
     passwordHasher,
     loginRateLimit: {
-      maxFailures: 2,
-      windowMs: 60000,
-      now: () => 2000,
+      maxFailures: 3,
+      windowMs: 100,
+      now: () => now,
     },
   });
+  const sourceIp = '203.0.113.20';
+  const password = 'candidate-password';
   const req = {
-    ip: '203.0.113.20',
-    body: { email: 'ada@example.com', password: 'candidate-password' },
+    ip: sourceIp,
+    body: { email: 'ada@example.com', password },
   };
 
+  const sourcePrelude = createRes();
+  await login(
+    { ip: sourceIp, body: { email: 'source-prelude@example.com', password } },
+    sourcePrelude
+  );
+  assert.equal(sourcePrelude.statusCode, 401);
+
+  now = 50;
   const firstFailure = createRes();
   await login(req, firstFailure);
   assert.equal(firstFailure.statusCode, 401);
 
+  now = 60;
   const success = createRes();
-  await login(req, success);
+  await login({ ...req, body: { ...req.body, password: 'correct-password' } }, success);
   assert.equal(success.statusCode, 200);
   assert.equal(verifyToken(success.body.token, 'rate-limit-reset-secret').userId, 81);
 
+  now = 101;
   const secondFailure = createRes();
   await login(req, secondFailure);
   assert.equal(secondFailure.statusCode, 401);
 
+  now = 102;
   const thirdFailure = createRes();
   await login(req, thirdFailure);
   assert.equal(thirdFailure.statusCode, 401);
 
-  const blockedRes = createRes();
-  await login(req, blockedRes);
-  assert.equal(blockedRes.statusCode, 429);
-  assert.deepEqual(blockedRes.body, { error: LOGIN_RATE_LIMIT_ERROR });
-  assert.equal(db.calls.length, 4);
-  assert.equal(passwordHasher.compareCalls.length, 4);
+  now = 103;
+  const fourthFailure = createRes();
+  await login(req, fourthFailure);
+  assert.equal(fourthFailure.statusCode, 401);
+  assert.deepEqual(fourthFailure.body, { error: 'Invalid credentials' });
+  assert.equal(db.calls.length, 6);
+  assert.equal(passwordHasher.compareCalls.length, 6);
+  assert.deepEqual(db.calls.map((call) => call.params), [
+    ['source-prelude@example.com'],
+    ['ada@example.com'],
+    ['ada@example.com'],
+    ['ada@example.com'],
+    ['ada@example.com'],
+    ['ada@example.com'],
+  ]);
 });
 
 test('login allows attempts after the failure throttle window expires', async () => {

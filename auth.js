@@ -24,6 +24,7 @@ const MAX_JWT_TOKEN_LENGTH = 4096;
 const JWT_TOKEN_TOO_LONG_ERROR = `JWT token must be ${MAX_JWT_TOKEN_LENGTH} characters or fewer`;
 const LOGIN_RATE_LIMIT_ERROR = 'Too many login attempts. Please try again later.';
 const DEFAULT_LOGIN_RATE_LIMIT_MAX_FAILURES = 5;
+const DEFAULT_LOGIN_SOURCE_RATE_LIMIT_MAX_FAILURES = 25;
 const DEFAULT_LOGIN_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 const DEFAULT_LOGIN_RATE_LIMIT_MAX_KEYS = 10000;
 // Keep these aligned with anki.db users.username VARCHAR(50) and users.email VARCHAR(100).
@@ -278,49 +279,52 @@ function isDuplicateAccountError(error) {
   return error?.code === '23505' && DUPLICATE_ACCOUNT_CONSTRAINTS.has(error.constraint);
 }
 
-function resolvePositiveIntegerOption(options, fieldName, defaultValue) {
+function resolvePositiveIntegerOption(options, fieldName, defaultValue, optionName) {
   const value = options[fieldName];
   if (value == null) {
     return defaultValue;
   }
 
   if (!Number.isSafeInteger(value) || value <= 0) {
-    throw new Error(`loginRateLimit.${fieldName} must be a positive safe integer`);
+    throw new Error(`${optionName}.${fieldName} must be a positive safe integer`);
   }
 
   return value;
 }
 
-function resolveLoginRateLimitNow(options) {
+function resolveLoginRateLimitNow(options, optionName) {
   if (options.now == null) {
     return () => Date.now();
   }
 
   if (typeof options.now !== 'function') {
-    throw new TypeError('loginRateLimit.now must be a function');
+    throw new TypeError(`${optionName}.now must be a function`);
   }
 
   return options.now;
 }
 
-function createLoginFailureTracker(options = {}) {
+function createLoginFailureTracker(options = {}, optionName = 'loginRateLimit') {
   const config = options ?? {};
   const maxFailures = resolvePositiveIntegerOption(
     config,
     'maxFailures',
-    DEFAULT_LOGIN_RATE_LIMIT_MAX_FAILURES
+    DEFAULT_LOGIN_RATE_LIMIT_MAX_FAILURES,
+    optionName
   );
   const windowMs = resolvePositiveIntegerOption(
     config,
     'windowMs',
-    DEFAULT_LOGIN_RATE_LIMIT_WINDOW_MS
+    DEFAULT_LOGIN_RATE_LIMIT_WINDOW_MS,
+    optionName
   );
   const maxKeys = resolvePositiveIntegerOption(
     config,
     'maxKeys',
-    DEFAULT_LOGIN_RATE_LIMIT_MAX_KEYS
+    DEFAULT_LOGIN_RATE_LIMIT_MAX_KEYS,
+    optionName
   );
-  const now = resolveLoginRateLimitNow(config);
+  const now = resolveLoginRateLimitNow(config, optionName);
   const records = new Map();
 
   function isExpired(record, currentTime) {
@@ -375,6 +379,19 @@ function createLoginFailureTracker(options = {}) {
   };
 }
 
+function resolveLoginSourceRateLimitOptions(loginRateLimitOptions, loginSourceRateLimitOptions) {
+  const loginRateLimitConfig = loginRateLimitOptions ?? {};
+  const sourceRateLimitConfig = loginSourceRateLimitOptions ?? {};
+
+  return {
+    maxFailures:
+      sourceRateLimitConfig.maxFailures ?? DEFAULT_LOGIN_SOURCE_RATE_LIMIT_MAX_FAILURES,
+    windowMs: sourceRateLimitConfig.windowMs ?? loginRateLimitConfig.windowMs,
+    maxKeys: sourceRateLimitConfig.maxKeys ?? loginRateLimitConfig.maxKeys,
+    now: sourceRateLimitConfig.now ?? loginRateLimitConfig.now,
+  };
+}
+
 function getRequestIp(req = {}) {
   const candidates = [
     req.ip,
@@ -395,6 +412,12 @@ function getLoginRateLimitKey(req, normalizedEmail) {
   // Bounded in-memory per-normalized-email + per-source-IP mitigation; multi-instance
   // deployments still need shared or edge rate limiting.
   return `${normalizedEmail}\n${getRequestIp(req)}`;
+}
+
+function getLoginSourceRateLimitKey(req) {
+  // Source-wide spray throttling is IP-only; missing IPs share the 'unknown'
+  // sentinel to fail closed, with a higher default threshold to limit NAT amplification.
+  return getRequestIp(req);
 }
 
 function resolveAuthHandlerJwtSecret(options = {}) {
@@ -421,6 +444,10 @@ function createAuthHandlers(db, options = {}) {
       : validateJwtExpiresInSeconds(options.jwtExpiresInSeconds);
   const passwordHasher = options.passwordHasher || getDefaultPasswordHasher();
   const loginFailureTracker = createLoginFailureTracker(options.loginRateLimit);
+  const loginSourceFailureTracker = createLoginFailureTracker(
+    resolveLoginSourceRateLimitOptions(options.loginRateLimit, options.loginSourceRateLimit),
+    'loginSourceRateLimit'
+  );
 
   const register = async (req, res) => {
     const { username, email, password } = req.body || {};
@@ -483,9 +510,23 @@ function createAuthHandlers(db, options = {}) {
     }
 
     const loginRateLimitKey = getLoginRateLimitKey(req, normalizedEmail);
-    if (loginFailureTracker.isBlocked(loginRateLimitKey)) {
+    const loginSourceRateLimitKey = getLoginSourceRateLimitKey(req);
+    if (
+      loginFailureTracker.isBlocked(loginRateLimitKey)
+      || loginSourceFailureTracker.isBlocked(loginSourceRateLimitKey)
+    ) {
       return res.status(429).json({ error: LOGIN_RATE_LIMIT_ERROR });
     }
+
+    const recordLoginFailure = () => {
+      loginFailureTracker.recordFailure(loginRateLimitKey);
+      loginSourceFailureTracker.recordFailure(loginSourceRateLimitKey);
+    };
+    const recordLoginSuccess = () => {
+      // Success proves only this email+IP pair recovered; source-wide spray state
+      // spans rotated emails, so it is left to age out by window.
+      loginFailureTracker.recordSuccess(loginRateLimitKey);
+    };
 
     try {
       const result = await db.query(
@@ -495,16 +536,16 @@ function createAuthHandlers(db, options = {}) {
       if (result.rows.length === 0) {
         // Ignore the dummy result; missing accounts must never authenticate.
         await passwordHasher.compare(password, MISSING_ACCOUNT_DUMMY_PASSWORD_HASH);
-        loginFailureTracker.recordFailure(loginRateLimitKey);
+        recordLoginFailure();
         return res.status(401).json({ error: 'Invalid credentials' });
       }
       const user = result.rows[0];
       const isValidPassword = await passwordHasher.compare(password, user.password_hash);
       if (!isValidPassword) {
-        loginFailureTracker.recordFailure(loginRateLimitKey);
+        recordLoginFailure();
         return res.status(401).json({ error: 'Invalid credentials' });
       }
-      loginFailureTracker.recordSuccess(loginRateLimitKey);
+      recordLoginSuccess();
       const token = signToken({ userId: user.id }, jwtSecret, {
         expiresInSeconds: jwtExpiresInSeconds,
       });
