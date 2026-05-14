@@ -1,4 +1,5 @@
 const DEFAULT_SECURITY_HEADERS = Object.freeze({
+  'Cache-Control': 'no-store',
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'no-referrer',
   'X-Frame-Options': 'DENY',

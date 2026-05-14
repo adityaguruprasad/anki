@@ -12,6 +12,7 @@ const {
 } = require('../securityHeaders');
 
 const EXPECTED_DEFAULT_SECURITY_HEADERS = {
+  'Cache-Control': 'no-store',
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'no-referrer',
   'X-Frame-Options': 'DENY',
@@ -86,6 +87,19 @@ test('security header overrides can replace or disable production HSTS', () => {
   assert.deepEqual(headers, EXPECTED_DEFAULT_SECURITY_HEADERS);
 });
 
+test('Cache-Control override replaces the default while preserving other security headers', () => {
+  const headers = buildSecurityHeaders(
+    { 'Cache-Control': 'public, max-age=3600' },
+    { NODE_ENV: 'test' },
+  );
+
+  assert.equal(headers['Cache-Control'], 'public, max-age=3600');
+  assert.deepEqual(headers, {
+    ...EXPECTED_DEFAULT_SECURITY_HEADERS,
+    'Cache-Control': 'public, max-age=3600',
+  });
+});
+
 test('security headers middleware emits production HSTS from injected environment config', () => {
   const res = createRes();
 
@@ -100,6 +114,7 @@ test('security headers middleware emits production HSTS from injected environmen
 test('security header overrides replace values and false/null/undefined disable defaults', () => {
   const headers = buildSecurityHeaders(
     {
+      'Cache-Control': false,
       'Referrer-Policy': 'same-origin',
       'X-Frame-Options': false,
       'Cross-Origin-Resource-Policy': null,
@@ -109,6 +124,7 @@ test('security header overrides replace values and false/null/undefined disable 
   );
 
   assert.equal(headers['Referrer-Policy'], 'same-origin');
+  assert.equal(Object.hasOwn(headers, 'Cache-Control'), false);
   assert.equal(Object.hasOwn(headers, 'X-Frame-Options'), false);
   assert.equal(Object.hasOwn(headers, 'Cross-Origin-Resource-Policy'), false);
   assert.equal(Object.hasOwn(headers, 'Cross-Origin-Opener-Policy'), false);
