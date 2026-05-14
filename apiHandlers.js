@@ -35,6 +35,14 @@ const DECK_READ_FIELDS = Object.freeze([
 const DECK_READ_SELECT_LIST = DECK_READ_FIELDS
   .map((field) => `d.${field}`)
   .join(',\n         ');
+const STUDY_SESSION_RESPONSE_CARD_FIELDS = Object.freeze([
+  'id',
+  'next_review',
+  'interval',
+  'ease_factor',
+  'review_count',
+  'last_reviewed',
+]);
 
 function isValidQuality(quality) {
   return Number.isInteger(quality) && quality >= 0 && quality <= 5;
@@ -180,6 +188,18 @@ function toDeckReadPayload(row) {
   }
 
   return deck;
+}
+
+function toStudySessionResponseCardPayload(row) {
+  const card = {};
+
+  for (const field of STUDY_SESSION_RESPONSE_CARD_FIELDS) {
+    if (Object.hasOwn(row, field)) {
+      card[field] = row[field];
+    }
+  }
+
+  return card;
 }
 
 function validateBrowseCardsLimit(value) {
@@ -747,8 +767,7 @@ async function submitStudySession(req, res, db, calculateNextReview) {
       return res.status(409).json({ error: 'Card is not due' });
     }
 
-    const responseCard = { ...updatedCard };
-    delete responseCard.__updated;
+    const responseCard = toStudySessionResponseCardPayload(updatedCard);
     if (transactionStarted) {
       await client.query('COMMIT');
       transactionStarted = false;

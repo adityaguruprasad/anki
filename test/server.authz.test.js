@@ -2542,7 +2542,7 @@ test('POST /api/study-session locks an owned due card before scheduling and upda
   };
   const db = createTransactionDb([
     { rowCount: 1, rows: [sourceCard] },
-    { rowCount: 1, rows: [{ ...updatedCard, __updated: true }] },
+    { rowCount: 1, rows: [{ ...updatedCard, __updated: true, private_note: 'do not expose' }] },
   ]);
   const req = { body: { cardId: 7, quality: 4 }, user: { userId: 'user-1' } };
   const res = createRes();
@@ -2562,6 +2562,7 @@ test('POST /api/study-session locks an owned due card before scheduling and upda
 
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, { success: true, card: updatedCard });
+  assert.equal(Object.hasOwn(res.body.card, 'private_note'), false);
   assert.equal(db.connectCalls, 1);
   assert.equal(db.client.released, true);
   assert.match(db.calls[0].sql, /^\s*BEGIN\s*$/i);
