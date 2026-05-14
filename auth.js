@@ -6,6 +6,7 @@ const {
   validateLoginPassword,
   validateRegistrationPassword,
 } = require('./authPasswordValidation');
+const { MAX_POSTGRES_SERIAL_ID } = require('./cardIdentifier');
 
 const DEFAULT_DEV_JWT_SECRET = 'your_secret_key';
 const DEFAULT_JWT_EXPIRES_IN_SECONDS = 60 * 60 * 24;
@@ -22,6 +23,11 @@ const JWT_EXPIRES_IN_SECONDS_ERROR =
 // headroom while bounding split, JSON parsing, and HMAC work before verification.
 const MAX_JWT_TOKEN_LENGTH = 4096;
 const JWT_TOKEN_TOO_LONG_ERROR = `JWT token must be ${MAX_JWT_TOKEN_LENGTH} characters or fewer`;
+// users.id is a PostgreSQL SERIAL/INTEGER id, matching the protected API route id contract.
+if (!Number.isSafeInteger(MAX_POSTGRES_SERIAL_ID)) {
+  throw new Error('MAX_POSTGRES_SERIAL_ID must remain a safe integer');
+}
+const MAX_POSTGRES_SERIAL_ID_BIGINT = BigInt(MAX_POSTGRES_SERIAL_ID);
 const LOGIN_RATE_LIMIT_ERROR = 'Too many login attempts. Please try again later.';
 const DEFAULT_LOGIN_RATE_LIMIT_MAX_FAILURES = 5;
 const DEFAULT_LOGIN_SOURCE_RATE_LIMIT_MAX_FAILURES = 25;
@@ -220,7 +226,9 @@ function verifyToken(token, secret = resolveJwtSecret(), options = {}) {
 
 function normalizeTokenUserId(userId) {
   if (typeof userId === 'number') {
-    return Number.isSafeInteger(userId) && userId > 0 ? userId : null;
+    return Number.isSafeInteger(userId) && userId > 0 && userId <= MAX_POSTGRES_SERIAL_ID
+      ? userId
+      : null;
   }
 
   if (typeof userId === 'string') {
@@ -230,7 +238,7 @@ function normalizeTokenUserId(userId) {
     }
 
     const parsed = BigInt(trimmed);
-    if (parsed <= 0n || parsed > BigInt(Number.MAX_SAFE_INTEGER)) {
+    if (parsed <= 0n || parsed > MAX_POSTGRES_SERIAL_ID_BIGINT) {
       return null;
     }
 

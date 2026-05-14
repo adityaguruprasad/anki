@@ -22,6 +22,7 @@ const {
   signToken,
   verifyToken,
 } = require('../auth');
+const { MAX_POSTGRES_SERIAL_ID } = require('../cardIdentifier');
 
 function createEmailWithLength(totalLength) {
   const domain = '@example.com';
@@ -975,6 +976,9 @@ test('signToken requires a usable userId claim before issuing a token', () => {
     { userId: 0 },
     { userId: -1 },
     { userId: 1.5 },
+    { userId: String(MAX_POSTGRES_SERIAL_ID + 1) },
+    { userId: MAX_POSTGRES_SERIAL_ID + 1 },
+    { userId: String(Number.MAX_SAFE_INTEGER) },
     { userId: String(Number.MAX_SAFE_INTEGER + 1) },
     { userId: Number.MAX_SAFE_INTEGER + 1 },
   ];
@@ -1028,12 +1032,13 @@ test('verifyToken rejects non-integer, string, and unsafe exp claims before expi
   }
 });
 
-test('verifyToken accepts positive integer userId claims as normalized numbers', () => {
+test('verifyToken accepts PostgreSQL SERIAL userId claims as normalized numbers', () => {
   const validClaims = [
     { userId: 42, expected: 42 },
     { userId: '42', expected: 42 },
     { userId: ' 43 ', expected: 43 },
-    { userId: String(Number.MAX_SAFE_INTEGER), expected: Number.MAX_SAFE_INTEGER },
+    { userId: MAX_POSTGRES_SERIAL_ID, expected: MAX_POSTGRES_SERIAL_ID },
+    { userId: String(MAX_POSTGRES_SERIAL_ID), expected: MAX_POSTGRES_SERIAL_ID },
   ];
 
   for (const { userId, expected } of validClaims) {
@@ -1130,6 +1135,10 @@ test('verifyToken rejects signed tokens without a usable userId claim', () => {
     { userId: 0, iat: 1000, exp: 2000 },
     { userId: -1, iat: 1000, exp: 2000 },
     { userId: 1.5, iat: 1000, exp: 2000 },
+    { userId: String(MAX_POSTGRES_SERIAL_ID + 1), iat: 1000, exp: 2000 },
+    { userId: MAX_POSTGRES_SERIAL_ID + 1, iat: 1000, exp: 2000 },
+    { userId: String(Number.MAX_SAFE_INTEGER), iat: 1000, exp: 2000 },
+    { userId: Number.MAX_SAFE_INTEGER, iat: 1000, exp: 2000 },
     { userId: String(Number.MAX_SAFE_INTEGER + 1), iat: 1000, exp: 2000 },
     { userId: Number.MAX_SAFE_INTEGER + 1, iat: 1000, exp: 2000 },
     { userId: [], iat: 1000, exp: 2000 },
@@ -1317,6 +1326,33 @@ test('authenticateToken returns 403 for signed tokens without a usable userId cl
     jwtSecret: 'missing-user-secret',
     passwordHasher: createPasswordHasher(),
   });
+  const req = { headers: { authorization: `Bearer ${token}` } };
+  const res = createRes();
+  let nextCalled = false;
+
+  authenticateToken(req, res, () => {
+    nextCalled = true;
+  });
+
+  assert.equal(res.statusCode, 403);
+  assert.equal(nextCalled, false);
+  assert.equal(req.user, undefined);
+});
+
+test('authenticateToken rejects signed userId claims outside the database id range', () => {
+  const { authenticateToken } = createAuthHandlers(createDb([]), {
+    jwtSecret: 'oversized-user-secret',
+    passwordHasher: createPasswordHasher(),
+  });
+  const token = signRawJwt(
+    { alg: 'HS256', typ: 'JWT' },
+    {
+      userId: String(MAX_POSTGRES_SERIAL_ID + 1),
+      iat: 1000,
+      exp: Math.floor(Date.now() / 1000) + 60,
+    },
+    'oversized-user-secret'
+  );
   const req = { headers: { authorization: `Bearer ${token}` } };
   const res = createRes();
   let nextCalled = false;
