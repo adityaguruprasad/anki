@@ -34,9 +34,11 @@ const DEFAULT_LOGIN_RATE_LIMIT_MAX_FAILURES = 5;
 const DEFAULT_LOGIN_SOURCE_RATE_LIMIT_MAX_FAILURES = 25;
 const DEFAULT_LOGIN_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 const DEFAULT_LOGIN_RATE_LIMIT_MAX_KEYS = 10000;
-// Keep these aligned with anki.db users.username VARCHAR(50) and users.email VARCHAR(100).
+// Keep these aligned with anki.db users.username VARCHAR(50), users.email VARCHAR(100),
+// and users.password_hash VARCHAR(100).
 const AUTH_USERNAME_MAX_LENGTH = 50;
 const AUTH_EMAIL_MAX_LENGTH = 100;
+const AUTH_PASSWORD_HASH_MAX_LENGTH = 100;
 const PASSWORD_HASH_COST = 10;
 const DUPLICATE_ACCOUNT_CONSTRAINTS = new Set([
   'users_username_key',
@@ -300,6 +302,14 @@ function isDuplicateAccountError(error) {
   return error?.code === '23505' && DUPLICATE_ACCOUNT_CONSTRAINTS.has(error.constraint);
 }
 
+function validatePasswordHash(passwordHash) {
+  return (
+    typeof passwordHash === 'string'
+    && passwordHash.length > 0
+    && passwordHash.length <= AUTH_PASSWORD_HASH_MAX_LENGTH
+  );
+}
+
 function resolvePositiveIntegerOption(options, fieldName, defaultValue, optionName) {
   const value = options[fieldName];
   if (value == null) {
@@ -502,6 +512,10 @@ function createAuthHandlers(db, options = {}) {
 
     try {
       const hashedPassword = await passwordHasher.hash(passwordValidation.value, PASSWORD_HASH_COST);
+      if (!validatePasswordHash(hashedPassword)) {
+        throw new Error('Password hash provider returned invalid password hash');
+      }
+
       const result = await db.query(
         'INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3) RETURNING id',
         [trimmedUsername, normalizedEmail, hashedPassword]
@@ -599,6 +613,7 @@ function createAuthHandlers(db, options = {}) {
 
 module.exports = {
   AUTH_EMAIL_MAX_LENGTH,
+  AUTH_PASSWORD_HASH_MAX_LENGTH,
   AUTH_PASSWORD_MAX_BYTES,
   AUTH_PASSWORD_MIN_LENGTH,
   AUTH_USERNAME_MAX_LENGTH,

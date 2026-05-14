@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 
 const {
   AUTH_EMAIL_MAX_LENGTH,
+  AUTH_PASSWORD_HASH_MAX_LENGTH,
   AUTH_PASSWORD_MAX_BYTES,
   AUTH_USERNAME_MAX_LENGTH,
   DEFAULT_JWT_EXPIRES_IN_SECONDS,
@@ -23,6 +24,7 @@ const {
   verifyToken,
 } = require('../auth');
 const { MAX_POSTGRES_SERIAL_ID } = require('../cardIdentifier');
+const { getVarcharColumnLength } = require('./schemaHelpers');
 
 const USERNAME_UNSAFE_CHARACTER_ERROR =
   'Username cannot contain line breaks, control characters, or invisible formatting characters';
@@ -335,6 +337,54 @@ test('register trims username and surrounding email whitespace before storing', 
     'ada@example.com',
     'hashed:correct horse battery staple',
   ]);
+});
+
+test('register rejects invalid password hasher output before inserting a user', async (t) => {
+  const cases = [
+    { name: 'undefined hash', hash: undefined },
+    { name: 'non-string hash', hash: null },
+    { name: 'empty hash', hash: '' },
+    { name: 'over-length hash', hash: 'x'.repeat(AUTH_PASSWORD_HASH_MAX_LENGTH + 1) },
+  ];
+
+  for (const { name, hash } of cases) {
+    await t.test(name, async () => {
+      const db = createDb([]);
+      const passwordHasher = createPasswordHasher();
+      passwordHasher.hash = async function hashPassword(password, rounds) {
+        this.hashCalls.push({ password, rounds });
+        return hash;
+      };
+      const { register } = createAuthHandlers(db, {
+        jwtSecret: 'invalid-hash-register-secret',
+        passwordHasher,
+      });
+      const res = createRes();
+
+      await register({
+        body: {
+          username: 'ada',
+          email: 'ada@example.com',
+          password: 'correct horse battery staple',
+        },
+      }, res);
+
+      assert.equal(res.statusCode, 500);
+      assert.deepEqual(res.body, { error: 'Error registering user' });
+      assert.equal(res.body.token, undefined);
+      assert.deepEqual(passwordHasher.hashCalls, [
+        { password: 'correct horse battery staple', rounds: PASSWORD_HASH_COST },
+      ]);
+      assert.equal(db.calls.length, 0);
+    });
+  }
+});
+
+test('password hash runtime cap matches the users.password_hash column length', () => {
+  assert.equal(
+    AUTH_PASSWORD_HASH_MAX_LENGTH,
+    getVarcharColumnLength('users', 'password_hash'),
+  );
 });
 
 test('register returns 409 for duplicate username or email unique violations without minting a token', async (t) => {
