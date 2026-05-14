@@ -23,6 +23,7 @@ const JWT_EXPIRES_IN_SECONDS_ERROR =
 // headroom while bounding split, JSON parsing, and HMAC work before verification.
 const MAX_JWT_TOKEN_LENGTH = 4096;
 const JWT_TOKEN_TOO_LONG_ERROR = `JWT token must be ${MAX_JWT_TOKEN_LENGTH} characters or fewer`;
+const JWT_COMPACT_PART_PATTERN = /^[A-Za-z0-9_-]+$/;
 // users.id is a PostgreSQL SERIAL/INTEGER id, matching the protected API route id contract.
 if (!Number.isSafeInteger(MAX_POSTGRES_SERIAL_ID)) {
   throw new Error('MAX_POSTGRES_SERIAL_ID must remain a safe integer');
@@ -162,6 +163,18 @@ function validateJwtTokenText(token) {
   if (token.length > MAX_JWT_TOKEN_LENGTH) {
     throw new Error(JWT_TOKEN_TOO_LONG_ERROR);
   }
+
+  // Return the three compact JWT parts only after enforcing the canonical
+  // three-part base64url shape. The malformed-token parse error is intentionally generic.
+  const parts = token.split('.');
+  if (
+    parts.length !== 3
+    || parts.some((part) => part.length === 0 || !JWT_COMPACT_PART_PATTERN.test(part))
+  ) {
+    throw new Error('Invalid token');
+  }
+
+  return parts;
 }
 
 function signToken(payload, secret = resolveJwtSecret(), options = {}) {
@@ -187,14 +200,7 @@ function signToken(payload, secret = resolveJwtSecret(), options = {}) {
 }
 
 function verifyToken(token, secret = resolveJwtSecret(), options = {}) {
-  validateJwtTokenText(token);
-
-  const parts = token.split('.');
-  if (parts.length !== 3) {
-    throw new Error('Invalid token');
-  }
-
-  const [encodedHeader, encodedPayload, signature] = parts;
+  const [encodedHeader, encodedPayload, signature] = validateJwtTokenText(token);
   const header = decodeJsonPart(encodedHeader);
   if (!header || header.alg !== 'HS256') {
     throw new Error('Invalid token algorithm');

@@ -105,7 +105,11 @@ function base64UrlJson(value) {
 }
 
 function signRawJwt(header, payload, secret) {
-  const body = `${base64UrlJson(header)}.${base64UrlJson(payload)}`;
+  return signRawJwtSegments(base64UrlJson(header), base64UrlJson(payload), secret);
+}
+
+function signRawJwtSegments(encodedHeader, encodedPayload, secret) {
+  const body = `${encodedHeader}.${encodedPayload}`;
   const signature = crypto.createHmac('sha256', secret).update(body).digest('base64url');
   return `${body}.${signature}`;
 }
@@ -1175,6 +1179,49 @@ test('verifyToken allows max-length token strings to reach signature validation'
     () => verifyToken(boundaryToken, 'boundary-token-secret', { now: 1000 }),
     /Invalid token signature/
   );
+});
+
+test('verifyToken rejects wrong-shape and empty-part compact tokens before decoding', () => {
+  const secret = 'malformed-compact-token-secret';
+  const encodedHeader = base64UrlJson({ alg: 'HS256', typ: 'JWT' });
+  const encodedPayload = base64UrlJson({ userId: 101, iat: 1000, exp: 2000 });
+
+  for (const token of [
+    `${encodedHeader}.${encodedPayload}`,
+    signRawJwtSegments(encodedHeader, '', secret),
+  ]) {
+    assert.throws(
+      () => verifyToken(token, secret, { now: 1000 }),
+      { message: 'Invalid token' }
+    );
+  }
+});
+
+test('verifyToken rejects signed tokens with non-base64url compact segments', () => {
+  const secret = 'strict-compact-token-secret';
+  const encodedHeader = base64UrlJson({ alg: 'HS256', typ: 'JWT' });
+  const encodedPayload = base64UrlJson({ userId: 101, iat: 1000, exp: 2000 });
+  const nonCanonicalHeader = `${encodedHeader}!`;
+  const nonCanonicalPayload = `${encodedPayload}=`;
+
+  assert.equal(
+    Buffer.from(nonCanonicalHeader, 'base64url').toString('utf8'),
+    Buffer.from(encodedHeader, 'base64url').toString('utf8')
+  );
+  assert.equal(
+    Buffer.from(nonCanonicalPayload, 'base64url').toString('utf8'),
+    Buffer.from(encodedPayload, 'base64url').toString('utf8')
+  );
+
+  for (const token of [
+    signRawJwtSegments(nonCanonicalHeader, encodedPayload, secret),
+    signRawJwtSegments(encodedHeader, nonCanonicalPayload, secret),
+  ]) {
+    assert.throws(
+      () => verifyToken(token, secret, { now: 1000 }),
+      /Invalid token/
+    );
+  }
 });
 
 test('verifyToken rejects signed tokens without a usable userId claim', () => {
