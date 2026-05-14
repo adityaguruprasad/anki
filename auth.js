@@ -42,7 +42,10 @@ const DUPLICATE_ACCOUNT_CONSTRAINTS = new Set([
   'users_email_key',
   'users_normalized_email_unique_idx',
 ]);
-const EMAIL_UNSAFE_CHARACTER_PATTERN = /[\s\x00-\x1F\x7F]/u;
+const USERNAME_UNSAFE_CHARACTER_PATTERN =
+  /[\x00-\x1F\x7F-\x9F\u061C\u200B-\u200F\u2028\u2029\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/u;
+const EMAIL_UNSAFE_CHARACTER_PATTERN =
+  /[\s\x00-\x1F\x7F-\x9F\u061C\u200B-\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/u;
 // Bcrypt hash of a non-secret placeholder; used only to equalize missing-account login work.
 const MISSING_ACCOUNT_DUMMY_PASSWORD_HASH =
   '$2b$10$xnS.9dA.hjbGf20CAaG6xuMuScJF.XYy.xwfX5K5UHddi5gJdzBKK';
@@ -467,6 +470,11 @@ function createAuthHandlers(db, options = {}) {
     const normalizedEmail = normalizeEmail(email);
     if (trimmedUsername === '') {
       return res.status(400).json({ error: 'Username is required' });
+    }
+    if (USERNAME_UNSAFE_CHARACTER_PATTERN.test(trimmedUsername)) {
+      return res.status(400).json({
+        error: 'Username cannot contain line breaks, control characters, or invisible formatting characters',
+      });
     }
     if (trimmedUsername.length > AUTH_USERNAME_MAX_LENGTH) {
       return res

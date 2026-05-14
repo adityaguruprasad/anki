@@ -19,8 +19,10 @@ const MAX_BACKEND_AUTH_ERROR_LENGTH = 240;
 // so registration must honor the backend username cap before submitting.
 const AUTH_EMAIL_MAX_LENGTH = 100;
 const AUTH_USERNAME_MAX_LENGTH = 50;
-// After surrounding trim, reject embedded whitespace plus C0/DEL control characters.
-const AUTH_EMAIL_UNSAFE_CHARACTER_PATTERN = /[\s\x00-\x1F\x7F]/u;
+// After surrounding trim, reject embedded whitespace, controls, and invisible
+// formatting marks that can make account identifiers visually misleading.
+const AUTH_EMAIL_UNSAFE_CHARACTER_PATTERN =
+  /[\s\x00-\x1F\x7F-\x9F\u061C\u200B-\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/u;
 const GENERIC_AUTH_ERRORS = Object.freeze({
   [AUTH_MODES.LOGIN]: 'Login failed. Please check your credentials.',
   [AUTH_MODES.REGISTER]: 'Could not create account. Please check your email and password.',

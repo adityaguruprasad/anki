@@ -24,6 +24,9 @@ const {
 } = require('../auth');
 const { MAX_POSTGRES_SERIAL_ID } = require('../cardIdentifier');
 
+const USERNAME_UNSAFE_CHARACTER_ERROR =
+  'Username cannot contain line breaks, control characters, or invisible formatting characters';
+
 function createEmailWithLength(totalLength) {
   const domain = '@example.com';
   return `${'a'.repeat(totalLength - domain.length)}${domain}`;
@@ -191,6 +194,26 @@ test('register rejects invalid input before hashing or querying', async (t) => {
       error: `Username must be ${AUTH_USERNAME_MAX_LENGTH} characters or fewer`,
     },
     {
+      name: 'username with embedded line break',
+      body: { username: 'Ada\nLovelace', email: 'ada@example.com', password: 'valid-pass' },
+      error: USERNAME_UNSAFE_CHARACTER_ERROR,
+    },
+    {
+      name: 'username with invisible formatting mark',
+      body: { username: 'Ada\u202eLovelace', email: 'ada@example.com', password: 'valid-pass' },
+      error: USERNAME_UNSAFE_CHARACTER_ERROR,
+    },
+    {
+      name: 'username with C1 control character',
+      body: { username: 'Ada\u0085Lovelace', email: 'ada@example.com', password: 'valid-pass' },
+      error: USERNAME_UNSAFE_CHARACTER_ERROR,
+    },
+    {
+      name: 'username with zero width space',
+      body: { username: 'Ada\u200bLovelace', email: 'ada@example.com', password: 'valid-pass' },
+      error: USERNAME_UNSAFE_CHARACTER_ERROR,
+    },
+    {
       name: 'invalid email',
       body: { username: 'ada', email: 'ada@@example.com', password: 'valid-pass' },
       error: 'Valid email is required',
@@ -203,6 +226,21 @@ test('register rejects invalid input before hashing or querying', async (t) => {
     {
       name: 'email with control character',
       body: { username: 'ada', email: 'ada\u0000@example.com', password: 'valid-pass' },
+      error: 'Valid email is required',
+    },
+    {
+      name: 'email with C1 control character',
+      body: { username: 'ada', email: 'ada\u0085@example.com', password: 'valid-pass' },
+      error: 'Valid email is required',
+    },
+    {
+      name: 'email with invisible formatting mark',
+      body: { username: 'ada', email: 'ada\u200e@example.com', password: 'valid-pass' },
+      error: 'Valid email is required',
+    },
+    {
+      name: 'email with zero width space',
+      body: { username: 'ada', email: 'ada\u200b@example.com', password: 'valid-pass' },
       error: 'Valid email is required',
     },
     {
@@ -877,6 +915,21 @@ test('login rejects invalid input before querying or comparing', async (t) => {
     {
       name: 'email with control character',
       body: { email: 'grace@example\u007f.com', password: 's3cret' },
+      error: 'Valid email is required',
+    },
+    {
+      name: 'email with C1 control character',
+      body: { email: 'grace@example\u0085.com', password: 's3cret' },
+      error: 'Valid email is required',
+    },
+    {
+      name: 'email with invisible formatting mark',
+      body: { email: 'grace@example\u202e.com', password: 's3cret' },
+      error: 'Valid email is required',
+    },
+    {
+      name: 'email with zero width space',
+      body: { email: 'grace\u200b@example.com', password: 's3cret' },
       error: 'Valid email is required',
     },
     {

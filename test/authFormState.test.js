@@ -295,7 +295,11 @@ test('validateAuthInput rejects embedded unsafe email characters while preservin
     'ada\t@example.com',
     'ada@example.com\nx',
     'ada@example\x00.com',
+    'ada@example\u0085.com',
     'ada@example\u007f.com',
+    'ada\u200b@example.com',
+    'ada\u200e@example.com',
+    'ada@example\u202e.com',
   ]) {
     assert.deepEqual(
       validateAuthInput({ mode: AUTH_MODES.LOGIN, email, password: 's3cret' }),
