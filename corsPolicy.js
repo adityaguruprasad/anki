@@ -9,8 +9,40 @@ function normalizeAllowedOrigins(value) {
 
   return value
     .split(',')
-    .map((origin) => origin.trim())
+    .map(normalizeAllowedOrigin)
     .filter(Boolean);
+}
+
+function normalizeAllowedOrigin(origin) {
+  const trimmed = origin.trim();
+  if (trimmed === '') {
+    return '';
+  }
+
+  let parsedOrigin;
+  try {
+    parsedOrigin = new URL(trimmed);
+  } catch {
+    return trimmed;
+  }
+
+  const hasOriginOnlyPath = /^\/+$/.test(parsedOrigin.pathname);
+  const hasNoNonOriginParts = (
+    parsedOrigin.username === ''
+    && parsedOrigin.password === ''
+    && parsedOrigin.search === ''
+    && parsedOrigin.hash === ''
+  );
+
+  if (
+    (parsedOrigin.protocol === 'http:' || parsedOrigin.protocol === 'https:')
+    && hasOriginOnlyPath
+    && hasNoNonOriginParts
+  ) {
+    return parsedOrigin.origin;
+  }
+
+  return trimmed;
 }
 
 function createCorsOriginRejectedError() {

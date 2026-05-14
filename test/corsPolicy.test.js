@@ -49,6 +49,36 @@ test('normalizeAllowedOrigins trims whitespace and ignores empty entries', () =>
   );
 });
 
+test('normalizeAllowedOrigins canonicalizes origin-only URL entries', () => {
+  assert.deepEqual(
+    normalizeAllowedOrigins(' https://app.example.com/, https://admin.example.com///, http://localhost:3000/ '),
+    ['https://app.example.com', 'https://admin.example.com', 'http://localhost:3000'],
+  );
+  assert.deepEqual(
+    normalizeAllowedOrigins('https://app.example.com:443, http://localhost:80'),
+    ['https://app.example.com', 'http://localhost'],
+  );
+  assert.deepEqual(
+    normalizeAllowedOrigins('http://[::1]:3000/'),
+    ['http://[::1]:3000'],
+  );
+});
+
+test('normalizeAllowedOrigins keeps non-origin entries literal so they fail closed', () => {
+  assert.deepEqual(
+    normalizeAllowedOrigins(
+      'https://app.example.com/path, https://app.example.com?tenant=admin, https://app.example.com#admin, https://user:pass@app.example.com, not a url',
+    ),
+    [
+      'https://app.example.com/path',
+      'https://app.example.com?tenant=admin',
+      'https://app.example.com#admin',
+      'https://user:pass@app.example.com',
+      'not a url',
+    ],
+  );
+});
+
 test('configured CORS allowlist allows requests with no Origin header', async () => {
   const options = buildCorsOptions({
     CORS_ALLOWED_ORIGINS: 'https://app.example.com',
@@ -91,6 +121,52 @@ test('configured CORS allowlist allows exact matching origins', async () => {
 
   assert.equal(decision.error, null);
   assert.equal(decision.allowed, true);
+});
+
+test('configured CORS allowlist accepts origin URLs with harmless trailing slashes', async () => {
+  const options = buildCorsOptions({
+    NODE_ENV: 'production',
+    CORS_ALLOWED_ORIGINS: 'https://app.example.com/, http://localhost:3000/, http://[::1]:3000/',
+  });
+
+  assert.deepEqual(
+    await runOriginDecision(options, 'https://app.example.com'),
+    { error: null, allowed: true },
+  );
+  assert.deepEqual(
+    await runOriginDecision(options, 'http://localhost:3000'),
+    { error: null, allowed: true },
+  );
+  assert.deepEqual(
+    await runOriginDecision(options, 'http://[::1]:3000'),
+    { error: null, allowed: true },
+  );
+});
+
+test('configured CORS allowlist does not broaden entries that include paths', async () => {
+  const options = buildCorsOptions({
+    NODE_ENV: 'production',
+    CORS_ALLOWED_ORIGINS: 'https://app.example.com/admin',
+  });
+
+  const decision = await runOriginDecision(options, 'https://app.example.com');
+
+  assert.equal(decision.allowed, undefined);
+  assert.equal(isCorsOriginRejectedError(decision.error), true);
+});
+
+test('configured CORS allowlist does not broaden entries that include query or hash', async () => {
+  const options = buildCorsOptions({
+    NODE_ENV: 'production',
+    CORS_ALLOWED_ORIGINS: 'https://app.example.com?tenant=admin, https://admin.example.com#dashboard',
+  });
+
+  for (const origin of ['https://app.example.com', 'https://admin.example.com']) {
+    const decision = await runOriginDecision(options, origin);
+
+    assert.equal(decision.allowed, undefined);
+    assert.equal(isCorsOriginRejectedError(decision.error), true);
+  }
 });
 
 test('configured CORS allowlist rejects disallowed browser origins with a sanitized error', async () => {
