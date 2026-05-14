@@ -1,7 +1,8 @@
 const { resolveApiBaseUrl } = require('./authFormState');
+const { requireRouteSafeId } = require('./cardIdentifier');
 
-function encodeRouteSegment(value) {
-  return encodeURIComponent(String(value));
+function encodeRouteId(value, fieldName) {
+  return encodeURIComponent(requireRouteSafeId(value, fieldName));
 }
 
 function getDeckManagementApiRequests(env) {
@@ -11,20 +12,20 @@ function getDeckManagementApiRequests(env) {
     deckListUrl: `${baseUrl}/api/decks`,
     createDeckUrl: `${baseUrl}/api/decks`,
     renameDeckUrl(deckId) {
-      return `${baseUrl}/api/decks/${encodeRouteSegment(deckId)}`;
+      return `${baseUrl}/api/decks/${encodeRouteId(deckId, 'deckId')}`;
     },
     removeDeckUrl(deckId) {
-      return `${baseUrl}/api/decks/${encodeRouteSegment(deckId)}`;
+      return `${baseUrl}/api/decks/${encodeRouteId(deckId, 'deckId')}`;
     },
     browseDeckCardsUrl(deckId, queryParams) {
-      return `${baseUrl}/api/decks/${encodeRouteSegment(deckId)}/cards?${String(queryParams)}`;
+      return `${baseUrl}/api/decks/${encodeRouteId(deckId, 'deckId')}/cards?${String(queryParams)}`;
     },
     createCardUrl: `${baseUrl}/api/cards`,
     updateCardUrl(cardId) {
-      return `${baseUrl}/api/cards/${encodeRouteSegment(cardId)}`;
+      return `${baseUrl}/api/cards/${encodeRouteId(cardId, 'cardId')}`;
     },
     removeCardUrl(cardId) {
-      return `${baseUrl}/api/cards/${encodeRouteSegment(cardId)}`;
+      return `${baseUrl}/api/cards/${encodeRouteId(cardId, 'cardId')}`;
     },
   };
 }

@@ -1,7 +1,8 @@
 const MAX_POSTGRES_SERIAL_ID = 2147483647;
 const MAX_POSTGRES_SERIAL_ID_TEXT = String(MAX_POSTGRES_SERIAL_ID);
+const ROUTE_SAFE_ID_ERROR_SUFFIX = 'must be a positive integer route id';
 
-function normalizeRouteSafeCardId(value) {
+function normalizeRouteSafeId(value) {
   if (typeof value === 'number') {
     return Number.isSafeInteger(value) && value > 0 && value <= MAX_POSTGRES_SERIAL_ID
       ? String(value)
@@ -35,8 +36,25 @@ function normalizeRouteSafeCardId(value) {
   return normalized;
 }
 
+function requireRouteSafeId(value, fieldName = 'id') {
+  const normalized = normalizeRouteSafeId(value);
+  if (normalized === null) {
+    throw new TypeError(`Invalid ${fieldName}: ${ROUTE_SAFE_ID_ERROR_SUFFIX}`);
+  }
+
+  return normalized;
+}
+
+function normalizeRouteSafeCardId(value) {
+  return normalizeRouteSafeId(value);
+}
+
+function hasRouteSafeId(value) {
+  return normalizeRouteSafeId(value) !== null;
+}
+
 function hasRouteSafeCardId(value) {
-  return normalizeRouteSafeCardId(value) !== null;
+  return hasRouteSafeId(value);
 }
 
 function hasSameRouteSafeCardId(leftId, rightId) {
@@ -48,7 +66,10 @@ function hasSameRouteSafeCardId(leftId, rightId) {
 
 module.exports = {
   MAX_POSTGRES_SERIAL_ID,
+  hasRouteSafeId,
   hasRouteSafeCardId,
   hasSameRouteSafeCardId,
+  normalizeRouteSafeId,
   normalizeRouteSafeCardId,
+  requireRouteSafeId,
 };

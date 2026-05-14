@@ -1,7 +1,8 @@
 const { resolveApiBaseUrl } = require('./authFormState');
+const { requireRouteSafeId } = require('./cardIdentifier');
 
-function encodeRouteSegment(value) {
-  return encodeURIComponent(String(value));
+function encodeRouteId(value, fieldName) {
+  return encodeURIComponent(requireRouteSafeId(value, fieldName));
 }
 
 function getStudySessionApiRequests(env) {
@@ -9,7 +10,7 @@ function getStudySessionApiRequests(env) {
 
   return {
     dueCardUrl(deckId) {
-      return `${baseUrl}/api/cards/${encodeRouteSegment(deckId)}?limit=1`;
+      return `${baseUrl}/api/cards/${encodeRouteId(deckId, 'deckId')}?limit=1`;
     },
     deckListUrl: `${baseUrl}/api/decks`,
     submitUrl: `${baseUrl}/api/study-session`,

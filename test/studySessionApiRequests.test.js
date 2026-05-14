@@ -21,13 +21,37 @@ test('getStudySessionApiRequests trims and strips configured API base URL traili
   assert.equal(requests.submitUrl, 'https://api.example.test/api/study-session');
 });
 
-test('getStudySessionApiRequests encodes deck ids as a single route segment with limit=1', () => {
+test('getStudySessionApiRequests normalizes deck ids as serial route segments with limit=1', () => {
   const requests = getStudySessionApiRequests({
     REACT_APP_API_BASE_URL: 'https://api.example.test',
   });
 
   assert.equal(
-    requests.dueCardUrl('deck 1/with spaces'),
-    'https://api.example.test/api/cards/deck%201%2Fwith%20spaces?limit=1'
+    requests.dueCardUrl(' 0007 '),
+    'https://api.example.test/api/cards/7?limit=1'
   );
+});
+
+test('getStudySessionApiRequests rejects unsafe deck route ids before building URLs', () => {
+  const requests = getStudySessionApiRequests({
+    REACT_APP_API_BASE_URL: 'https://api.example.test',
+  });
+
+  [
+    undefined,
+    null,
+    '',
+    'deck 1/with spaces',
+    '0',
+    '2147483648',
+    {},
+  ].forEach((deckId) => {
+    assert.throws(
+      () => requests.dueCardUrl(deckId),
+      {
+        name: 'TypeError',
+        message: 'Invalid deckId: must be a positive integer route id',
+      }
+    );
+  });
 });

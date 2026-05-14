@@ -6,9 +6,12 @@ const {
 } = require('../scripts/sync-cra-src');
 const {
   MAX_POSTGRES_SERIAL_ID,
+  hasRouteSafeId,
   hasRouteSafeCardId,
   hasSameRouteSafeCardId,
+  normalizeRouteSafeId,
   normalizeRouteSafeCardId,
+  requireRouteSafeId,
 } = require('../cardIdentifier');
 
 test('normalizeRouteSafeCardId canonicalizes PostgreSQL SERIAL card ids', () => {
@@ -18,6 +21,19 @@ test('normalizeRouteSafeCardId canonicalizes PostgreSQL SERIAL card ids', () => 
   assert.equal(
     normalizeRouteSafeCardId(`\t000${MAX_POSTGRES_SERIAL_ID}\n`),
     String(MAX_POSTGRES_SERIAL_ID),
+  );
+});
+
+test('generic route id helpers share the PostgreSQL SERIAL route contract', () => {
+  assert.equal(normalizeRouteSafeId(' 0007 '), '7');
+  assert.equal(hasRouteSafeId(MAX_POSTGRES_SERIAL_ID), true);
+  assert.equal(requireRouteSafeId('0009', 'deckId'), '9');
+  assert.throws(
+    () => requireRouteSafeId('deck 1/with spaces', 'deckId'),
+    {
+      name: 'TypeError',
+      message: 'Invalid deckId: must be a positive integer route id',
+    }
   );
 });
 

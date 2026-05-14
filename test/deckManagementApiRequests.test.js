@@ -37,31 +37,66 @@ test('getDeckManagementApiRequests trims and strips configured API base URL trai
   assert.equal(requests.removeCardUrl(11), 'https://api.example.test/api/cards/11');
 });
 
-test('getDeckManagementApiRequests encodes deck and card ids as single route segments', () => {
+test('getDeckManagementApiRequests normalizes deck and card ids as serial route segments', () => {
   const requests = getDeckManagementApiRequests({
     REACT_APP_API_BASE_URL: 'https://api.example.test',
   });
 
   assert.equal(
-    requests.renameDeckUrl('deck 1/with spaces'),
-    'https://api.example.test/api/decks/deck%201%2Fwith%20spaces'
+    requests.renameDeckUrl(' 0007 '),
+    'https://api.example.test/api/decks/7'
   );
   assert.equal(
-    requests.removeDeckUrl('deck?archived=true'),
-    'https://api.example.test/api/decks/deck%3Farchived%3Dtrue'
+    requests.removeDeckUrl('0008'),
+    'https://api.example.test/api/decks/8'
   );
   assert.equal(
-    requests.browseDeckCardsUrl('deck 1/with spaces', 'limit=10'),
-    'https://api.example.test/api/decks/deck%201%2Fwith%20spaces/cards?limit=10'
+    requests.browseDeckCardsUrl('0009', 'limit=10'),
+    'https://api.example.test/api/decks/9/cards?limit=10'
   );
   assert.equal(
-    requests.updateCardUrl('card 1/with spaces'),
-    'https://api.example.test/api/cards/card%201%2Fwith%20spaces'
+    requests.updateCardUrl(' 0011 '),
+    'https://api.example.test/api/cards/11'
   );
   assert.equal(
-    requests.removeCardUrl('card?deleted=false'),
-    'https://api.example.test/api/cards/card%3Fdeleted%3Dfalse'
+    requests.removeCardUrl('0012'),
+    'https://api.example.test/api/cards/12'
   );
+});
+
+test('getDeckManagementApiRequests rejects unsafe route ids before building URLs', () => {
+  const requests = getDeckManagementApiRequests({
+    REACT_APP_API_BASE_URL: 'https://api.example.test',
+  });
+  const unsafeIds = [
+    undefined,
+    null,
+    '',
+    'deck 1/with spaces',
+    'card?deleted=false',
+    '0',
+    '2147483648',
+    {},
+  ];
+
+  [
+    ['renameDeckUrl', 'deckId'],
+    ['removeDeckUrl', 'deckId'],
+    ['browseDeckCardsUrl', 'deckId'],
+    ['updateCardUrl', 'cardId'],
+    ['removeCardUrl', 'cardId'],
+  ].forEach(([methodName, fieldName]) => {
+    unsafeIds.forEach((id) => {
+      assert.throws(
+        () => requests[methodName](id, 'limit=10'),
+        {
+          name: 'TypeError',
+          message: `Invalid ${fieldName}: must be a positive integer route id`,
+        },
+        `${methodName} should reject ${String(id)}`
+      );
+    });
+  });
 });
 
 test('getDeckManagementApiRequests preserves browse deck cards query strings', () => {
@@ -71,7 +106,7 @@ test('getDeckManagementApiRequests preserves browse deck cards query strings', (
   const query = 'limit=10&q=front+back&cursorCreatedAt=2026-05-01T00%3A00%3A00.000Z&cursorId=card%2F1';
 
   assert.equal(
-    requests.browseDeckCardsUrl('deck-1', query),
-    `https://api.example.test/api/decks/deck-1/cards?${query}`
+    requests.browseDeckCardsUrl('0013', query),
+    `https://api.example.test/api/decks/13/cards?${query}`
   );
 });
