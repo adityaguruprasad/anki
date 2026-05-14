@@ -5,6 +5,10 @@ const BROWSE_CARDS_DEFAULT_LIMIT = 50;
 const BROWSE_CARDS_MAX_LIMIT = 100;
 const BROWSE_CARDS_MAX_SEARCH_LENGTH = 200;
 const MAX_CARD_CONTENT_LENGTH = 10000;
+// anki.db uses PostgreSQL SERIAL/INTEGER ids; reject impossible ids before
+// they reach hot API queries where PostgreSQL would raise int4 range errors.
+const MAX_POSTGRES_SERIAL_ID = 2147483647;
+const MAX_POSTGRES_SERIAL_ID_TEXT = String(MAX_POSTGRES_SERIAL_ID);
 const MAX_SAFE_INTEGER_TEXT = String(Number.MAX_SAFE_INTEGER);
 const CARD_READ_FIELDS = Object.freeze([
   'id',
@@ -38,7 +42,7 @@ function isValidQuality(quality) {
 
 function validatePositiveIntegerIdentifier(value, fieldName) {
   if (typeof value === 'number') {
-    if (Number.isSafeInteger(value) && value > 0) {
+    if (Number.isSafeInteger(value) && value > 0 && value <= MAX_POSTGRES_SERIAL_ID) {
       return { ok: true, value };
     }
     return { ok: false, error: `Invalid ${fieldName}: must be a positive integer` };
@@ -52,15 +56,15 @@ function validatePositiveIntegerIdentifier(value, fieldName) {
 
     if (/^\d+$/.test(trimmed)) {
       const normalizedDigits = trimmed.replace(/^0+/, '');
-      const isWithinSafeIntegerRange = (
-        normalizedDigits.length < MAX_SAFE_INTEGER_TEXT.length
+      const isWithinPostgresSerialRange = (
+        normalizedDigits.length < MAX_POSTGRES_SERIAL_ID_TEXT.length
         || (
-          normalizedDigits.length === MAX_SAFE_INTEGER_TEXT.length
-          && normalizedDigits <= MAX_SAFE_INTEGER_TEXT
+          normalizedDigits.length === MAX_POSTGRES_SERIAL_ID_TEXT.length
+          && normalizedDigits <= MAX_POSTGRES_SERIAL_ID_TEXT
         )
       );
 
-      if (normalizedDigits.length > 0 && isWithinSafeIntegerRange) {
+      if (normalizedDigits.length > 0 && isWithinPostgresSerialRange) {
         return { ok: true, value: Number(normalizedDigits) };
       }
     }

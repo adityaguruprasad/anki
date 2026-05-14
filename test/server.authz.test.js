@@ -318,6 +318,8 @@ test('PATCH /api/decks/:deckId returns 400 for invalid deckId and skips db query
     0,
     -2,
     1.3,
+    '2147483648',
+    2147483648,
     '9007199254740992',
   ];
 
@@ -544,6 +546,8 @@ test('DELETE /api/decks/:deckId returns 400 for invalid deckId and skips db quer
     0,
     -2,
     1.3,
+    '2147483648',
+    2147483648,
     '9007199254740992',
   ];
 
@@ -629,21 +633,23 @@ test('isValidQuality accepts only integers from 0 to 5', () => {
 });
 
 test('validatePositiveIntegerIdentifier accepts only positive integer-like values', () => {
+  const maxPostgresSerialId = 2147483647;
+
   assert.deepEqual(
     validatePositiveIntegerIdentifier(5, 'deckId'),
     { ok: true, value: 5 }
   );
   assert.deepEqual(
-    validatePositiveIntegerIdentifier(Number.MAX_SAFE_INTEGER, 'deckId'),
-    { ok: true, value: Number.MAX_SAFE_INTEGER }
+    validatePositiveIntegerIdentifier(maxPostgresSerialId, 'deckId'),
+    { ok: true, value: maxPostgresSerialId }
   );
   assert.deepEqual(
     validatePositiveIntegerIdentifier(' 42 ', 'deckId'),
     { ok: true, value: 42 }
   );
   assert.deepEqual(
-    validatePositiveIntegerIdentifier(` ${Number.MAX_SAFE_INTEGER} `, 'deckId'),
-    { ok: true, value: Number.MAX_SAFE_INTEGER }
+    validatePositiveIntegerIdentifier(` ${maxPostgresSerialId} `, 'deckId'),
+    { ok: true, value: maxPostgresSerialId }
   );
   assert.deepEqual(
     validatePositiveIntegerIdentifier('00042', 'deckId'),
@@ -661,6 +667,10 @@ test('validatePositiveIntegerIdentifier accepts only positive integer-like value
     0,
     -1,
     1.5,
+    maxPostgresSerialId + 1,
+    `${maxPostgresSerialId + 1}`,
+    Number.MAX_SAFE_INTEGER,
+    `${Number.MAX_SAFE_INTEGER}`,
     Number.MAX_SAFE_INTEGER + 1,
     `${Number.MAX_SAFE_INTEGER + 1}`,
     '10000000000000000',
@@ -687,6 +697,8 @@ test('GET /api/cards/:deckId returns 400 for invalid deckId and skips db query',
     0,
     -2,
     1.3,
+    '2147483648',
+    2147483648,
     '9007199254740992',
   ];
 
@@ -715,6 +727,8 @@ test('GET /api/decks/:deckId/cards returns 400 for invalid deckId and skips db q
     0,
     -2,
     1.3,
+    '2147483648',
+    2147483648,
     '9007199254740992',
   ];
 
@@ -1125,6 +1139,10 @@ test('GET /api/decks/:deckId/cards returns 400 for invalid cursor and skips db q
       error: 'Invalid beforeId: must be a positive integer',
     },
     {
+      query: { beforeCreatedAt: '2026-05-08T13:00:00.000Z', beforeId: '2147483648' },
+      error: 'Invalid beforeId: must be a positive integer',
+    },
+    {
       query: { beforeCreatedAt: '2026-05-08T13:00:00.000Z', beforeId: ['3'] },
       error: 'Invalid beforeId: must be a positive integer',
     },
@@ -1134,6 +1152,10 @@ test('GET /api/decks/:deckId/cards returns 400 for invalid cursor and skips db q
     },
     {
       query: { cursorCreatedAt: '2026-05-08T13:00:00.000Z', cursorId: '0' },
+      error: 'Invalid cursorId: must be a positive integer',
+    },
+    {
+      query: { cursorCreatedAt: '2026-05-08T13:00:00.000Z', cursorId: 2147483648 },
       error: 'Invalid cursorId: must be a positive integer',
     },
   ];
