@@ -1,7 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { calculateNextReview } = require('../spacedRepetition');
+const { calculateNextReview, MAX_INTERVAL_DAYS } = require('../spacedRepetition');
+
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
 function assertValidSchedule(result) {
   assert.equal(Number.isInteger(result.interval), true);
@@ -221,6 +223,19 @@ test('calculateNextReview sanitizes NaN and negative persisted scheduling values
   assertValidSchedule(result);
   assert.equal(result.interval, 6);
   assert.equal(result.ease_factor, 2.5);
+});
+
+test('calculateNextReview caps extreme intervals before deriving next review dates', () => {
+  const reviewedAt = new Date('2026-05-10T14:30:00.000Z');
+  const result = calculateNextReview({
+    interval: Number.MAX_SAFE_INTEGER,
+    ease_factor: Number.MAX_VALUE,
+    review_count: 3,
+  }, 5, reviewedAt);
+
+  assertValidSchedule(result);
+  assert.equal(result.interval, MAX_INTERVAL_DAYS);
+  assert.equal(result.next_review.getTime() - reviewedAt.getTime(), MAX_INTERVAL_DAYS * DAY_IN_MS);
 });
 
 test('calculateNextReview enforces low-quality reset and ease penalty semantics', () => {

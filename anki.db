@@ -39,6 +39,7 @@ CREATE TABLE cards (
   -- deployments must apply the scheduling metadata migration before relying
   -- on these persisted scheduling invariants.
   CONSTRAINT cards_interval_min_check CHECK (interval >= 1),
+  CONSTRAINT cards_interval_max_check CHECK (interval <= 36500),
   CONSTRAINT cards_review_count_non_negative_check CHECK (review_count >= 0),
   CONSTRAINT cards_ease_factor_min_check CHECK (ease_factor >= 1.3)
 );

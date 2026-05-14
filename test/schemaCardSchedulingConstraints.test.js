@@ -4,11 +4,15 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { getTableDefinition } = require('./schemaHelpers');
 const { submitStudySession } = require('../apiHandlers');
-const { calculateNextReview } = require('../spacedRepetition');
+const { calculateNextReview, MAX_INTERVAL_DAYS } = require('../spacedRepetition');
 
 const cardsTable = getTableDefinition('cards');
 const schedulingMigration = fs.readFileSync(
   path.join(__dirname, '..', 'migrations', '002_enforce_card_scheduling_constraints.sql'),
+  'utf8',
+);
+const intervalCapMigration = fs.readFileSync(
+  path.join(__dirname, '..', 'migrations', '005_cap_card_scheduling_interval.sql'),
   'utf8',
 );
 
@@ -16,6 +20,18 @@ function getCheckFloor(constraintName, columnName) {
   const match = cardsTable.match(
     new RegExp(
       `\\bCONSTRAINT\\s+${constraintName}\\s+CHECK\\s*\\(\\s*${columnName}\\s*>=\\s*([0-9.]+)\\s*\\)`,
+      'i',
+    ),
+  );
+
+  assert.ok(match, `Expected ${constraintName} to constrain ${columnName}`);
+  return Number(match[1]);
+}
+
+function getCheckCeiling(constraintName, columnName) {
+  const match = cardsTable.match(
+    new RegExp(
+      `\\bCONSTRAINT\\s+${constraintName}\\s+CHECK\\s*\\(\\s*${columnName}\\s*<=\\s*([0-9.]+)\\s*\\)`,
       'i',
     ),
   );
@@ -94,6 +110,10 @@ test('anki.db constrains persisted card scheduling state to app invariants', () 
   );
   assert.match(
     cardsTable,
+    /\bCONSTRAINT\s+cards_interval_max_check\s+CHECK\s*\(\s*interval\s*<=\s*36500\s*\)/i,
+  );
+  assert.match(
+    cardsTable,
     /\bCONSTRAINT\s+cards_review_count_non_negative_check\s+CHECK\s*\(\s*review_count\s*>=\s*0\s*\)/i,
   );
   assert.match(
@@ -129,6 +149,26 @@ test('card scheduling migration normalizes legacy rows before enforcing constrai
   assert.doesNotMatch(schedulingMigration, /\bDELETE\s+FROM\s+cards\b/i);
 });
 
+test('card interval cap migration clamps legacy rows before enforcing max interval', () => {
+  assert.match(intervalCapMigration, /^\s*(?:--[^\n]*\n)*BEGIN;\s*/i);
+  assert.match(intervalCapMigration, /COMMIT;\s*$/i);
+  assert.match(
+    intervalCapMigration,
+    /LOCK\s+TABLE\s+cards\s+IN\s+ACCESS\s+EXCLUSIVE\s+MODE/i,
+  );
+  assert.match(
+    intervalCapMigration,
+    new RegExp(`UPDATE\\s+cards\\s+SET\\s+interval\\s*=\\s+${MAX_INTERVAL_DAYS}\\s+WHERE\\s+interval\\s*>\\s+${MAX_INTERVAL_DAYS}`, 'i'),
+  );
+  assert.match(
+    intervalCapMigration,
+    new RegExp(`ADD\\s+CONSTRAINT\\s+cards_interval_max_check\\s+CHECK\\s*\\(\\s*interval\\s*<=\\s*${MAX_INTERVAL_DAYS}\\s*\\)`, 'i'),
+  );
+  assertOrdered(intervalCapMigration, /\bLOCK\s+TABLE\b/i, /\bUPDATE\s+cards\b/i);
+  assertOrdered(intervalCapMigration, /\bUPDATE\s+cards\b/i, /\bALTER\s+TABLE\s+cards\b/i);
+  assert.doesNotMatch(intervalCapMigration, /\bDELETE\s+FROM\s+cards\b/i);
+});
+
 test('card scheduling migration and bootstrap schema enforce matching constraints', () => {
   for (const [columnName, defaultValue] of [
     ['interval', '1'],
@@ -154,6 +194,11 @@ test('card scheduling migration and bootstrap schema enforce matching constraint
     assert.match(schedulingMigration, new RegExp(`DROP\\s+CONSTRAINT\\s+IF\\s+EXISTS\\s+${constraintName}`, 'i'));
     assert.match(schedulingMigration, new RegExp(`ADD\\s+CONSTRAINT\\s+${constraintName}\\s+CHECK\\s*\\(\\s*${expression}\\s*\\)`, 'i'));
   }
+
+  const intervalCapExpression = `interval\\s*<=\\s*${MAX_INTERVAL_DAYS}`;
+  assert.match(cardsTable, new RegExp(`CONSTRAINT\\s+cards_interval_max_check\\s+CHECK\\s*\\(\\s*${intervalCapExpression}\\s*\\)`, 'i'));
+  assert.match(intervalCapMigration, /DROP\s+CONSTRAINT\s+IF\s+EXISTS\s+cards_interval_max_check/i);
+  assert.match(intervalCapMigration, new RegExp(`ADD\\s+CONSTRAINT\\s+cards_interval_max_check\\s+CHECK\\s*\\(\\s*${intervalCapExpression}\\s*\\)`, 'i'));
 });
 
 test('card scheduling constraints match calculateNextReview runtime floors', () => {
@@ -183,8 +228,26 @@ test('card scheduling constraints match calculateNextReview runtime floors', () 
   }
 });
 
+test('card scheduling constraints match calculateNextReview runtime interval cap', () => {
+  const intervalCeiling = getCheckCeiling('cards_interval_max_check', 'interval');
+  const reviewedAt = new Date('2026-05-10T14:30:00.000Z');
+
+  assert.equal(intervalCeiling, MAX_INTERVAL_DAYS);
+
+  const result = calculateNextReview({
+    interval: intervalCeiling + 1000,
+    ease_factor: 2.5,
+    review_count: 3,
+  }, 5, reviewedAt);
+
+  assert.equal(result.interval, intervalCeiling);
+  assert.equal(result.next_review instanceof Date, true);
+  assert.equal(Number.isNaN(result.next_review.getTime()), false);
+});
+
 test('study session update writes scheduler output within card scheduling constraints', async () => {
   const intervalFloor = getCheckFloor('cards_interval_min_check', 'interval');
+  const intervalCeiling = getCheckCeiling('cards_interval_max_check', 'interval');
   const easeFactorFloor = getCheckFloor('cards_ease_factor_min_check', 'ease_factor');
   const db = createStudySessionDb({
     id: 17,
@@ -212,5 +275,6 @@ test('study session update writes scheduler output within card scheduling constr
     /review_count\s+=\s+COALESCE\s*\(\s*review_count\s*,\s*0\s*\)\s*\+\s*1/i,
   );
   assert.equal(updateCall.params[2] >= intervalFloor, true);
+  assert.equal(updateCall.params[2] <= intervalCeiling, true);
   assert.equal(updateCall.params[3] >= easeFactorFloor, true);
 });

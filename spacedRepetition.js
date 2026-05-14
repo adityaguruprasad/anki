@@ -2,6 +2,7 @@
 const MIN_EASE_FACTOR = 1.3;
 const DEFAULT_EASE_FACTOR = 2.5;
 const INITIAL_GOOD_INTERVAL = 6;
+const MAX_INTERVAL_DAYS = 36500;
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
 const normalizeEaseFactor = (value) => {
@@ -12,12 +13,14 @@ const normalizeEaseFactor = (value) => {
   return Math.max(MIN_EASE_FACTOR, numeric);
 };
 
+const clampIntervalDays = (value) => Math.min(MAX_INTERVAL_DAYS, Math.max(1, value));
+
 const normalizeInterval = (value) => {
   const numeric = Number(value);
   if (!Number.isFinite(numeric) || numeric < 1) {
     return null;
   }
-  return Math.max(1, Math.round(numeric));
+  return clampIntervalDays(Math.round(numeric));
 };
 
 const hasExplicitInitialReviewCount = (card) => {
@@ -64,7 +67,7 @@ const calculateNextReview = (card, quality, reviewedAt) => {
   if (storedInterval === null || hasExplicitInitialReviewCount(card)) {
     interval = quality < 3 ? 1 : INITIAL_GOOD_INTERVAL;
   } else if (quality >= 3) {
-    interval = Math.max(1, Math.round(storedInterval * ease_factor));
+    interval = clampIntervalDays(Math.round(storedInterval * ease_factor));
   } else {
     interval = 1;
   }
@@ -89,4 +92,4 @@ const calculateNextReview = (card, quality, reviewedAt) => {
   };
 };
 
-module.exports = { calculateNextReview };
+module.exports = { calculateNextReview, MAX_INTERVAL_DAYS };
