@@ -15,6 +15,10 @@ const AUTH_TOKEN_STORAGE_KEY = 'token';
 const DEFAULT_API_BASE_URL = 'http://localhost:3001';
 const INVALID_AUTH_RESPONSE_ERROR = 'Authentication response was invalid. Please try again.';
 const MAX_BACKEND_AUTH_ERROR_LENGTH = 240;
+const ABSOLUTE_URL_SCHEME_PATTERN = /^[a-z][a-z\d+\-.]*:/i;
+const API_BASE_UNSAFE_CHARACTER_PATTERN = /[\u0000-\u0020\u007f\\]/u;
+const RELATIVE_API_BASE_PATH_PATTERN =
+  /^(?:[A-Za-z0-9._~!$&()*+,;=:@/-]|%[0-9A-Fa-f]{2})+$/u;
 // Mirrors auth.js and the anki.db users schema. Register derives username from email,
 // so registration must honor the backend username cap before submitting.
 const AUTH_EMAIL_MAX_LENGTH = 100;
@@ -28,12 +32,90 @@ const GENERIC_AUTH_ERRORS = Object.freeze({
   [AUTH_MODES.REGISTER]: 'Could not create account. Please check your email and password.',
 });
 
+function stripTrailingSlashes(value) {
+  return value.replace(/\/+$/, '');
+}
+
+function hasMalformedUrlEscapes(value) {
+  // This is only a malformed percent-escape check; URL parsing keeps escapes encoded.
+  try {
+    decodeURI(value);
+  } catch {
+    return true;
+  }
+
+  return false;
+}
+
+function normalizeRelativeApiBaseUrl(value) {
+  if (
+    value[0] !== '/'
+    || value[1] === '/'
+    || API_BASE_UNSAFE_CHARACTER_PATTERN.test(value)
+    || value.includes('?')
+    || value.includes('#')
+    || !RELATIVE_API_BASE_PATH_PATTERN.test(value)
+    || hasMalformedUrlEscapes(value)
+  ) {
+    return '';
+  }
+
+  return stripTrailingSlashes(value);
+}
+
+function normalizeAbsoluteApiBaseUrl(value) {
+  if (
+    API_BASE_UNSAFE_CHARACTER_PATTERN.test(value)
+    || hasMalformedUrlEscapes(value)
+  ) {
+    return '';
+  }
+
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(value);
+  } catch {
+    return '';
+  }
+
+  if (
+    (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:')
+    || parsedUrl.username !== ''
+    || parsedUrl.password !== ''
+    || parsedUrl.search !== ''
+    || parsedUrl.hash !== ''
+  ) {
+    return '';
+  }
+
+  return `${parsedUrl.origin}${stripTrailingSlashes(parsedUrl.pathname)}`;
+}
+
+function normalizeConfiguredApiBaseUrl(value) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  const configuredUrl = value.trim();
+  if (configuredUrl === '') {
+    return '';
+  }
+
+  if (configuredUrl[0] === '/') {
+    return normalizeRelativeApiBaseUrl(configuredUrl);
+  }
+
+  // The regex only separates absolute URL candidates from bare hosts.
+  // URL parsing below validates and normalizes the actual scheme/origin.
+  if (!ABSOLUTE_URL_SCHEME_PATTERN.test(configuredUrl)) {
+    return '';
+  }
+
+  return normalizeAbsoluteApiBaseUrl(configuredUrl);
+}
+
 function resolveApiBaseUrl(env) {
-  const configuredUrl =
-    env && typeof env.REACT_APP_API_BASE_URL === 'string'
-      ? env.REACT_APP_API_BASE_URL.trim()
-      : '';
-  const baseUrl = configuredUrl.replace(/\/+$/, '');
+  const baseUrl = normalizeConfiguredApiBaseUrl(env?.REACT_APP_API_BASE_URL);
 
   return baseUrl || DEFAULT_API_BASE_URL;
 }

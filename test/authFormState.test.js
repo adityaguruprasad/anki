@@ -257,6 +257,114 @@ test('createAuthRequest uses configured API base URL without trailing slashes', 
   );
 });
 
+test('resolveApiBaseUrl preserves safe HTTP origins and path prefixes', () => {
+  assert.equal(
+    resolveApiBaseUrl({ REACT_APP_API_BASE_URL: 'http://localhost:3001///' }),
+    'http://localhost:3001'
+  );
+  assert.equal(
+    resolveApiBaseUrl({ REACT_APP_API_BASE_URL: '  https://api.example.test/v1///  ' }),
+    'https://api.example.test/v1'
+  );
+  assert.equal(
+    resolveApiBaseUrl({ REACT_APP_API_BASE_URL: '/backend///' }),
+    '/backend'
+  );
+  assert.equal(
+    getAuthEndpoint(AUTH_MODES.LOGIN, { REACT_APP_API_BASE_URL: '/backend///' }),
+    '/backend/api/login'
+  );
+});
+
+test('resolveApiBaseUrl preserves safe relative API base path characters', () => {
+  const safeRelativePaths = [
+    '/backend/v1',
+    '/backend/v1-._~',
+    '/backend/!$&()*+,;=:@',
+    '/backend/%7Eteam/%27quote%22/%7btenant%7d',
+  ];
+
+  for (const REACT_APP_API_BASE_URL of safeRelativePaths) {
+    assert.equal(
+      resolveApiBaseUrl({ REACT_APP_API_BASE_URL }),
+      REACT_APP_API_BASE_URL,
+      `Expected ${REACT_APP_API_BASE_URL} to be preserved`
+    );
+  }
+});
+
+test('resolveApiBaseUrl normalizes uppercase HTTP and HTTPS schemes', () => {
+  assert.equal(
+    resolveApiBaseUrl({ REACT_APP_API_BASE_URL: 'HTTP://api.example.test/v1///' }),
+    'http://api.example.test/v1'
+  );
+  assert.equal(
+    resolveApiBaseUrl({ REACT_APP_API_BASE_URL: 'HTTPS://api.example.test/v1///' }),
+    'https://api.example.test/v1'
+  );
+});
+
+test('resolveApiBaseUrl normalizes default HTTP and HTTPS ports', () => {
+  assert.equal(
+    resolveApiBaseUrl({ REACT_APP_API_BASE_URL: 'http://api.example.test:80/v1///' }),
+    'http://api.example.test/v1'
+  );
+  assert.equal(
+    resolveApiBaseUrl({ REACT_APP_API_BASE_URL: 'https://api.example.test:443/v1///' }),
+    'https://api.example.test/v1'
+  );
+});
+
+test('resolveApiBaseUrl falls back for unsafe configured API base URLs', () => {
+  const unsafeConfiguredUrls = [
+    'javascript:alert(1)',
+    'data:text/plain,hello',
+    'ftp://api.example.test',
+    '//api.example.test',
+    'api.example.test',
+    'https://user:pass@api.example.test',
+    'https://api.example.test?tenant=admin',
+    'https://api.example.test#token',
+    'https://api.example.test/a b',
+    'https://api.example.test\\evil',
+    '/backend?tenant=admin',
+    '/backend#token',
+    '/backend/%E0%A4%A',
+  ];
+
+  for (const REACT_APP_API_BASE_URL of unsafeConfiguredUrls) {
+    assert.equal(
+      resolveApiBaseUrl({ REACT_APP_API_BASE_URL }),
+      'http://localhost:3001',
+      `Expected ${REACT_APP_API_BASE_URL} to fall back`
+    );
+  }
+});
+
+test('resolveApiBaseUrl falls back for unsafe printable relative API base path characters', () => {
+  const unsafeRelativePaths = [
+    '/backend<tenant',
+    '/backend>tenant',
+    '/backend"tenant',
+    "/backend'tenant",
+    '/backend{tenant',
+    '/backend}tenant',
+    '/backend^tenant',
+    '/backend`tenant',
+    '/backend|tenant',
+    '/backend[tenant',
+    '/backend]tenant',
+  ];
+
+  for (const REACT_APP_API_BASE_URL of unsafeRelativePaths) {
+    assert.equal(
+      resolveApiBaseUrl({ REACT_APP_API_BASE_URL }),
+      'http://localhost:3001',
+      `Expected ${JSON.stringify(REACT_APP_API_BASE_URL)} to fall back`
+    );
+  }
+});
+
 test('validateAuthInput requires a trimmed email and password for login', () => {
   assert.deepEqual(
     validateAuthInput({ mode: AUTH_MODES.LOGIN, email: '   ', password: 's3cret' }),
