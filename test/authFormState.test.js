@@ -17,7 +17,10 @@ const {
   resolveApiBaseUrl,
   validateAuthInput,
 } = require('../authFormState');
-const { AUTH_TOKEN_MAX_LENGTH } = require('../authTokenValidation');
+const {
+  createCompactJwt,
+  createMaxLengthCompactJwt,
+} = require('./authTokenTestHelpers');
 
 const LOCAL_ENV = Object.freeze({});
 
@@ -32,24 +35,25 @@ test('getNextAuthMode toggles between login and register modes', () => {
 });
 
 test('createInitialAuthSession reads and trims a usable stored token', () => {
+  const token = createCompactJwt();
   const requestedKeys = [];
   const storage = {
     getItem(key) {
       requestedKeys.push(key);
-      return '  abc.def.ghi  ';
+      return `  ${token}  `;
     },
   };
 
   assert.deepEqual(createInitialAuthSession(storage), {
     isLoggedIn: true,
-    token: 'abc.def.ghi',
+    token,
     cleanupNeeded: false,
   });
   assert.deepEqual(requestedKeys, [AUTH_TOKEN_STORAGE_KEY]);
 });
 
-test('createInitialAuthSession accepts a max-length stored token', () => {
-  const token = 'a'.repeat(AUTH_TOKEN_MAX_LENGTH);
+test('createInitialAuthSession accepts a max-length compact JWT token', () => {
+  const token = createMaxLengthCompactJwt();
 
   assert.deepEqual(createInitialAuthSession({ getItem: () => token }), {
     isLoggedIn: true,
@@ -86,13 +90,15 @@ test('createInitialAuthSession treats blank stored tokens as cleanup-needed logo
 
 test('createInitialAuthSession treats unsafe stored tokens as cleanup-needed logout', () => {
   for (const token of [
+    'token-123',
+    'abc.def.ghi',
     'abc.def ghi',
     'abc.def\tghi',
     'abc.def\nghi',
     'abc.def\rghi',
     'abc.def\u0000ghi',
     'abc.def\u007fghi',
-    'a'.repeat(AUTH_TOKEN_MAX_LENGTH + 1),
+    `${createMaxLengthCompactJwt()}a`,
   ]) {
     assert.deepEqual(
       createInitialAuthSession({ getItem: () => token }),
@@ -155,7 +161,7 @@ test('cleanupStoredAuthTokenIfNeeded removes bad stored tokens best-effort', () 
 test('cleanupStoredAuthTokenIfNeeded skips usable sessions and swallows cleanup failures', () => {
   const usableSession = {
     isLoggedIn: true,
-    token: 'abc.def.ghi',
+    token: createCompactJwt(),
     cleanupNeeded: false,
   };
   let removeCalls = 0;
@@ -603,18 +609,20 @@ test('createAuthSubmission returns a request when not blocked and input is valid
 });
 
 test('parseAuthResponse returns a trimmed token for successful auth responses', () => {
+  const token = createCompactJwt();
+
   assert.deepEqual(
     parseAuthResponse({
       mode: AUTH_MODES.LOGIN,
       ok: true,
-      body: { token: '  abc.def.ghi  ' },
+      body: { token: `  ${token}  ` },
     }),
-    { ok: true, token: 'abc.def.ghi' }
+    { ok: true, token }
   );
 });
 
-test('parseAuthResponse accepts a max-length token for successful auth responses', () => {
-  const token = 'a'.repeat(AUTH_TOKEN_MAX_LENGTH);
+test('parseAuthResponse accepts a max-length compact JWT for successful auth responses', () => {
+  const token = createMaxLengthCompactJwt();
 
   assert.deepEqual(
     parseAuthResponse({
@@ -631,13 +639,15 @@ test('parseAuthResponse rejects malformed successful auth payloads', () => {
     {},
     { token: '' },
     { token: '   ' },
+    { token: 'token-123' },
+    { token: 'abc.def.ghi' },
     { token: 'abc.def ghi' },
     { token: 'abc.def\tghi' },
     { token: 'abc.def\nghi' },
     { token: 'abc.def\rghi' },
     { token: 'abc.def\u0000ghi' },
     { token: 'abc.def\u007fghi' },
-    { token: 'a'.repeat(AUTH_TOKEN_MAX_LENGTH + 1) },
+    { token: `${createMaxLengthCompactJwt()}a` },
     { token: 123 },
     null,
     undefined,

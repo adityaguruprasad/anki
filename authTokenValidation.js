@@ -1,8 +1,91 @@
-const AUTH_TOKEN_MAX_LENGTH = 4096;
-// Trim allows harmless surrounding whitespace; this still rejects embedded
-// whitespace plus C0/DEL control characters after trimming.
-const AUTH_TOKEN_UNSAFE_CHARACTER_PATTERN = /[\s\x00-\x1F\x7F]/u;
+const { MAX_POSTGRES_SERIAL_ID } = require('./cardIdentifier');
 
+const AUTH_TOKEN_MAX_LENGTH = 4096;
+const AUTH_TOKEN_ALGORITHM = 'HS256';
+const AUTH_TOKEN_COMPACT_PART_PATTERN = /^[A-Za-z0-9_-]+$/;
+
+function decodeBase64UrlToUtf8(value) {
+  if (value.length % 4 === 1) {
+    return null;
+  }
+
+  try {
+    let binary;
+
+    if (typeof globalThis.atob === 'function') {
+      const base64 = value.replace(/-/g, '+').replace(/_/g, '/');
+      const paddedBase64 = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=');
+      binary = globalThis.atob(paddedBase64);
+    } else if (typeof Buffer !== 'undefined') {
+      binary = Buffer.from(value, 'base64url').toString('binary');
+    } else {
+      return null;
+    }
+
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+
+    if (typeof globalThis.TextDecoder === 'function') {
+      return new globalThis.TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    }
+
+    return decodeURIComponent(
+      Array.from(bytes, (byte) => `%${byte.toString(16).padStart(2, '0')}`).join('')
+    );
+  } catch {
+    return null;
+  }
+}
+
+function parseBase64UrlJsonObject(value) {
+  const decoded = decodeBase64UrlToUtf8(value);
+  if (decoded === null) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(decoded);
+    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function isPositiveSafeInteger(value) {
+  return Number.isSafeInteger(value) && value > 0;
+}
+
+function isJwtUserIdClaim(value) {
+  return isPositiveSafeInteger(value) && value <= MAX_POSTGRES_SERIAL_ID;
+}
+
+function hasUsableJwtEnvelope(token) {
+  const parts = token.split('.');
+  if (
+    parts.length !== 3
+    || parts.some((part) => part.length === 0 || !AUTH_TOKEN_COMPACT_PART_PATTERN.test(part))
+  ) {
+    return false;
+  }
+
+  const [encodedHeader, encodedPayload] = parts;
+  const header = parseBase64UrlJsonObject(encodedHeader);
+  if (header === null || header.alg !== AUTH_TOKEN_ALGORITHM) {
+    return false;
+  }
+
+  const payload = parseBase64UrlJsonObject(encodedPayload);
+  return (
+    payload !== null
+    && isJwtUserIdClaim(payload.userId)
+    && isPositiveSafeInteger(payload.exp)
+  );
+}
+
+// Client-side normalization only validates the compact JWT envelope shape and
+// app claims expected from API-issued tokens. Signature verification and
+// chronological expiry enforcement remain owned by the API/auth boundary.
 function normalizeAuthToken(value) {
   if (typeof value !== 'string') {
     return null;
@@ -12,7 +95,7 @@ function normalizeAuthToken(value) {
   if (
     token.length === 0
     || token.length > AUTH_TOKEN_MAX_LENGTH
-    || AUTH_TOKEN_UNSAFE_CHARACTER_PATTERN.test(token)
+    || !hasUsableJwtEnvelope(token)
   ) {
     return null;
   }

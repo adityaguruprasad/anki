@@ -2,22 +2,29 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { buildAuthHeaders } = require('../authHeaders');
-const { AUTH_TOKEN_MAX_LENGTH } = require('../authTokenValidation');
+const {
+  createCompactJwt,
+  createMaxLengthCompactJwt,
+} = require('./authTokenTestHelpers');
 
-test('buildAuthHeaders builds a bearer header for a non-empty token', () => {
-  assert.deepEqual(buildAuthHeaders('token-123'), {
-    Authorization: 'Bearer token-123',
+test('buildAuthHeaders builds a bearer header for a compact JWT token', () => {
+  const token = createCompactJwt();
+
+  assert.deepEqual(buildAuthHeaders(token), {
+    Authorization: `Bearer ${token}`,
   });
 });
 
 test('buildAuthHeaders trims token values before building the header', () => {
-  assert.deepEqual(buildAuthHeaders('  token-123  '), {
-    Authorization: 'Bearer token-123',
+  const token = createCompactJwt();
+
+  assert.deepEqual(buildAuthHeaders(`  ${token}  `), {
+    Authorization: `Bearer ${token}`,
   });
 });
 
-test('buildAuthHeaders accepts a max-length token', () => {
-  const token = 'a'.repeat(AUTH_TOKEN_MAX_LENGTH);
+test('buildAuthHeaders accepts a max-length compact JWT token', () => {
+  const token = createMaxLengthCompactJwt();
 
   assert.deepEqual(buildAuthHeaders(token), {
     Authorization: `Bearer ${token}`,
@@ -33,13 +40,15 @@ test('buildAuthHeaders returns empty headers for missing and blank tokens', () =
 
 test('buildAuthHeaders returns empty headers for unsafe token strings', () => {
   for (const token of [
+    'token-123',
+    'abc.def.ghi',
     'abc.def ghi',
     'abc.def\tghi',
     'abc.def\nghi',
     'abc.def\rghi',
     'abc.def\u0000ghi',
     'abc.def\u007fghi',
-    'a'.repeat(AUTH_TOKEN_MAX_LENGTH + 1),
+    `${createMaxLengthCompactJwt()}a`,
   ]) {
     assert.deepEqual(
       buildAuthHeaders(token),
@@ -50,21 +59,24 @@ test('buildAuthHeaders returns empty headers for unsafe token strings', () => {
 });
 
 test('buildAuthHeaders reads a token from a storage-like object', () => {
+  const token = createCompactJwt();
   const storage = {
     getItem(key) {
       assert.equal(key, 'token');
-      return 'stored-token';
+      return token;
     },
   };
 
   assert.deepEqual(buildAuthHeaders(storage), {
-    Authorization: 'Bearer stored-token',
+    Authorization: `Bearer ${token}`,
   });
 });
 
 test('buildAuthHeaders reads a token from a getter function', () => {
-  assert.deepEqual(buildAuthHeaders(() => 'getter-token'), {
-    Authorization: 'Bearer getter-token',
+  const token = createCompactJwt();
+
+  assert.deepEqual(buildAuthHeaders(() => token), {
+    Authorization: `Bearer ${token}`,
   });
 });
 
