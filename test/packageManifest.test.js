@@ -68,3 +68,12 @@ test('package manifest exposes an API server start script', () => {
 
   assert.equal(packageManifest.scripts?.['start:api'], 'node server.js');
 });
+
+test('package manifest exposes a CRA source sync check script', () => {
+  const packageManifest = readPackageManifest();
+
+  assert.equal(
+    packageManifest.scripts?.['check:cra-src'],
+    'node scripts/sync-cra-src.js --check',
+  );
+});

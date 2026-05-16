@@ -20,6 +20,7 @@
     "prebuild": "node scripts/sync-cra-src.js",
     "build": "react-scripts --openssl-legacy-provider build",
     "pretest": "node scripts/sync-cra-src.js",
+    "check:cra-src": "node scripts/sync-cra-src.js --check",
     "test": "react-scripts test",
     "test:unit": "node --test test/**/*.test.js",
     "start:api": "node server.js",
