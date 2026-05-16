@@ -1491,16 +1491,16 @@ test('GET /api/cards/:deckId returns 404 when deck is not owned by user', async 
   assert.equal(res.statusCode, 404);
   assert.deepEqual(res.body, { error: 'Deck not found for user' });
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [42, 'user-1']);
+  assert.deepEqual(db.calls[0].params, [42, 'user-1', 100]);
   assert.match(db.calls[0].sql, /WHERE d\.id = \$1 AND d\.user_id = \$2/);
   assertDuePredicate(db.calls[0].sql);
+  assert.match(db.calls[0].sql, /ORDER BY c\.next_review ASC NULLS FIRST,\s*c\.id ASC\s+LIMIT \$3/);
 });
 
-test('GET /api/cards/:deckId returns due and unscheduled cards for owned deck when limit is omitted', async () => {
-  const dueCards = [
-    { id: 1, next_review: null },
-    { id: 2, next_review: '2026-05-08T12:00:00.000Z' },
-  ];
+test('GET /api/cards/:deckId returns unscheduled and past-due cards with a parameterized default limit when limit is omitted', async () => {
+  const unscheduledCard = { id: 1, next_review: null };
+  const pastDueCard = { id: 2, next_review: '2026-05-08T12:00:00.000Z' };
+  const dueCards = [unscheduledCard, pastDueCard];
   const db = createDb([
     {
       rowCount: 2,
@@ -1518,16 +1518,19 @@ test('GET /api/cards/:deckId returns due and unscheduled cards for owned deck wh
 
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, dueCards);
+  assert.deepEqual(res.body[0], unscheduledCard);
+  assert.deepEqual(res.body[1], pastDueCard);
   assert.equal(Object.hasOwn(res.body[0], '__owned_deck_id'), false);
   assert.equal(Object.hasOwn(res.body[0], 'private_note'), false);
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [42, 'user-1']);
+  assert.deepEqual(db.calls[0].params, [42, 'user-1', 100]);
   assertExplicitPublicCardReadSelect(db.calls[0].sql);
   assert.match(db.calls[0].sql, /LEFT JOIN cards c/);
   assertDuePredicate(db.calls[0].sql);
   assert.match(db.calls[0].sql, /WHERE d\.id = \$1 AND d\.user_id = \$2/);
-  assert.match(db.calls[0].sql, /ORDER BY c\.next_review ASC NULLS FIRST,\s*c\.id ASC/);
-  assert.doesNotMatch(db.calls[0].sql, /\bLIMIT\b/);
+  assert.match(db.calls[0].sql, /ORDER BY c\.next_review ASC NULLS FIRST,\s*c\.id ASC\s+LIMIT \$3/);
+  assert.equal(db.calls[0].sql.match(/\bLIMIT\b/g)?.length, 1);
+  assert.doesNotMatch(db.calls[0].sql, /LIMIT\s+100/);
 });
 
 test('GET /api/cards/:deckId prioritizes unscheduled due cards when limiting study fetches', async () => {
@@ -1598,7 +1601,8 @@ test('GET /api/cards/:deckId returns empty array for owned deck with no due card
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, []);
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [42, 'user-1']);
+  assert.deepEqual(db.calls[0].params, [42, 'user-1', 100]);
+  assert.match(db.calls[0].sql, /ORDER BY c\.next_review ASC NULLS FIRST,\s*c\.id ASC\s+LIMIT \$3/);
 });
 
 test('POST /api/cards creates a card in an owned deck with one atomic insert-select query', async () => {

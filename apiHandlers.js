@@ -4,6 +4,9 @@ const { MAX_INTERVAL_DAYS, MIN_EASE_FACTOR } = require('./spacedRepetition');
 
 const BROWSE_CARDS_DEFAULT_LIMIT = 50;
 const BROWSE_CARDS_MAX_LIMIT = 100;
+// Match the max due-card fetch window so omitted limits stay bounded without
+// changing the explicit limit contract.
+const DUE_CARDS_DEFAULT_LIMIT = BROWSE_CARDS_MAX_LIMIT;
 const BROWSE_CARDS_MAX_SEARCH_LENGTH = 200;
 const MAX_CARD_CONTENT_LENGTH = 10000;
 // anki.db uses PostgreSQL SERIAL/INTEGER ids; reject impossible ids before
@@ -296,7 +299,7 @@ function validateBrowseCardsSearch(value) {
 
 function validateDueCardsLimit(value) {
   if (value === undefined) {
-    return { ok: true, value: null };
+    return { ok: true, value: DUE_CARDS_DEFAULT_LIMIT };
   }
 
   const validation = validatePositiveIntegerIdentifier(value, 'limit');
@@ -441,11 +444,7 @@ async function getDueCardsByDeck(req, res, db) {
     }
 
     const deckId = deckIdValidation.value;
-    const params = [deckId, req.user.userId];
-    const limitClause = limitValidation.value === null ? '' : '\n       LIMIT $3';
-    if (limitValidation.value !== null) {
-      params.push(limitValidation.value);
-    }
+    const params = [deckId, req.user.userId, limitValidation.value];
 
     const { rows } = await db.query(
       `SELECT ${CARD_READ_SELECT_LIST},
@@ -455,7 +454,8 @@ async function getDueCardsByDeck(req, res, db) {
          ON c.deck_id = d.id
         AND ${getDueCardPredicate('c')}
        WHERE d.id = $1 AND d.user_id = $2
-       ORDER BY c.next_review ASC NULLS FIRST, c.id ASC${limitClause}`,
+       ORDER BY c.next_review ASC NULLS FIRST, c.id ASC
+       LIMIT $3`,
       params
     );
 
