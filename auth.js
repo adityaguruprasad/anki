@@ -30,8 +30,10 @@ if (!Number.isSafeInteger(MAX_POSTGRES_SERIAL_ID)) {
 }
 const MAX_POSTGRES_SERIAL_ID_BIGINT = BigInt(MAX_POSTGRES_SERIAL_ID);
 const LOGIN_RATE_LIMIT_ERROR = 'Too many login attempts. Please try again later.';
+const REGISTRATION_RATE_LIMIT_ERROR = 'Too many registration attempts. Please try again later.';
 const DEFAULT_LOGIN_RATE_LIMIT_MAX_FAILURES = 5;
 const DEFAULT_LOGIN_SOURCE_RATE_LIMIT_MAX_FAILURES = 25;
+const DEFAULT_REGISTRATION_RATE_LIMIT_MAX_ATTEMPTS = 10;
 const DEFAULT_LOGIN_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 const DEFAULT_LOGIN_RATE_LIMIT_MAX_KEYS = 10000;
 // Keep these aligned with anki.db users.username VARCHAR(50), users.email VARCHAR(100),
@@ -423,6 +425,32 @@ function resolveLoginSourceRateLimitOptions(loginRateLimitOptions, loginSourceRa
   };
 }
 
+function resolveRegistrationRateLimitOptions(registrationRateLimitOptions) {
+  const config = registrationRateLimitOptions ?? {};
+
+  return {
+    maxFailures: resolvePositiveIntegerOption(
+      config,
+      'maxAttempts',
+      DEFAULT_REGISTRATION_RATE_LIMIT_MAX_ATTEMPTS,
+      'registrationRateLimit'
+    ),
+    windowMs: resolvePositiveIntegerOption(
+      config,
+      'windowMs',
+      DEFAULT_LOGIN_RATE_LIMIT_WINDOW_MS,
+      'registrationRateLimit'
+    ),
+    maxKeys: resolvePositiveIntegerOption(
+      config,
+      'maxKeys',
+      DEFAULT_LOGIN_RATE_LIMIT_MAX_KEYS,
+      'registrationRateLimit'
+    ),
+    now: config.now,
+  };
+}
+
 function getRequestIp(req = {}) {
   const candidates = [
     req.ip,
@@ -448,6 +476,12 @@ function getLoginRateLimitKey(req, normalizedEmail) {
 function getLoginSourceRateLimitKey(req) {
   // Source-wide spray throttling is IP-only; missing IPs share the 'unknown'
   // sentinel to fail closed, with a higher default threshold to limit NAT amplification.
+  return getRequestIp(req);
+}
+
+function getRegistrationRateLimitKey(req) {
+  // Registration hashing is expensive and source-scoped; successful signups do
+  // not reset this counter, which keeps bulk account creation bounded.
   return getRequestIp(req);
 }
 
@@ -479,6 +513,12 @@ function createAuthHandlers(db, options = {}) {
     resolveLoginSourceRateLimitOptions(options.loginRateLimit, options.loginSourceRateLimit),
     'loginSourceRateLimit'
   );
+  // Reuse the login-failure tracker as a source-scoped registration attempt counter;
+  // maxFailures means max registration attempts for this boundary.
+  const registrationAttemptTracker = createLoginFailureTracker(
+    resolveRegistrationRateLimitOptions(options.registrationRateLimit),
+    'registrationRateLimit'
+  );
 
   const register = async (req, res) => {
     const { username, email, password } = req.body || {};
@@ -509,6 +549,14 @@ function createAuthHandlers(db, options = {}) {
     if (!passwordValidation.ok) {
       return res.status(400).json({ error: passwordValidation.error });
     }
+
+    const registrationRateLimitKey = getRegistrationRateLimitKey(req);
+    if (registrationAttemptTracker.isBlocked(registrationRateLimitKey)) {
+      return res.status(429).json({ error: REGISTRATION_RATE_LIMIT_ERROR });
+    }
+    // recordFailure is the shared tracker API; here it records one valid
+    // registration attempt regardless of whether account creation succeeds.
+    registrationAttemptTracker.recordFailure(registrationRateLimitKey);
 
     try {
       const hashedPassword = await passwordHasher.hash(passwordValidation.value, PASSWORD_HASH_COST);
@@ -620,6 +668,7 @@ module.exports = {
   DEFAULT_JWT_EXPIRES_IN_SECONDS,
   DEFAULT_DEV_JWT_SECRET,
   LOGIN_RATE_LIMIT_ERROR,
+  REGISTRATION_RATE_LIMIT_ERROR,
   JWT_SECRET_MIN_PRODUCTION_BYTES,
   JWT_SECRET_MIN_PRODUCTION_BYTES_ERROR,
   JWT_TOKEN_TOO_LONG_ERROR,

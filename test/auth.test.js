@@ -16,6 +16,7 @@ const {
   MAX_JWT_TOKEN_LENGTH,
   MISSING_ACCOUNT_DUMMY_PASSWORD_HASH,
   PASSWORD_HASH_COST,
+  REGISTRATION_RATE_LIMIT_ERROR,
   createAuthHandlers,
   extractBearerToken,
   resolveJwtExpiresInSeconds,
@@ -456,6 +457,180 @@ test('register keeps unrelated unique violations on the 500 registration failure
   ]);
   assert.equal(db.calls.length, 1);
   assert.doesNotMatch(db.calls[0].sql, /ON\s+CONFLICT/i);
+});
+
+test('register throttles repeated source attempts before hashing or inserting users', async () => {
+  const db = createDb([
+    { rowCount: 1, rows: [{ id: 51 }] },
+    { rowCount: 1, rows: [{ id: 52 }] },
+  ]);
+  const passwordHasher = createPasswordHasher();
+  const { register } = createAuthHandlers(db, {
+    jwtSecret: 'register-rate-limit-secret',
+    passwordHasher,
+    registrationRateLimit: {
+      maxAttempts: 2,
+      windowMs: 60000,
+      now: () => 2100,
+    },
+  });
+  const sourceIp = '203.0.113.50';
+  const password = 'correct horse battery staple';
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const res = createRes();
+
+    await register({
+      ip: sourceIp,
+      body: {
+        username: `ada-${attempt}`,
+        email: `ada-${attempt}@example.com`,
+        password,
+      },
+    }, res);
+
+    assert.equal(res.statusCode, 201);
+    assert.equal(typeof res.body.token, 'string');
+  }
+
+  const blockedRes = createRes();
+  await register({
+    ip: sourceIp,
+    body: {
+      username: 'blocked-user',
+      email: 'blocked@example.com',
+      password,
+    },
+  }, blockedRes);
+
+  assert.equal(blockedRes.statusCode, 429);
+  assert.deepEqual(blockedRes.body, { error: REGISTRATION_RATE_LIMIT_ERROR });
+  assert.equal(db.calls.length, 2);
+  assert.deepEqual(db.calls.map((call) => call.params), [
+    ['ada-0', 'ada-0@example.com', `hashed:${password}`],
+    ['ada-1', 'ada-1@example.com', `hashed:${password}`],
+  ]);
+  assert.deepEqual(passwordHasher.hashCalls, [
+    { password, rounds: PASSWORD_HASH_COST },
+    { password, rounds: PASSWORD_HASH_COST },
+  ]);
+});
+
+test('register invalid input does not consume registration throttle attempts', async () => {
+  const db = createDb([{ rowCount: 1, rows: [{ id: 53 }] }]);
+  const passwordHasher = createPasswordHasher();
+  const { register } = createAuthHandlers(db, {
+    jwtSecret: 'invalid-register-rate-limit-secret',
+    passwordHasher,
+    registrationRateLimit: {
+      maxAttempts: 1,
+      windowMs: 60000,
+      now: () => 2200,
+    },
+  });
+  const sourceIp = '203.0.113.51';
+
+  const invalidRes = createRes();
+  await register({
+    ip: sourceIp,
+    body: {
+      username: 'ada',
+      email: 'not-an-email',
+      password: 'correct horse battery staple',
+    },
+  }, invalidRes);
+
+  assert.equal(invalidRes.statusCode, 400);
+  assert.deepEqual(invalidRes.body, { error: 'Valid email is required' });
+  assert.deepEqual(passwordHasher.hashCalls, []);
+  assert.deepEqual(db.calls, []);
+
+  const validRes = createRes();
+  await register({
+    ip: sourceIp,
+    body: {
+      username: 'ada',
+      email: 'ada@example.com',
+      password: 'correct horse battery staple',
+    },
+  }, validRes);
+
+  assert.equal(validRes.statusCode, 201);
+  assert.equal(typeof validRes.body.token, 'string');
+  assert.deepEqual(passwordHasher.hashCalls, [
+    { password: 'correct horse battery staple', rounds: PASSWORD_HASH_COST },
+  ]);
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [
+    'ada',
+    'ada@example.com',
+    'hashed:correct horse battery staple',
+  ]);
+});
+
+test('register allows valid attempts after the throttle window expires', async () => {
+  let now = 2300;
+  const db = createDb([
+    { rowCount: 1, rows: [{ id: 54 }] },
+    { rowCount: 1, rows: [{ id: 55 }] },
+  ]);
+  const passwordHasher = createPasswordHasher();
+  const { register } = createAuthHandlers(db, {
+    jwtSecret: 'register-rate-limit-window-secret',
+    passwordHasher,
+    registrationRateLimit: {
+      maxAttempts: 1,
+      windowMs: 60000,
+      now: () => now,
+    },
+  });
+  const sourceIp = '203.0.113.52';
+  const password = 'correct horse battery staple';
+
+  const firstRes = createRes();
+  await register({
+    ip: sourceIp,
+    body: {
+      username: 'ada-first',
+      email: 'ada-first@example.com',
+      password,
+    },
+  }, firstRes);
+  assert.equal(firstRes.statusCode, 201);
+
+  const blockedRes = createRes();
+  await register({
+    ip: sourceIp,
+    body: {
+      username: 'ada-blocked',
+      email: 'ada-blocked@example.com',
+      password,
+    },
+  }, blockedRes);
+  assert.equal(blockedRes.statusCode, 429);
+  assert.deepEqual(blockedRes.body, { error: REGISTRATION_RATE_LIMIT_ERROR });
+
+  now += 60000;
+  const retriedRes = createRes();
+  await register({
+    ip: sourceIp,
+    body: {
+      username: 'ada-retried',
+      email: 'ada-retried@example.com',
+      password,
+    },
+  }, retriedRes);
+
+  assert.equal(retriedRes.statusCode, 201);
+  assert.equal(db.calls.length, 2);
+  assert.deepEqual(db.calls.map((call) => call.params), [
+    ['ada-first', 'ada-first@example.com', `hashed:${password}`],
+    ['ada-retried', 'ada-retried@example.com', `hashed:${password}`],
+  ]);
+  assert.deepEqual(passwordHasher.hashCalls, [
+    { password, rounds: PASSWORD_HASH_COST },
+    { password, rounds: PASSWORD_HASH_COST },
+  ]);
 });
 
 test('login accepts a password over the bcrypt byte limit and compares it unchanged', async () => {
