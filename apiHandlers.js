@@ -48,6 +48,16 @@ const STUDY_SESSION_RESPONSE_CARD_FIELDS = Object.freeze([
   'review_count',
   'last_reviewed',
 ]);
+const CARD_MUTATION_RESPONSE_CARD_FIELDS = Object.freeze([
+  'id',
+  'deck_id',
+  'front_content',
+  'back_content',
+  'next_review',
+  'interval',
+  'ease_factor',
+  'review_count',
+]);
 const DELETE_CARD_RESPONSE_CARD_FIELDS = Object.freeze([
   'id',
   'front_content',
@@ -56,6 +66,8 @@ const DELETE_CARD_RESPONSE_CARD_FIELDS = Object.freeze([
 ]);
 const INVALID_SCHEDULER_OUTPUT_ERROR = 'Invalid scheduler output';
 const INVALID_STUDY_SESSION_UPDATE_RESULT_ERROR = 'Invalid study-session update result';
+const INVALID_CARD_MUTATION_RESULT_ERROR = 'Invalid card mutation result';
+const INVALID_CARD_REMOVAL_RESULT_ERROR = 'Invalid card removal result';
 
 function isValidQuality(quality) {
   return Number.isInteger(quality) && quality >= 0 && quality <= 5;
@@ -243,6 +255,26 @@ function validateCardContent(value, fieldName) {
   }
 
   return { ok: true, value: trimmed };
+}
+
+function assertObjectHasOwnFields(row, fields, errorMessage) {
+  if (row === null || typeof row !== 'object' || Array.isArray(row)) {
+    throw new TypeError(errorMessage);
+  }
+
+  for (const field of fields) {
+    if (!Object.hasOwn(row, field)) {
+      throw new TypeError(errorMessage);
+    }
+  }
+}
+
+function assertCardMutationResult(row) {
+  assertObjectHasOwnFields(row, CARD_MUTATION_RESPONSE_CARD_FIELDS, INVALID_CARD_MUTATION_RESULT_ERROR);
+}
+
+function assertCardRemovalResult(row) {
+  assertObjectHasOwnFields(row, DELETE_CARD_RESPONSE_CARD_FIELDS, INVALID_CARD_REMOVAL_RESULT_ERROR);
 }
 
 function toCardMutationPayload(row) {
@@ -658,7 +690,9 @@ async function createCard(req, res, db) {
       return res.status(404).json({ error: 'Deck not found' });
     }
 
-    return res.status(201).json(toCardMutationPayload(rows[0]));
+    const createdCard = rows[0];
+    assertCardMutationResult(createdCard);
+    return res.status(201).json(toCardMutationPayload(createdCard));
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Internal server error' });
@@ -713,7 +747,9 @@ async function updateCard(req, res, db) {
       return res.status(404).json({ error: 'Card not found' });
     }
 
-    return res.json(toCardMutationPayload(rows[0]));
+    const updatedCard = rows[0];
+    assertCardMutationResult(updatedCard);
+    return res.json(toCardMutationPayload(updatedCard));
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Internal server error' });
@@ -747,9 +783,11 @@ async function deleteCard(req, res, db) {
       return res.status(404).json({ error: 'Card not found' });
     }
 
+    const deletedCard = deleteResult.rows[0];
+    assertCardRemovalResult(deletedCard);
     return res.json({
       success: true,
-      card: toDeleteCardResponseCardPayload(deleteResult.rows[0]),
+      card: toDeleteCardResponseCardPayload(deletedCard),
     });
   } catch (err) {
     console.error(err);

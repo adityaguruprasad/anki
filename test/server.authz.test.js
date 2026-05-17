@@ -1695,6 +1695,45 @@ test('POST /api/cards creates a card in an owned deck with one atomic insert-sel
   assert.doesNotMatch(db.calls[0].sql, /INSERT[\s\S]+VALUES/i);
 });
 
+test('POST /api/cards returns 500 when the inserted row is missing mutation response fields', async () => {
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [{
+        id: 77,
+        deck_id: 42,
+        front_content: 'Capital of France?',
+        back_content: 'Paris',
+        next_review: '2026-05-08T12:00:00.000Z',
+        interval: 1,
+        review_count: 0,
+      }],
+    },
+  ]);
+  const req = {
+    body: {
+      deckId: '42',
+      frontContent: 'Capital of France?',
+      backContent: 'Paris',
+    },
+    user: { userId: 'user-1' },
+  };
+  const res = createRes();
+  const originalError = console.error;
+  console.error = () => {};
+
+  try {
+    await createCard(req, res, db);
+  } finally {
+    console.error = originalError;
+  }
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Internal server error' });
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [42, 'user-1', 'Capital of France?', 'Paris']);
+});
+
 test('POST /api/cards returns 400 for invalid deckId and skips db query', async () => {
   const invalidDeckIds = [
     undefined,
@@ -1985,6 +2024,45 @@ test('PATCH /api/cards/:cardId updates an owned card with one user-scoped query'
   assert.doesNotMatch(db.calls[0].sql, /SELECT[\s\S]+FROM\s+cards/i);
 });
 
+test('PATCH /api/cards/:cardId returns 500 when the updated row is missing mutation response fields', async () => {
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [{
+        id: 77,
+        deck_id: 42,
+        front_content: 'Updated front',
+        back_content: 'Updated back',
+        next_review: '2026-05-08T12:00:00.000Z',
+        interval: 1,
+        ease_factor: 2.5,
+      }],
+    },
+  ]);
+  const req = {
+    params: { cardId: '77' },
+    body: {
+      frontContent: 'Updated front',
+      backContent: 'Updated back',
+    },
+    user: { userId: 'user-1' },
+  };
+  const res = createRes();
+  const originalError = console.error;
+  console.error = () => {};
+
+  try {
+    await updateCard(req, res, db);
+  } finally {
+    console.error = originalError;
+  }
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Internal server error' });
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [77, 'user-1', 'Updated front', 'Updated back']);
+});
+
 test('PATCH /api/cards/:cardId returns 404 for missing or unowned card with one user-scoped query', async () => {
   const db = createDb([{ rowCount: 0, rows: [] }]);
   const req = {
@@ -2067,6 +2145,34 @@ test('DELETE /api/cards/:cardId response omits unexpected returned card fields',
   assert.equal(Object.hasOwn(res.body.card, 'deck_id'), false);
   assert.equal(Object.hasOwn(res.body.card, 'user_id'), false);
   assert.equal(Object.hasOwn(res.body.card, 'private_notes'), false);
+});
+
+test('DELETE /api/cards/:cardId returns 500 when the deleted row is missing removal response fields', async () => {
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [{
+        id: 77,
+        front_content: 'Front',
+        back_content: 'Back',
+      }],
+    },
+  ]);
+  const req = { params: { cardId: '77' }, user: { userId: 'user-1' } };
+  const res = createRes();
+  const originalError = console.error;
+  console.error = () => {};
+
+  try {
+    await deleteCard(req, res, db);
+  } finally {
+    console.error = originalError;
+  }
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Internal server error' });
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [77, 'user-1']);
 });
 
 test('DELETE /api/cards/:cardId returns 400 for invalid cardId and skips db query', async () => {
