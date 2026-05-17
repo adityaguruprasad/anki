@@ -532,6 +532,35 @@ test('GET /api/decks converts aggregate strings to numbers', async () => {
   assert.equal(typeof res.body[0].dueCards, 'number');
 });
 
+test('GET /api/decks normalizes only safe non-negative integer aggregate counts', async () => {
+  const db = createDb([
+    {
+      rowCount: 2,
+      rows: [
+        { id: 5, user_id: 'user-1', name: 'BigInt Counts', totalCards: 12n, dueCards: 2n },
+        {
+          id: 6,
+          user_id: 'user-1',
+          name: 'Malformed Counts',
+          totalCards: '1e3',
+          dueCards: Number.MAX_SAFE_INTEGER + 1,
+        },
+      ],
+    },
+  ]);
+  const req = { user: { userId: 'user-1' } };
+  const res = createRes();
+
+  await getDecks(req, res, db);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, [
+    { id: 5, user_id: 'user-1', name: 'BigInt Counts', totalCards: 12, dueCards: 2 },
+    { id: 6, user_id: 'user-1', name: 'Malformed Counts', totalCards: 0, dueCards: 0 },
+  ]);
+  assert.equal(db.calls.length, 1);
+});
+
 test('GET /api/decks returns 500 when the db query fails', async () => {
   const db = createDb([new Error('db unavailable')]);
   const req = { user: { userId: 'user-1' } };
@@ -2305,6 +2334,44 @@ test('GET /api/scheduling-insights returns expected shape from one aggregate que
   assert.doesNotMatch(db.calls[0].sql, /\bCURRENT_DATE\b/i);
   assert.doesNotMatch(db.calls[0].sql, /SELECT\s+c\.id\b/i);
   assert.doesNotMatch(db.calls[0].sql, /\bc\.next_review,\s*c\.ease_factor,\s*c\.review_count\b/i);
+});
+
+test('GET /api/scheduling-insights normalizes malformed aggregate counts before deriving targets', async () => {
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [
+        {
+          totalCards: '1e3',
+          overdue: '-1',
+          dueToday: Number.MAX_SAFE_INTEGER + 1,
+          dueTomorrow: [],
+          dueNext7Days: '9007199254740993',
+          leechCandidates: 1.5,
+          averageEaseFactor: '2.35',
+        },
+      ],
+    },
+  ]);
+  const req = { user: { userId: 'user-1' } };
+  const res = createRes();
+
+  await getSchedulingInsights(req, res, db, new Date(2026, 4, 8, 15, 45, 12, 345));
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, {
+    totalCards: 0,
+    overdue: 0,
+    dueToday: 0,
+    dueTomorrow: 0,
+    dueNext7Days: 0,
+    leechCandidates: 0,
+    averageEaseFactor: 2.35,
+    // Minimum defaults after malformed counts normalize to zero.
+    recommendedDailyReviewTarget: 10,
+    suggestedNewCards: 20,
+  });
+  assert.equal(db.calls.length, 1);
 });
 
 test('GET /api/scheduling-insights treats null next_review as due today load', async () => {

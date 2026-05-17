@@ -14,6 +14,7 @@ const MAX_CARD_CONTENT_LENGTH = 10000;
 const MAX_POSTGRES_SERIAL_ID = 2147483647;
 const MAX_POSTGRES_SERIAL_ID_TEXT = String(MAX_POSTGRES_SERIAL_ID);
 const MAX_SAFE_INTEGER_TEXT = String(Number.MAX_SAFE_INTEGER);
+const MAX_SAFE_INTEGER_BIGINT = BigInt(Number.MAX_SAFE_INTEGER);
 const CARD_READ_FIELDS = Object.freeze([
   'id',
   'deck_id',
@@ -129,8 +130,37 @@ function validatePositiveIntegerIdentifier(value, fieldName) {
 }
 
 function toAggregateCount(value) {
-  const count = Number(value);
-  return Number.isFinite(count) ? count : 0;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+
+    if (/^\d+$/.test(trimmed)) {
+      const normalizedDigits = trimmed.replace(/^0+/, '') || '0';
+      // Without leading zeroes, equal-length digit strings compare safely with MAX_SAFE_INTEGER_TEXT.
+      const isWithinSafeIntegerRange = (
+        normalizedDigits.length < MAX_SAFE_INTEGER_TEXT.length
+        || (
+          normalizedDigits.length === MAX_SAFE_INTEGER_TEXT.length
+          && normalizedDigits <= MAX_SAFE_INTEGER_TEXT
+        )
+      );
+
+      if (isWithinSafeIntegerRange) {
+        return Number(normalizedDigits);
+      }
+    }
+
+    return 0;
+  }
+
+  if (typeof value === 'number') {
+    return Number.isSafeInteger(value) && value >= 0 ? value : 0;
+  }
+
+  if (typeof value === 'bigint') {
+    return value >= 0n && value <= MAX_SAFE_INTEGER_BIGINT ? Number(value) : 0;
+  }
+
+  return 0;
 }
 
 function toStatsAggregateCount(value) {
