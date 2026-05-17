@@ -2790,7 +2790,7 @@ test('POST /api/study-session treats unscheduled owned cards as due for review',
   };
   const db = createDb([
     { rowCount: 1, rows: [sourceCard] },
-    { rowCount: 1, rows: [updatedCard] },
+    { rowCount: 1, rows: [{ ...updatedCard, __updated: true }] },
   ]);
   const req = { body: { cardId: 7, quality: 4 }, user: { userId: 'user-1' } };
   const res = createRes();
@@ -2840,7 +2840,7 @@ test('POST /api/study-session returns updated scheduling metadata for successful
         review_count: 2,
       }],
     },
-    { rowCount: 1, rows: [updatedCard] },
+    { rowCount: 1, rows: [{ ...updatedCard, __updated: true }] },
   ]);
   const req = { body: { cardId: 7, quality: 4 }, user: { userId: 'user-1' } };
   const res = createRes();
@@ -2943,4 +2943,76 @@ test('POST /api/study-session returns 409 when final due-gated update loses a st
   assertStudySessionCardReadSql(db.calls[0].sql);
   assertStudySessionUpdateSql(db.calls[1].sql);
   assert.deepEqual(db.calls[1].params.slice(1), ['2026-05-08T12:00:00.000Z', 3, 2.6, 7, 'user-1']);
+});
+
+async function assertMalformedStudySessionUpdateRowRollsBack(updateRow) {
+  const db = createTransactionDb([
+    {
+      rowCount: 1,
+      rows: [{
+        id: 7,
+        deck_id: 1,
+        next_review: '2026-05-08T12:00:00.000Z',
+        ease_factor: 2.5,
+        interval: 2,
+        review_count: 2,
+        __is_due: true,
+      }],
+    },
+    {
+      rowCount: 1,
+      rows: [updateRow],
+    },
+  ]);
+  const req = { body: { cardId: 7, quality: 4 }, user: { userId: 'user-1' } };
+  const res = createRes();
+  const originalError = console.error;
+  console.error = () => {};
+
+  try {
+    await submitStudySession(req, res, db, () => ({
+      ease_factor: 2.6,
+      interval: 3,
+      next_review: '2026-05-08T12:00:00.000Z',
+    }));
+  } finally {
+    console.error = originalError;
+  }
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Internal server error' });
+  assert.equal(db.connectCalls, 1);
+  assert.equal(db.client.released, true);
+  assert.equal(db.calls.length, 4);
+  assert.match(db.calls[0].sql, /^\s*BEGIN\s*$/i);
+  assertStudySessionCardReadSql(db.calls[1].sql);
+  assertStudySessionUpdateSql(db.calls[2].sql);
+  assert.match(db.calls[3].sql, /^\s*ROLLBACK\s*$/i);
+  assert.doesNotMatch(db.calls.map(({ sql }) => sql).join('\n'), /^\s*COMMIT\s*$/im);
+}
+
+test('POST /api/study-session rolls back when the final update result has a malformed sentinel', async () => {
+  await assertMalformedStudySessionUpdateRowRollsBack({
+    id: 7,
+    next_review: '2026-05-08T12:00:00.000Z',
+    interval: 3,
+    ease_factor: 2.6,
+    review_count: 3,
+    last_reviewed: '2026-05-08T12:05:00.000Z',
+    __updated: 'false',
+  });
+});
+
+test('POST /api/study-session rolls back when a card-shaped final update result is missing the sentinel', async () => {
+  const updateRow = {
+    id: 7,
+    next_review: '2026-05-08T12:00:00.000Z',
+    interval: 3,
+    ease_factor: 2.6,
+    review_count: 3,
+    last_reviewed: '2026-05-08T12:05:00.000Z',
+  };
+
+  assert.equal(Object.hasOwn(updateRow, '__updated'), false);
+  await assertMalformedStudySessionUpdateRowRollsBack(updateRow);
 });

@@ -55,6 +55,7 @@ const DELETE_CARD_RESPONSE_CARD_FIELDS = Object.freeze([
   'next_review',
 ]);
 const INVALID_SCHEDULER_OUTPUT_ERROR = 'Invalid scheduler output';
+const INVALID_STUDY_SESSION_UPDATE_RESULT_ERROR = 'Invalid study-session update result';
 
 function isValidQuality(quality) {
   return Number.isInteger(quality) && quality >= 0 && quality <= 5;
@@ -93,6 +94,12 @@ function assertValidSchedulingUpdate(schedule) {
 
   if (!isValidSchedulerNextReview(next_review)) {
     throw new TypeError(INVALID_SCHEDULER_OUTPUT_ERROR);
+  }
+}
+
+function assertStudySessionUpdateSucceeded(row) {
+  if (row === null || typeof row !== 'object' || Array.isArray(row) || row.__updated !== true) {
+    throw new TypeError(INVALID_STUDY_SESSION_UPDATE_RESULT_ERROR);
   }
 }
 
@@ -861,11 +868,12 @@ async function submitStudySession(req, res, db, calculateNextReview) {
     }
 
     const updatedCard = updateResult.rows[0];
-    if (updatedCard.__updated === false) {
+    if (updatedCard?.__updated === false) {
       await rollbackTransaction();
       return res.status(409).json({ error: 'Card is not due' });
     }
 
+    assertStudySessionUpdateSucceeded(updatedCard);
     const responseCard = toStudySessionResponseCardPayload(updatedCard);
     if (transactionStarted) {
       await client.query('COMMIT');
