@@ -78,6 +78,13 @@ test('validateDeckName preserves ordinary trimmed Unicode names', () => {
   );
 });
 
+test('validateDeckName preserves zero width joiner and non-joiner as ordinary text', () => {
+  assert.deepEqual(validateDeckName('Biology\u200c\u200d101'), {
+    ok: true,
+    value: 'Biology\u200c\u200d101',
+  });
+});
+
 test('validateDeckName rejects embedded invisible and control characters after trim', () => {
   assert.deepEqual(validateDeckName('\n\tBiology 101\t\n'), {
     ok: true,
@@ -95,8 +102,10 @@ test('validateDeckName rejects embedded invisible and control characters after t
     ['Biology\u2028101', 'Unicode line separator'],
     ['Biology\u2029101', 'Unicode paragraph separator'],
     ['Biology\u061c101', 'Arabic letter mark'],
+    ['Biology\u200b101', 'zero width space'],
     ['Biology\u200e101', 'left-to-right mark'],
     ['Biology\u202e101', 'right-to-left override'],
+    ['Biology\u2060101', 'word joiner'],
     ['Biology\u2066101', 'left-to-right isolate'],
     ['Biology\uFEFF101', 'zero-width no-break space'],
   ]) {
@@ -151,7 +160,9 @@ test('POST /api/decks returns 400 when validation fails', async () => {
   const invalidCases = [
     ['   ', 'Invalid deck name: cannot be blank'],
     ['Biology\n101', UNSAFE_DECK_NAME_ERROR],
+    ['Biology\u200b101', UNSAFE_DECK_NAME_ERROR],
     ['Biology\u202e101', UNSAFE_DECK_NAME_ERROR],
+    ['Biology\u2060101', UNSAFE_DECK_NAME_ERROR],
     ['Biology\uFEFF101', UNSAFE_DECK_NAME_ERROR],
   ];
 

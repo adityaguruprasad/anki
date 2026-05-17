@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { getTableDefinition } = require('./schemaHelpers');
 
-const DECK_NAME_UNSAFE_PATTERN_SQL = String.raw`U&'[\0001-\001F\007F-\009F\061C\200E\200F\2028\2029\202A-\202E\2066-\2069\FEFF]'`;
+const DECK_NAME_UNSAFE_PATTERN_SQL = String.raw`U&'[\0001-\001F\007F-\009F\061C\200B\200E\200F\2028\2029\202A-\202E\2060\2066-\2069\FEFF]'`;
 const DECK_NAME_TRIM_CHARACTERS_SQL = String.raw`U&'\0020\0009\000A\000B\000C\000D\00A0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200A\2028\2029\202F\205F\3000\FEFF'`;
 const decksTable = getTableDefinition('decks');
 const deckNameConstraintsMigration = fs.readFileSync(
@@ -106,6 +106,26 @@ test('deck name constraint migration rejects Unicode-trimmed blank names', () =>
     DECK_NAME_TRIM_CHARACTERS_SQL,
     /\\2000/,
     'Expected deck-name trim characters to include a non-ASCII Unicode trim character',
+  );
+  assert.match(
+    DECK_NAME_UNSAFE_PATTERN_SQL,
+    /\\200B/,
+    'Expected deck-name unsafe characters to reject zero-width space',
+  );
+  assert.match(
+    DECK_NAME_UNSAFE_PATTERN_SQL,
+    /\\200E\\200F/,
+    'Expected deck-name unsafe characters to preserve existing left-to-right and right-to-left mark rejection',
+  );
+  assert.match(
+    DECK_NAME_UNSAFE_PATTERN_SQL,
+    /\\2060/,
+    'Expected deck-name unsafe characters to reject word joiner',
+  );
+  assert.doesNotMatch(
+    DECK_NAME_UNSAFE_PATTERN_SQL,
+    /\\200B-\\200F|\\200C|\\200D/,
+    'Expected deck-name unsafe characters to allow zero-width non-joiner and zero-width joiner',
   );
   assert.match(
     deckNameConstraintsMigration,

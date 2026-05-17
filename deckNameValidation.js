@@ -8,7 +8,7 @@ const DECK_NAME_VALIDATION_ERROR_CODES = Object.freeze({
   TOO_LONG: 'deck_name_too_long',
 });
 const UNSAFE_DECK_NAME_CHARACTER_PATTERN =
-  /[\x00-\x1F\x7F-\x9F\u061C\u200E\u200F\u2028\u2029\u202A-\u202E\u2066-\u2069\uFEFF]/;
+  /[\x00-\x1F\x7F-\x9F\u061C\u200B\u200E\u200F\u2028\u2029\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/;
 
 function validateDeckName(name) {
   if (typeof name !== 'string') {

@@ -248,7 +248,9 @@ test('POST /api/decks returns 400 for invalid deck name and skips db query', asy
     ['Biology\n101', UNSAFE_DECK_NAME_ERROR],
     ['Biology\u0085101', UNSAFE_DECK_NAME_ERROR],
     ['Biology\u2028101', UNSAFE_DECK_NAME_ERROR],
+    ['Biology\u200b101', UNSAFE_DECK_NAME_ERROR],
     ['Biology\u202e101', UNSAFE_DECK_NAME_ERROR],
+    ['Biology\u2060101', UNSAFE_DECK_NAME_ERROR],
     ['Biology\uFEFF101', UNSAFE_DECK_NAME_ERROR],
     [
       'a'.repeat(deckNameColumnLength + 1),
@@ -354,8 +356,10 @@ test('PATCH /api/decks/:deckId returns 400 for invalid deck name and skips db qu
     ['   ', 'Invalid deck name: cannot be blank'],
     ['Biology\n101', UNSAFE_DECK_NAME_ERROR],
     ['Biology\u0085101', UNSAFE_DECK_NAME_ERROR],
+    ['Biology\u200b101', UNSAFE_DECK_NAME_ERROR],
     ['Biology\u2029101', UNSAFE_DECK_NAME_ERROR],
     ['Biology\u2066101', UNSAFE_DECK_NAME_ERROR],
+    ['Biology\u2060101', UNSAFE_DECK_NAME_ERROR],
     ['Biology\uFEFF101', UNSAFE_DECK_NAME_ERROR],
     [
       'a'.repeat(deckNameColumnLength + 1),
