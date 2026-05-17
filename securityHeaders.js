@@ -5,6 +5,7 @@ const DEFAULT_SECURITY_HEADERS = Object.freeze({
   'X-Frame-Options': 'DENY',
   'Cross-Origin-Resource-Policy': 'same-origin',
   'Cross-Origin-Opener-Policy': 'same-origin',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
   'X-Permitted-Cross-Domain-Policies': 'none',
 });
 // Keep the production HSTS default conservative: subdomain and preload readiness

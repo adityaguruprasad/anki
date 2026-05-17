@@ -18,6 +18,7 @@ const EXPECTED_DEFAULT_SECURITY_HEADERS = {
   'X-Frame-Options': 'DENY',
   'Cross-Origin-Resource-Policy': 'same-origin',
   'Cross-Origin-Opener-Policy': 'same-origin',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
   'X-Permitted-Cross-Domain-Policies': 'none',
 };
 
@@ -119,6 +120,7 @@ test('security header overrides replace values and false/null/undefined disable 
       'X-Frame-Options': false,
       'Cross-Origin-Resource-Policy': null,
       'Cross-Origin-Opener-Policy': undefined,
+      'Permissions-Policy': false,
     },
     { NODE_ENV: 'test' },
   );
@@ -128,6 +130,7 @@ test('security header overrides replace values and false/null/undefined disable 
   assert.equal(Object.hasOwn(headers, 'X-Frame-Options'), false);
   assert.equal(Object.hasOwn(headers, 'Cross-Origin-Resource-Policy'), false);
   assert.equal(Object.hasOwn(headers, 'Cross-Origin-Opener-Policy'), false);
+  assert.equal(Object.hasOwn(headers, 'Permissions-Policy'), false);
   assert.deepEqual(headers, {
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'same-origin',
@@ -136,6 +139,19 @@ test('security header overrides replace values and false/null/undefined disable 
 });
 
 test('security header overrides can add new headers', () => {
+  const headers = buildSecurityHeaders(
+    { 'X-Robots-Tag': 'noindex' },
+    { NODE_ENV: 'test' },
+  );
+
+  assert.equal(headers['X-Robots-Tag'], 'noindex');
+  assert.deepEqual(headers, {
+    ...EXPECTED_DEFAULT_SECURITY_HEADERS,
+    'X-Robots-Tag': 'noindex',
+  });
+});
+
+test('security header overrides can replace the default Permissions-Policy', () => {
   const headers = buildSecurityHeaders(
     { 'Permissions-Policy': 'geolocation=()' },
     { NODE_ENV: 'test' },
