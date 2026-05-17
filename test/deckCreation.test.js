@@ -179,7 +179,13 @@ test('POST /api/decks returns 400 when validation fails', async () => {
 });
 
 test('POST /api/decks inserts trimmed name and returns 201', async () => {
-  const createdRow = { id: 22, user_id: 'user-1', name: 'Spanish' };
+  const createdRow = {
+    id: 22,
+    user_id: 'user-1',
+    name: 'Spanish',
+    description: null,
+    created_at: '2026-05-08T00:00:00.000Z',
+  };
   const db = createDb([{ rowCount: 1, rows: [createdRow] }]);
   const req = { body: { name: '  Spanish  ' }, user: { userId: 'user-1' } };
   const res = createRes();

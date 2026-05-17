@@ -285,7 +285,13 @@ test('POST /api/decks returns 409 for duplicate user deck name with one query', 
 });
 
 test('POST /api/decks creates normalized deck with one query', async () => {
-  const deck = { id: 12, user_id: 'user-1', name: 'Biology' };
+  const deck = {
+    id: 12,
+    user_id: 'user-1',
+    name: 'Biology',
+    description: null,
+    created_at: '2026-05-08T00:00:00.000Z',
+  };
   const db = createDb([{ rowCount: 1, rows: [{ ...deck, private_note: 'do not expose' }] }]);
   const req = { body: { name: ' Biology ' }, user: { userId: 'user-1' } };
   const res = createRes();
@@ -300,8 +306,32 @@ test('POST /api/decks creates normalized deck with one query', async () => {
   assertExplicitPublicDeckReturning(db.calls[0].sql);
 });
 
+test('POST /api/decks returns 500 when the inserted row is missing deck response fields', async (t) => {
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [{ id: 12, user_id: 'user-1', name: 'Biology', description: null }],
+    },
+  ]);
+  const req = { body: { name: 'Biology' }, user: { userId: 'user-1' } };
+  const res = createRes();
+  t.mock.method(console, 'error', () => {});
+
+  await createDeck(req, res, db);
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Internal server error' });
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, ['user-1', 'Biology']);
+});
+
 test('POST /api/decks uses atomic conflict handling for duplicate deck names', async () => {
-  const db = createDb([{ rowCount: 1, rows: [{ id: 12, user_id: 'user-1', name: 'Biology' }] }]);
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [{ id: 12, user_id: 'user-1', name: 'Biology', description: null, created_at: '2026-05-08T00:00:00.000Z' }],
+    },
+  ]);
   const req = { body: { name: 'Biology' }, user: { userId: 'user-1' } };
   const res = createRes();
 
@@ -381,7 +411,13 @@ test('PATCH /api/decks/:deckId returns 400 for invalid deck name and skips db qu
 });
 
 test('PATCH /api/decks/:deckId renames an owned deck with one atomic query', async () => {
-  const deck = { id: 42, user_id: 'user-1', name: 'Organic Chemistry' };
+  const deck = {
+    id: 42,
+    user_id: 'user-1',
+    name: 'Organic Chemistry',
+    description: null,
+    created_at: '2026-05-08T00:00:00.000Z',
+  };
   const db = createDb([
     {
       rowCount: 1,
@@ -406,6 +442,29 @@ test('PATCH /api/decks/:deckId renames an owned deck with one atomic query', asy
   assert.match(db.calls[0].sql, /NOT\s+EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+duplicate\s*\)/i);
   assertExplicitPublicDeckReturning(db.calls[0].sql);
   assert.doesNotMatch(db.calls[0].sql, /RETURNING\s+d\.\*/i);
+});
+
+test('PATCH /api/decks/:deckId returns 500 when the renamed row is missing deck response fields', async (t) => {
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [{
+        deckExists: true,
+        duplicateExists: false,
+        deck: { id: 42, user_id: 'user-1', name: 'Organic Chemistry', description: null },
+      }],
+    },
+  ]);
+  const req = { params: { deckId: '42' }, body: { name: 'Organic Chemistry' }, user: { userId: 'user-1' } };
+  const res = createRes();
+  t.mock.method(console, 'error', () => {});
+
+  await renameDeck(req, res, db);
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Internal server error' });
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [42, 'user-1', 'Organic Chemistry']);
 });
 
 test('PATCH /api/decks/:deckId returns 404 for missing or unowned deck', async () => {

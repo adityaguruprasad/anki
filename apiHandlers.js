@@ -69,6 +69,7 @@ const INVALID_STUDY_SESSION_UPDATE_RESULT_ERROR = 'Invalid study-session update 
 const INVALID_CARD_MUTATION_RESULT_ERROR = 'Invalid card mutation result';
 const INVALID_CARD_REMOVAL_RESULT_ERROR = 'Invalid card removal result';
 const INVALID_DECK_LIST_RESULT_ERROR = 'Invalid deck-list result';
+const INVALID_DECK_MUTATION_RESULT_ERROR = 'Invalid deck mutation result';
 
 function isValidQuality(quality) {
   return Number.isInteger(quality) && quality >= 0 && quality <= 5;
@@ -276,6 +277,15 @@ function assertCardMutationResult(row) {
 
 function assertCardRemovalResult(row) {
   assertObjectHasOwnFields(row, DELETE_CARD_RESPONSE_CARD_FIELDS, INVALID_CARD_REMOVAL_RESULT_ERROR);
+}
+
+function assertDeckMutationResult(row) {
+  assertObjectHasOwnFields(row, DECK_READ_FIELDS, INVALID_DECK_MUTATION_RESULT_ERROR);
+
+  const deckIdValidation = validatePositiveIntegerIdentifier(row.id, 'deckId');
+  if (!deckIdValidation.ok || typeof row.name !== 'string' || row.name.trim() === '') {
+    throw new TypeError(INVALID_DECK_MUTATION_RESULT_ERROR);
+  }
 }
 
 function assertDeckListResult(row) {
@@ -982,7 +992,9 @@ async function createDeck(req, res, db) {
       return res.status(409).json({ error: 'Deck name already exists for this user' });
     }
 
-    return res.status(201).json(toDeckReadPayload(rows[0]));
+    const createdDeck = rows[0];
+    assertDeckMutationResult(createdDeck);
+    return res.status(201).json(toDeckReadPayload(createdDeck));
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Internal server error' });
@@ -1045,6 +1057,7 @@ async function renameDeck(req, res, db) {
       return res.status(409).json({ error: 'Deck name already exists for this user' });
     }
 
+    assertDeckMutationResult(result.deck);
     return res.json(toDeckReadPayload(result.deck));
   } catch (err) {
     if (err?.code === '23505') {
