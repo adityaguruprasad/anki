@@ -3,27 +3,28 @@ const CORS_ORIGIN_REJECTED_CODE = 'CORS_ORIGIN_REJECTED';
 const CORS_ORIGIN_REJECTED_ERROR = 'CORS origin is not allowed';
 
 function normalizeAllowedOrigins(value) {
+  return getConfiguredAllowedOriginEntries(value)
+    .map(normalizeAllowedOrigin)
+    .filter(Boolean);
+}
+
+function getConfiguredAllowedOriginEntries(value) {
   if (typeof value !== 'string') {
     return [];
   }
 
   return value
     .split(',')
-    .map(normalizeAllowedOrigin)
+    .map((origin) => origin.trim())
     .filter(Boolean);
 }
 
 function normalizeAllowedOrigin(origin) {
-  const trimmed = origin.trim();
-  if (trimmed === '') {
-    return '';
-  }
-
   let parsedOrigin;
   try {
-    parsedOrigin = new URL(trimmed);
+    parsedOrigin = new URL(origin);
   } catch {
-    return trimmed;
+    return null;
   }
 
   const hasOriginOnlyPath = /^\/+$/.test(parsedOrigin.pathname);
@@ -42,7 +43,7 @@ function normalizeAllowedOrigin(origin) {
     return parsedOrigin.origin;
   }
 
-  return trimmed;
+  return null;
 }
 
 function createCorsOriginRejectedError() {
@@ -57,10 +58,15 @@ function isCorsOriginRejectedError(error) {
 }
 
 function buildCorsOptions(config = process.env) {
-  const allowedOrigins = normalizeAllowedOrigins(config[CORS_ALLOWED_ORIGINS_ENV]);
+  const configuredAllowedOriginEntries = getConfiguredAllowedOriginEntries(
+    config[CORS_ALLOWED_ORIGINS_ENV]
+  );
+  const allowedOrigins = configuredAllowedOriginEntries
+    .map(normalizeAllowedOrigin)
+    .filter(Boolean);
 
   if (allowedOrigins.length === 0) {
-    if (config.NODE_ENV === 'production') {
+    if (config.NODE_ENV === 'production' || configuredAllowedOriginEntries.length > 0) {
       return {
         origin(origin, callback) {
           if (!origin) {

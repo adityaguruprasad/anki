@@ -64,18 +64,16 @@ test('normalizeAllowedOrigins canonicalizes origin-only URL entries', () => {
   );
 });
 
-test('normalizeAllowedOrigins keeps non-origin entries literal so they fail closed', () => {
+test('normalizeAllowedOrigins drops non-origin entries before building the allowlist', () => {
   assert.deepEqual(
     normalizeAllowedOrigins(
-      'https://app.example.com/path, https://app.example.com?tenant=admin, https://app.example.com#admin, https://user:pass@app.example.com, not a url',
+      'https://app.example.com/path, https://app.example.com?tenant=admin, https://app.example.com#admin, https://user:pass@app.example.com, file://app.example.com, null, not a url',
     ),
-    [
-      'https://app.example.com/path',
-      'https://app.example.com?tenant=admin',
-      'https://app.example.com#admin',
-      'https://user:pass@app.example.com',
-      'not a url',
-    ],
+    [],
+  );
+  assert.deepEqual(
+    normalizeAllowedOrigins('https://app.example.com, null, not a url, https://admin.example.com/path'),
+    ['https://app.example.com'],
   );
 });
 
@@ -155,6 +153,29 @@ test('configured CORS allowlist does not broaden entries that include paths', as
   assert.equal(isCorsOriginRejectedError(decision.error), true);
 });
 
+test('configured CORS allowlist fails closed when every configured entry is invalid', async () => {
+  for (const NODE_ENV of ['development', 'test', 'production']) {
+    const options = buildCorsOptions({
+      NODE_ENV,
+      CORS_ALLOWED_ORIGINS: 'https://app.example.com/path, null, file://app.example.com, not a url',
+    });
+
+    assert.equal(typeof options.origin, 'function');
+
+    const noOriginDecision = await runOriginDecision(options, undefined);
+    assert.equal(noOriginDecision.error, null);
+    assert.equal(noOriginDecision.allowed, true);
+
+    const browserOriginDecision = await runOriginDecision(options, 'https://app.example.com');
+    assert.equal(browserOriginDecision.allowed, undefined);
+    assert.equal(isCorsOriginRejectedError(browserOriginDecision.error), true);
+
+    const opaqueOriginDecision = await runOriginDecision(options, 'null');
+    assert.equal(opaqueOriginDecision.allowed, undefined);
+    assert.equal(isCorsOriginRejectedError(opaqueOriginDecision.error), true);
+  }
+});
+
 test('configured CORS allowlist does not broaden entries that include query or hash', async () => {
   const options = buildCorsOptions({
     NODE_ENV: 'production',
@@ -166,6 +187,32 @@ test('configured CORS allowlist does not broaden entries that include query or h
 
     assert.equal(decision.allowed, undefined);
     assert.equal(isCorsOriginRejectedError(decision.error), true);
+  }
+});
+
+test('configured CORS allowlist ignores invalid entries without allowing invalid origins', async () => {
+  for (const NODE_ENV of ['development', 'test', 'production']) {
+    const options = buildCorsOptions({
+      NODE_ENV,
+      CORS_ALLOWED_ORIGINS: 'https://app.example.com, null, file://app.example.com, not a url',
+    });
+
+    assert.deepEqual(
+      await runOriginDecision(options, 'https://app.example.com'),
+      { error: null, allowed: true },
+    );
+
+    const disallowedBrowserOriginDecision = await runOriginDecision(options, 'https://evil.example.com');
+    assert.equal(disallowedBrowserOriginDecision.allowed, undefined);
+    assert.equal(isCorsOriginRejectedError(disallowedBrowserOriginDecision.error), true);
+
+    const opaqueOriginDecision = await runOriginDecision(options, 'null');
+    assert.equal(opaqueOriginDecision.allowed, undefined);
+    assert.equal(isCorsOriginRejectedError(opaqueOriginDecision.error), true);
+
+    const fileOriginDecision = await runOriginDecision(options, 'file://app.example.com');
+    assert.equal(fileOriginDecision.allowed, undefined);
+    assert.equal(isCorsOriginRejectedError(fileOriginDecision.error), true);
   }
 });
 
