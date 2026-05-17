@@ -1026,6 +1026,22 @@ test('GET /api/decks/:deckId/cards returns 400 for non-string q and skips db que
   }
 });
 
+test('GET /api/decks/:deckId/cards returns 400 for q with null bytes and skips db query', async () => {
+  const db = createDb([]);
+  const req = {
+    params: { deckId: '42' },
+    query: { q: 'front\u0000back' },
+    user: { userId: 'user-1' },
+  };
+  const res = createRes();
+
+  await getCardsByDeck(req, res, db);
+
+  assert.equal(res.statusCode, 400);
+  assert.deepEqual(res.body, { error: 'Invalid q: cannot contain null bytes' });
+  assert.equal(db.calls.length, 0);
+});
+
 test('GET /api/decks/:deckId/cards treats whitespace q like an omitted q', async () => {
   const db = createDb([{ rowCount: 1, rows: [{ id: null, __owned_deck_id: 42 }] }]);
   const req = {
@@ -1743,6 +1759,31 @@ test('POST /api/cards returns 400 for blank front or back content and skips db q
   }
 });
 
+test('POST /api/cards returns 400 for null bytes in front or back content and skips db query', async () => {
+  const invalidContentCases = [
+    [{ frontContent: 'Front\u0000', backContent: 'Back' }, 'Invalid frontContent: cannot contain null bytes'],
+    [{ frontContent: 'Front', backContent: 'Back\u0000' }, 'Invalid backContent: cannot contain null bytes'],
+  ];
+
+  for (const [body, error] of invalidContentCases) {
+    const db = createDb([]);
+    const req = {
+      body: {
+        deckId: 42,
+        ...body,
+      },
+      user: { userId: 'user-1' },
+    };
+    const res = createRes();
+
+    await createCard(req, res, db);
+
+    assert.equal(res.statusCode, 400);
+    assert.deepEqual(res.body, { error });
+    assert.equal(db.calls.length, 0);
+  }
+});
+
 test('POST /api/cards returns 400 for oversized front or back content and skips db query', async () => {
   const oversizedContent = ` ${'x'.repeat(10001)} `;
   const invalidContentCases = [
@@ -1836,6 +1877,29 @@ test('PATCH /api/cards/:cardId returns 400 for blank front or back content and s
     [{ frontContent: 'Front', backContent: '' }, 'Invalid backContent: must be a non-empty string'],
     [{ frontContent: 'Front', backContent: '   ' }, 'Invalid backContent: must be a non-empty string'],
     [{ frontContent: 'Front', backContent: null }, 'Invalid backContent: must be a non-empty string'],
+  ];
+
+  for (const [body, error] of invalidContentCases) {
+    const db = createDb([]);
+    const req = {
+      params: { cardId: '77' },
+      body,
+      user: { userId: 'user-1' },
+    };
+    const res = createRes();
+
+    await updateCard(req, res, db);
+
+    assert.equal(res.statusCode, 400);
+    assert.deepEqual(res.body, { error });
+    assert.equal(db.calls.length, 0);
+  }
+});
+
+test('PATCH /api/cards/:cardId returns 400 for null bytes in front or back content and skips db query', async () => {
+  const invalidContentCases = [
+    [{ frontContent: 'Front\u0000', backContent: 'Back' }, 'Invalid frontContent: cannot contain null bytes'],
+    [{ frontContent: 'Front', backContent: 'Back\u0000' }, 'Invalid backContent: cannot contain null bytes'],
   ];
 
   for (const [body, error] of invalidContentCases) {

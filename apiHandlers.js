@@ -223,6 +223,10 @@ function validateCardContent(value, fieldName) {
     return { ok: false, error: `Invalid ${fieldName}: must be a non-empty string` };
   }
 
+  if (trimmed.includes('\u0000')) {
+    return { ok: false, error: `Invalid ${fieldName}: cannot contain null bytes` };
+  }
+
   if (trimmed.length > MAX_CARD_CONTENT_LENGTH) {
     return { ok: false, error: `Invalid ${fieldName}: must be ${MAX_CARD_CONTENT_LENGTH} characters or fewer` };
   }
@@ -322,6 +326,10 @@ function validateBrowseCardsSearch(value) {
       ok: false,
       error: `Invalid q: must be ${BROWSE_CARDS_MAX_SEARCH_LENGTH} characters or fewer`,
     };
+  }
+
+  if (trimmed.includes('\u0000')) {
+    return { ok: false, error: 'Invalid q: cannot contain null bytes' };
   }
 
   return { ok: true, value: trimmed.length > 0 ? trimmed : null };
