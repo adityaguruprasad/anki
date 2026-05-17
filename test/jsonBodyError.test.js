@@ -7,9 +7,11 @@ const {
   INVALID_JSON_REQUEST_BODY_ERROR,
   JSON_BODY_LIMIT,
   JSON_REQUEST_BODY_TOO_LARGE_ERROR,
+  JSON_REQUEST_BODY_UNSUPPORTED_ENCODING_ERROR,
   createJsonBodyParser,
   handleJsonBodyError,
   isJsonBodyTooLargeError,
+  isJsonBodyUnsupportedEncodingError,
   isMalformedJsonBodyError,
 } = require('../jsonBodyError');
 
@@ -40,6 +42,15 @@ function createJsonTooLargeError() {
   error.status = 413;
   error.statusCode = 413;
   error.type = 'entity.too.large';
+  return error;
+}
+
+function createJsonUnsupportedEncodingError(type = 'encoding.unsupported') {
+  const error = new Error('unsupported request encoding');
+  error.status = 415;
+  error.statusCode = 415;
+  error.type = type;
+  error.encoding = 'br';
   return error;
 }
 
@@ -101,6 +112,43 @@ test('isJsonBodyTooLargeError recognizes statusCode-only parser oversized errors
   assert.equal(isJsonBodyTooLargeError(error), true);
 });
 
+test('handleJsonBodyError returns a sanitized API JSON error for unsupported JSON encodings', () => {
+  const error = createJsonUnsupportedEncodingError();
+  const res = createRes();
+  let nextCall = null;
+
+  handleJsonBodyError(error, {}, res, (nextError) => {
+    nextCall = nextError;
+  });
+
+  assert.equal(nextCall, null);
+  assert.equal(res.statusCode, 415);
+  assert.deepEqual(res.body, { error: JSON_REQUEST_BODY_UNSUPPORTED_ENCODING_ERROR });
+  assert.equal(isJsonBodyUnsupportedEncodingError(error), true);
+  assert.doesNotMatch(JSON.stringify(res.body), /br|unsupported request encoding/i);
+});
+
+test('isJsonBodyUnsupportedEncodingError recognizes unsupported JSON charsets and statusCode-only errors', () => {
+  const unsupportedCharsetError = createJsonUnsupportedEncodingError('charset.unsupported');
+  const statusCodeOnlyError = createJsonUnsupportedEncodingError();
+  delete statusCodeOnlyError.status;
+
+  assert.equal(isJsonBodyUnsupportedEncodingError(unsupportedCharsetError), true);
+  assert.equal(isJsonBodyUnsupportedEncodingError(statusCodeOnlyError), true);
+});
+
+test('isJsonBodyUnsupportedEncodingError requires a 415 status for unsupported encoding types', () => {
+  const unsupportedEncodingTypeOnlyError = createJsonUnsupportedEncodingError();
+  const unsupportedCharsetTypeOnlyError = createJsonUnsupportedEncodingError('charset.unsupported');
+  delete unsupportedEncodingTypeOnlyError.status;
+  delete unsupportedEncodingTypeOnlyError.statusCode;
+  delete unsupportedCharsetTypeOnlyError.status;
+  delete unsupportedCharsetTypeOnlyError.statusCode;
+
+  assert.equal(isJsonBodyUnsupportedEncodingError(unsupportedEncodingTypeOnlyError), false);
+  assert.equal(isJsonBodyUnsupportedEncodingError(unsupportedCharsetTypeOnlyError), false);
+});
+
 test('handleJsonBodyError forwards unrelated errors to the next error handler', () => {
   const error = Object.assign(new SyntaxError('different parser failure'), {
     status: 400,
@@ -135,6 +183,24 @@ test('handleJsonBodyError forwards arbitrary 413 errors without the parser overs
   assert.equal(res.statusCode, 200);
   assert.equal(res.body, null);
   assert.equal(isJsonBodyTooLargeError(error), false);
+});
+
+test('handleJsonBodyError forwards arbitrary 415 errors without an unsupported JSON encoding signature', () => {
+  const error = Object.assign(new Error('different 415 failure'), {
+    status: 415,
+    type: 'different.error',
+  });
+  const res = createRes();
+  let nextCall = null;
+
+  handleJsonBodyError(error, {}, res, (nextError) => {
+    nextCall = nextError;
+  });
+
+  assert.equal(nextCall, error);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body, null);
+  assert.equal(isJsonBodyUnsupportedEncodingError(error), false);
 });
 
 test('server mounts bounded JSON body parsing immediately before JSON body error handling and auth', () => {
