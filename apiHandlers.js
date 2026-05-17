@@ -68,6 +68,7 @@ const INVALID_SCHEDULER_OUTPUT_ERROR = 'Invalid scheduler output';
 const INVALID_STUDY_SESSION_UPDATE_RESULT_ERROR = 'Invalid study-session update result';
 const INVALID_CARD_MUTATION_RESULT_ERROR = 'Invalid card mutation result';
 const INVALID_CARD_REMOVAL_RESULT_ERROR = 'Invalid card removal result';
+const INVALID_DECK_LIST_RESULT_ERROR = 'Invalid deck-list result';
 
 function isValidQuality(quality) {
   return Number.isInteger(quality) && quality >= 0 && quality <= 5;
@@ -275,6 +276,19 @@ function assertCardMutationResult(row) {
 
 function assertCardRemovalResult(row) {
   assertObjectHasOwnFields(row, DELETE_CARD_RESPONSE_CARD_FIELDS, INVALID_CARD_REMOVAL_RESULT_ERROR);
+}
+
+function assertDeckListResult(row) {
+  assertObjectHasOwnFields(
+    row,
+    ['id', 'name', 'totalCards', 'dueCards'],
+    INVALID_DECK_LIST_RESULT_ERROR
+  );
+
+  const deckIdValidation = validatePositiveIntegerIdentifier(row.id, 'deckId');
+  if (!deckIdValidation.ok || typeof row.name !== 'string' || row.name.trim() === '') {
+    throw new TypeError(INVALID_DECK_LIST_RESULT_ERROR);
+  }
 }
 
 function toCardMutationPayload(row) {
@@ -1056,11 +1070,15 @@ async function getDecks(req, res, db) {
       [req.user.userId]
     );
 
-    return res.json(rows.map((deck) => ({
-      ...toDeckReadPayload(deck),
-      totalCards: toAggregateCount(deck.totalCards),
-      dueCards: toAggregateCount(deck.dueCards),
-    })));
+    return res.json(rows.map((deck) => {
+      assertDeckListResult(deck);
+
+      return {
+        ...toDeckReadPayload(deck),
+        totalCards: toAggregateCount(deck.totalCards),
+        dueCards: toAggregateCount(deck.dueCards),
+      };
+    }));
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Internal server error' });

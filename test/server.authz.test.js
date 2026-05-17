@@ -561,6 +561,37 @@ test('GET /api/decks normalizes only safe non-negative integer aggregate counts'
   assert.equal(db.calls.length, 1);
 });
 
+test('GET /api/decks fails closed when a deck-list row is missing or cannot use required response fields', async () => {
+  const malformedRows = [
+    { id: 7, totalCards: '3', dueCards: '1' },
+    { id: 7, name: 'Biology', dueCards: '1' },
+    { id: 7, name: 'Biology', totalCards: '3' },
+    { id: 'deck-7', name: 'Biology', totalCards: '3', dueCards: '1' },
+    { id: 7, name: '', totalCards: '3', dueCards: '1' },
+    { id: 7, name: '   ', totalCards: '3', dueCards: '1' },
+    { id: 7, name: null, totalCards: '3', dueCards: '1' },
+  ];
+  const originalError = console.error;
+  console.error = () => {};
+
+  try {
+    for (const row of malformedRows) {
+      const db = createDb([{ rowCount: 1, rows: [row] }]);
+      const req = { user: { userId: 'user-1' } };
+      const res = createRes();
+
+      await getDecks(req, res, db);
+
+      assert.equal(res.statusCode, 500);
+      assert.deepEqual(res.body, { error: 'Internal server error' });
+      assert.equal(db.calls.length, 1);
+      assert.deepEqual(db.calls[0].params, ['user-1']);
+    }
+  } finally {
+    console.error = originalError;
+  }
+});
+
 test('GET /api/decks returns 500 when the db query fails', async () => {
   const db = createDb([new Error('db unavailable')]);
   const req = { user: { userId: 'user-1' } };
