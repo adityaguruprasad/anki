@@ -1027,6 +1027,53 @@ test('GET /api/decks/:deckId/cards returns next cursor only when limit plus one 
   assert.doesNotMatch(db.calls[0].sql, /LIMIT\s+1/);
 });
 
+test('GET /api/decks/:deckId/cards fails closed when next cursor metadata is malformed', async (t) => {
+  const baseCard = {
+    id: 3,
+    deck_id: 42,
+    front_content: 'Future card',
+    back_content: 'Answer',
+    created_at: new Date('2026-05-08T13:00:00.000Z'),
+  };
+  const extraCard = {
+    id: 2,
+    deck_id: 42,
+    front_content: 'Extra card',
+    back_content: 'Answer',
+    created_at: new Date('2026-05-08T12:00:00.000Z'),
+    __cursor_created_at: '2026-05-08T12:00:00.000000Z',
+    __owned_deck_id: 42,
+  };
+  const malformedPageRows = [
+    { ...baseCard, __owned_deck_id: 42 },
+    { ...baseCard, __cursor_created_at: 'not-a-date', __owned_deck_id: 42 },
+    { ...baseCard, id: 'card-3', __cursor_created_at: '2026-05-08T13:00:00.000000Z', __owned_deck_id: 42 },
+  ];
+  t.mock.method(console, 'error', () => {});
+
+  for (const pageRow of malformedPageRows) {
+    const db = createDb([
+      {
+        rowCount: 2,
+        rows: [pageRow, extraCard],
+      },
+    ]);
+    const req = {
+      params: { deckId: '42' },
+      query: { limit: '1' },
+      user: { userId: 'user-1' },
+    };
+    const res = createRes();
+
+    await getCardsByDeck(req, res, db);
+
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.body, { error: 'Internal server error' });
+    assert.equal(db.calls.length, 1);
+    assert.deepEqual(db.calls[0].params, [42, 'user-1', 2]);
+  }
+});
+
 test('GET /api/decks/:deckId/cards omits next cursor when only limit rows are returned', async () => {
   const card = {
     id: 3,

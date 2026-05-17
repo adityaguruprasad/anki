@@ -70,6 +70,7 @@ const INVALID_CARD_MUTATION_RESULT_ERROR = 'Invalid card mutation result';
 const INVALID_CARD_REMOVAL_RESULT_ERROR = 'Invalid card removal result';
 const INVALID_DECK_LIST_RESULT_ERROR = 'Invalid deck-list result';
 const INVALID_DECK_MUTATION_RESULT_ERROR = 'Invalid deck mutation result';
+const INVALID_CARD_BROWSE_CURSOR_RESULT_ERROR = 'Invalid card browse cursor result';
 
 function isValidQuality(quality) {
   return Number.isInteger(quality) && quality >= 0 && quality <= 5;
@@ -298,6 +299,19 @@ function assertDeckListResult(row) {
   const deckIdValidation = validatePositiveIntegerIdentifier(row.id, 'deckId');
   if (!deckIdValidation.ok || typeof row.name !== 'string' || row.name.trim() === '') {
     throw new TypeError(INVALID_DECK_LIST_RESULT_ERROR);
+  }
+}
+
+function assertCardBrowseCursorResult(row) {
+  assertObjectHasOwnFields(
+    row,
+    ['id', '__cursor_created_at'],
+    INVALID_CARD_BROWSE_CURSOR_RESULT_ERROR
+  );
+
+  const cardIdValidation = validatePositiveIntegerIdentifier(row.id, 'cardId');
+  if (!cardIdValidation.ok || !isValidIsoTimestamp(row.__cursor_created_at)) {
+    throw new TypeError(INVALID_CARD_BROWSE_CURSOR_RESULT_ERROR);
   }
 }
 
@@ -648,14 +662,16 @@ async function getCardsByDeck(req, res, db) {
     const cards = pageRows.map(toCardReadPayload);
 
     const lastPageRow = pageRows.at(-1);
-    const nextCursor = hasNextPage && lastPageRow
-      ? {
-          cursorCreatedAt: lastPageRow.__cursor_created_at,
-          cursorId: lastPageRow.id,
-          beforeCreatedAt: lastPageRow.__cursor_created_at,
-          beforeId: lastPageRow.id,
-        }
-      : null;
+    let nextCursor = null;
+    if (hasNextPage && lastPageRow) {
+      assertCardBrowseCursorResult(lastPageRow);
+      nextCursor = {
+        cursorCreatedAt: lastPageRow.__cursor_created_at,
+        cursorId: lastPageRow.id,
+        beforeCreatedAt: lastPageRow.__cursor_created_at,
+        beforeId: lastPageRow.id,
+      };
+    }
 
     return res.json({ cards, nextCursor });
   } catch (err) {
