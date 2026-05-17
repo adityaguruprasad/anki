@@ -2527,6 +2527,91 @@ test('GET /api/scheduling-insights keeps null averageEaseFactor when no positive
   ]);
 });
 
+test('GET /api/scheduling-insights preserves positive averageEaseFactor values', async () => {
+  const validAverageEaseFactors = [
+    ['2.35', 2.35],
+    [2.5, 2.5],
+  ];
+
+  for (const [averageEaseFactor, expectedAverageEaseFactor] of validAverageEaseFactors) {
+    const db = createDb([
+      {
+        rowCount: 1,
+        rows: [
+          {
+            totalCards: '4',
+            overdue: '1',
+            dueToday: '2',
+            dueTomorrow: '0',
+            dueNext7Days: '2',
+            leechCandidates: '0',
+            averageEaseFactor,
+          },
+        ],
+      },
+    ]);
+    const req = { user: { userId: 'user-1' } };
+    const res = createRes();
+
+    await getSchedulingInsights(req, res, db, new Date(2026, 4, 8, 15, 45, 12, 345));
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.averageEaseFactor, expectedAverageEaseFactor);
+    assert.equal(db.calls.length, 1);
+  }
+});
+
+test('GET /api/scheduling-insights normalizes malformed averageEaseFactor values to null', async () => {
+  const malformedAverageEaseFactors = [
+    '',
+    '   ',
+    '0',
+    0,
+    '-1',
+    -1,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    [],
+  ];
+
+  for (const averageEaseFactor of malformedAverageEaseFactors) {
+    const db = createDb([
+      {
+        rowCount: 1,
+        rows: [
+          {
+            totalCards: '4',
+            overdue: '1',
+            dueToday: '2',
+            dueTomorrow: '0',
+            dueNext7Days: '2',
+            leechCandidates: '0',
+            averageEaseFactor,
+          },
+        ],
+      },
+    ]);
+    const req = { user: { userId: 'user-1' } };
+    const res = createRes();
+
+    await getSchedulingInsights(req, res, db, new Date(2026, 4, 8, 15, 45, 12, 345));
+
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(res.body, {
+      totalCards: 4,
+      overdue: 1,
+      dueToday: 2,
+      dueTomorrow: 0,
+      dueNext7Days: 2,
+      leechCandidates: 0,
+      averageEaseFactor: null,
+      recommendedDailyReviewTarget: 10,
+      suggestedNewCards: 17,
+    });
+    assert.equal(db.calls.length, 1);
+  }
+});
+
 test('POST /api/study-session returns 400 for invalid cardId and skips db query', async () => {
   const invalidCardIds = [
     undefined,

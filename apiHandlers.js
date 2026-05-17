@@ -207,13 +207,17 @@ function toStatsAggregateCount(value) {
   return 0;
 }
 
-function toNullableAggregateNumber(value) {
-  if (value === null || value === undefined || value === '') {
+function toNullablePositiveAggregateNumber(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value === 'string' && value.trim() === '') {
     return null;
   }
 
   const number = Number(value);
-  return Number.isFinite(number) ? number : null;
+  return Number.isFinite(number) && number > 0 ? number : null;
 }
 
 function getDueCardPredicate(tableAlias = 'c') {
@@ -1162,7 +1166,7 @@ async function getSchedulingInsights(req, res, db, now = new Date()) {
     const overdue = toAggregateCount(stats.overdue);
     const dueToday = toAggregateCount(stats.dueToday);
     const focusLoad = overdue + dueToday;
-    const averageEaseFactor = toNullableAggregateNumber(stats.averageEaseFactor);
+    const averageEaseFactor = toNullablePositiveAggregateNumber(stats.averageEaseFactor);
 
     return res.json({
       totalCards: toAggregateCount(stats.totalCards),
