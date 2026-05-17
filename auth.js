@@ -628,6 +628,13 @@ function createAuthHandlers(db, options = {}) {
         return res.status(401).json({ error: 'Invalid credentials' });
       }
       const user = result.rows[0];
+      if (!validatePasswordHash(user.password_hash)) {
+        // Treat malformed persisted hashes like credential failures while still
+        // doing dummy hash work.
+        await passwordHasher.compare(password, MISSING_ACCOUNT_DUMMY_PASSWORD_HASH);
+        recordLoginFailure();
+        return res.status(401).json({ error: 'Invalid credentials' });
+      }
       const isValidPassword = await passwordHasher.compare(password, user.password_hash);
       if (!isValidPassword) {
         recordLoginFailure();

@@ -744,6 +744,66 @@ test('login does not mint a token when the stored user id is invalid', async () 
   assert.equal(db.calls.length, 1);
 });
 
+test('login treats invalid stored password hashes as credential failures with rate limiting', async (t) => {
+  const invalidHashes = [
+    { name: 'missing hash', passwordHash: undefined },
+    { name: 'null hash', passwordHash: null },
+    { name: 'numeric hash', passwordHash: 12345 },
+    { name: 'empty hash', passwordHash: '' },
+    {
+      name: 'over-length hash',
+      passwordHash: 'x'.repeat(AUTH_PASSWORD_HASH_MAX_LENGTH + 1),
+    },
+  ];
+
+  for (const { name, passwordHash } of invalidHashes) {
+    await t.test(name, async () => {
+      const db = createDb([
+        {
+          rowCount: 1,
+          rows: [{ id: 80, email: 'ada@example.com', password_hash: passwordHash }],
+        },
+      ]);
+      const passwordHasher = createPasswordHasher({ compareResult: true });
+      const { login } = createAuthHandlers(db, {
+        jwtSecret: 'invalid-stored-hash-secret',
+        passwordHasher,
+        loginRateLimit: {
+          maxFailures: 1,
+          windowMs: 60000,
+          now: () => 1250,
+        },
+      });
+      const req = {
+        ip: '203.0.113.40',
+        body: { email: 'ada@example.com', password: 'candidate-password' },
+      };
+      const res = createRes();
+
+      await login(req, res);
+
+      assert.equal(res.statusCode, 401);
+      assert.deepEqual(res.body, { error: 'Invalid credentials' });
+      assert.equal(res.body.token, undefined);
+      assert.deepEqual(passwordHasher.compareCalls, [
+        {
+          password: 'candidate-password',
+          passwordHash: MISSING_ACCOUNT_DUMMY_PASSWORD_HASH,
+        },
+      ]);
+
+      const blockedRes = createRes();
+      await login(req, blockedRes);
+
+      assert.equal(blockedRes.statusCode, 429);
+      assert.deepEqual(blockedRes.body, { error: LOGIN_RATE_LIMIT_ERROR });
+      assert.equal(db.calls.length, 1);
+      assert.deepEqual(db.calls[0].params, ['ada@example.com']);
+      assert.equal(passwordHasher.compareCalls.length, 1);
+    });
+  }
+});
+
 test('login throttles repeated credential failures before additional database work', async () => {
   const db = createDb([
     {
