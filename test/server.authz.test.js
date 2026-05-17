@@ -1871,6 +1871,54 @@ test('POST /api/cards returns 500 when the inserted row is missing mutation resp
   assert.deepEqual(db.calls[0].params, [42, 'user-1', 'Capital of France?', 'Paris']);
 });
 
+test('POST /api/cards fails closed when the inserted row violates card mutation response invariants', async (t) => {
+  const validInsertedCard = {
+    id: 77,
+    deck_id: 42,
+    front_content: 'Capital of France?',
+    back_content: 'Paris',
+    next_review: '2026-05-08T12:00:00.000Z',
+    interval: 1,
+    ease_factor: 2.5,
+    review_count: 0,
+  };
+  const malformedRows = [
+    { ...validInsertedCard, id: 'card-77' },
+    { ...validInsertedCard, id: 2147483648 },
+    { ...validInsertedCard, deck_id: 2147483648 },
+    { ...validInsertedCard, front_content: '   ' },
+    { ...validInsertedCard, back_content: '' },
+    { ...validInsertedCard, next_review: 'not-a-date' },
+    { ...validInsertedCard, interval: 0 },
+    { ...validInsertedCard, interval: 36501 },
+    { ...validInsertedCard, ease_factor: 1.29 },
+    { ...validInsertedCard, ease_factor: Number.NaN },
+    { ...validInsertedCard, review_count: -1 },
+    { ...validInsertedCard, review_count: 1.5 },
+  ];
+  t.mock.method(console, 'error', () => {});
+
+  for (const row of malformedRows) {
+    const db = createDb([{ rowCount: 1, rows: [row] }]);
+    const req = {
+      body: {
+        deckId: '42',
+        frontContent: 'Capital of France?',
+        backContent: 'Paris',
+      },
+      user: { userId: 'user-1' },
+    };
+    const res = createRes();
+
+    await createCard(req, res, db);
+
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.body, { error: 'Internal server error' });
+    assert.equal(db.calls.length, 1);
+    assert.deepEqual(db.calls[0].params, [42, 'user-1', 'Capital of France?', 'Paris']);
+  }
+});
+
 test('POST /api/cards returns 400 for invalid deckId and skips db query', async () => {
   const invalidDeckIds = [
     undefined,
@@ -2200,6 +2248,41 @@ test('PATCH /api/cards/:cardId returns 500 when the updated row is missing mutat
   assert.deepEqual(db.calls[0].params, [77, 'user-1', 'Updated front', 'Updated back']);
 });
 
+test('PATCH /api/cards/:cardId fails closed when the updated row violates card mutation response invariants', async (t) => {
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [{
+        id: 77,
+        deck_id: 'not-a-deck',
+        front_content: 'Updated front',
+        back_content: 'Updated back',
+        next_review: '2026-05-08T12:00:00.000Z',
+        interval: 1,
+        ease_factor: 2.5,
+        review_count: 0,
+      }],
+    },
+  ]);
+  const req = {
+    params: { cardId: '77' },
+    body: {
+      frontContent: 'Updated front',
+      backContent: 'Updated back',
+    },
+    user: { userId: 'user-1' },
+  };
+  const res = createRes();
+  t.mock.method(console, 'error', () => {});
+
+  await updateCard(req, res, db);
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Internal server error' });
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [77, 'user-1', 'Updated front', 'Updated back']);
+});
+
 test('PATCH /api/cards/:cardId returns 404 for missing or unowned card with one user-scoped query', async () => {
   const db = createDb([{ rowCount: 0, rows: [] }]);
   const req = {
@@ -2310,6 +2393,35 @@ test('DELETE /api/cards/:cardId returns 500 when the deleted row is missing remo
   assert.deepEqual(res.body, { error: 'Internal server error' });
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, [77, 'user-1']);
+});
+
+test('DELETE /api/cards/:cardId fails closed when the deleted row violates removal response invariants', async (t) => {
+  const validDeletedCard = {
+    id: 77,
+    front_content: 'Front',
+    back_content: 'Back',
+    next_review: '2026-05-08T12:00:00.000Z',
+  };
+  const malformedRows = [
+    { ...validDeletedCard, id: 'card-77' },
+    { ...validDeletedCard, front_content: '   ' },
+    { ...validDeletedCard, back_content: '' },
+    { ...validDeletedCard, next_review: 'not-a-date' },
+  ];
+  t.mock.method(console, 'error', () => {});
+
+  for (const row of malformedRows) {
+    const db = createDb([{ rowCount: 1, rows: [row] }]);
+    const req = { params: { cardId: '77' }, user: { userId: 'user-1' } };
+    const res = createRes();
+
+    await deleteCard(req, res, db);
+
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.body, { error: 'Internal server error' });
+    assert.equal(db.calls.length, 1);
+    assert.deepEqual(db.calls[0].params, [77, 'user-1']);
+  }
 });
 
 test('DELETE /api/cards/:cardId returns 400 for invalid cardId and skips db query', async () => {

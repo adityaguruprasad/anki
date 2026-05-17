@@ -272,12 +272,65 @@ function assertObjectHasOwnFields(row, fields, errorMessage) {
   }
 }
 
+function isValidDatabaseTimestamp(value) {
+  if (value === null) {
+    return true;
+  }
+
+  if (value instanceof Date) {
+    return !Number.isNaN(value.getTime());
+  }
+
+  return isValidIsoTimestamp(value);
+}
+
+function isValidPersistedCardContent(value) {
+  return validateCardContent(value, 'cardContent').ok;
+}
+
+function isValidPersistedCardInterval(value) {
+  return Number.isSafeInteger(value) && value >= 1 && value <= MAX_INTERVAL_DAYS;
+}
+
+function isValidPersistedEaseFactor(value) {
+  return typeof value === 'number' && Number.isFinite(value) && value >= MIN_EASE_FACTOR;
+}
+
+function isValidPersistedReviewCount(value) {
+  return Number.isSafeInteger(value) && value >= 0;
+}
+
 function assertCardMutationResult(row) {
   assertObjectHasOwnFields(row, CARD_MUTATION_RESPONSE_CARD_FIELDS, INVALID_CARD_MUTATION_RESULT_ERROR);
+
+  const cardIdValidation = validatePositiveIntegerIdentifier(row.id, 'cardId');
+  const deckIdValidation = validatePositiveIntegerIdentifier(row.deck_id, 'deckId');
+  if (
+    !cardIdValidation.ok
+    || !deckIdValidation.ok
+    || !isValidPersistedCardContent(row.front_content)
+    || !isValidPersistedCardContent(row.back_content)
+    || !isValidDatabaseTimestamp(row.next_review)
+    || !isValidPersistedCardInterval(row.interval)
+    || !isValidPersistedEaseFactor(row.ease_factor)
+    || !isValidPersistedReviewCount(row.review_count)
+  ) {
+    throw new TypeError(INVALID_CARD_MUTATION_RESULT_ERROR);
+  }
 }
 
 function assertCardRemovalResult(row) {
   assertObjectHasOwnFields(row, DELETE_CARD_RESPONSE_CARD_FIELDS, INVALID_CARD_REMOVAL_RESULT_ERROR);
+
+  const cardIdValidation = validatePositiveIntegerIdentifier(row.id, 'cardId');
+  if (
+    !cardIdValidation.ok
+    || !isValidPersistedCardContent(row.front_content)
+    || !isValidPersistedCardContent(row.back_content)
+    || !isValidDatabaseTimestamp(row.next_review)
+  ) {
+    throw new TypeError(INVALID_CARD_REMOVAL_RESULT_ERROR);
+  }
 }
 
 function assertDeckMutationResult(row) {
