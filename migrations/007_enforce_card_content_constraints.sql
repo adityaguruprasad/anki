@@ -41,7 +41,11 @@ BEGIN
   END IF;
 END $$;
 
+-- The preflight above rejects NULL content before SET NOT NULL; NOT NULL
+-- complements the non-blank CHECK constraints below.
 ALTER TABLE cards
+  ALTER COLUMN front_content SET NOT NULL,
+  ALTER COLUMN back_content SET NOT NULL,
   DROP CONSTRAINT IF EXISTS cards_front_content_non_blank_check,
   DROP CONSTRAINT IF EXISTS cards_back_content_non_blank_check,
   DROP CONSTRAINT IF EXISTS cards_front_content_max_length_check,

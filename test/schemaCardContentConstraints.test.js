@@ -82,6 +82,26 @@ test('card content constraint migration rejects invalid existing content before 
   assert.match(cardContentMigration, /RAISE\s+EXCEPTION\s+'Cannot enforce card content constraints:/i);
 
   assertOrdered(cardContentMigration, /\bLOCK\s+TABLE\b/i, /\bDO\s+\$\$/i);
+  assertOrdered(
+    cardContentMigration,
+    /front_content\s+IS\s+NULL/i,
+    /ALTER\s+COLUMN\s+front_content\s+SET\s+NOT\s+NULL/i,
+  );
+  assertOrdered(
+    cardContentMigration,
+    /back_content\s+IS\s+NULL/i,
+    /ALTER\s+COLUMN\s+back_content\s+SET\s+NOT\s+NULL/i,
+  );
+  assertOrdered(
+    cardContentMigration,
+    /ALTER\s+COLUMN\s+front_content\s+SET\s+NOT\s+NULL/i,
+    /ADD\s+CONSTRAINT\s+cards_front_content_non_blank_check/i,
+  );
+  assertOrdered(
+    cardContentMigration,
+    /ALTER\s+COLUMN\s+back_content\s+SET\s+NOT\s+NULL/i,
+    /ADD\s+CONSTRAINT\s+cards_back_content_non_blank_check/i,
+  );
   assertOrdered(cardContentMigration, /\bDO\s+\$\$/i, /\bALTER\s+TABLE\s+cards\b/i);
   assert.doesNotMatch(cardContentMigration, /\bUPDATE\s+cards\b/i);
   assert.doesNotMatch(cardContentMigration, /\bDELETE\s+FROM\s+cards\b/i);
@@ -124,6 +144,10 @@ test('card content constraint migration reports deterministic invalid card id sa
 
 test('card content constraint migration creates the bootstrap schema constraints idempotently', () => {
   for (const columnName of ['front_content', 'back_content']) {
+    assert.match(
+      cardContentMigration,
+      new RegExp(`ALTER\\s+COLUMN\\s+${columnName}\\s+SET\\s+NOT\\s+NULL`, 'i'),
+    );
     assert.match(
       cardContentMigration,
       new RegExp(`DROP\\s+CONSTRAINT\\s+IF\\s+EXISTS\\s+cards_${columnName}_non_blank_check`, 'i'),
