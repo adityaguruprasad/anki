@@ -2,6 +2,7 @@ const { MAX_POSTGRES_SERIAL_ID } = require('./cardIdentifier');
 
 const AUTH_TOKEN_MAX_LENGTH = 4096;
 const AUTH_TOKEN_ALGORITHM = 'HS256';
+const AUTH_TOKEN_TYPE = 'JWT';
 const AUTH_TOKEN_COMPACT_PART_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 function decodeBase64UrlToUtf8(value) {
@@ -70,6 +71,10 @@ function isValidJwtCompactPart(part) {
   );
 }
 
+function hasUnsupportedCriticalHeader(header) {
+  return Object.prototype.hasOwnProperty.call(header, 'crit');
+}
+
 function hasUsableJwtEnvelope(token) {
   const parts = token.split('.');
   if (
@@ -81,7 +86,12 @@ function hasUsableJwtEnvelope(token) {
 
   const [encodedHeader, encodedPayload] = parts;
   const header = parseBase64UrlJsonObject(encodedHeader);
-  if (header === null || header.alg !== AUTH_TOKEN_ALGORITHM) {
+  if (
+    header === null
+    || header.alg !== AUTH_TOKEN_ALGORITHM
+    || header.typ !== AUTH_TOKEN_TYPE
+    || hasUnsupportedCriticalHeader(header)
+  ) {
     return false;
   }
 

@@ -1442,6 +1442,49 @@ test('verifyToken rejects tokens without exp and non-HS256 algorithms', () => {
   );
 });
 
+test('verifyToken requires the API-issued JWT header contract', () => {
+  const validPayload = { userId: 105, iat: 1000, exp: 2000 };
+  const tokenWithoutType = signRawJwt(
+    { alg: 'HS256' },
+    validPayload,
+    'strict-header-secret'
+  );
+  const tokenWithWrongType = signRawJwt(
+    { alg: 'HS256', typ: 'JWS' },
+    validPayload,
+    'strict-header-secret'
+  );
+  const tokenWithCriticalHeader = signRawJwt(
+    { alg: 'HS256', typ: 'JWT', crit: ['exp'] },
+    validPayload,
+    'strict-header-secret'
+  );
+
+  assert.throws(
+    () => verifyToken(tokenWithoutType, 'strict-header-secret', { now: 1000 }),
+    /Invalid token type/
+  );
+  assert.throws(
+    () => verifyToken(tokenWithWrongType, 'strict-header-secret', { now: 1000 }),
+    /Invalid token type/
+  );
+  assert.throws(
+    () => verifyToken(tokenWithCriticalHeader, 'strict-header-secret', { now: 1000 }),
+    /Unsupported token header/
+  );
+});
+
+test('verifyToken accepts benign extra JWT header fields when the signature is valid', () => {
+  const payload = { userId: 106, iat: 1000, exp: 2000 };
+  const token = signRawJwt(
+    { alg: 'HS256', typ: 'JWT', kid: 'active-key' },
+    payload,
+    'extra-header-secret'
+  );
+
+  assert.deepEqual(verifyToken(token, 'extra-header-secret', { now: 1000 }), payload);
+});
+
 test('verifyToken rejects oversized token strings before JWT part decoding', () => {
   const oversizedToken = `${'a'.repeat(MAX_JWT_TOKEN_LENGTH + 1)}.e30.signature`;
 

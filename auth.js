@@ -10,6 +10,8 @@ const { MAX_POSTGRES_SERIAL_ID } = require('./cardIdentifier');
 
 const DEFAULT_DEV_JWT_SECRET = 'your_secret_key';
 const DEFAULT_JWT_EXPIRES_IN_SECONDS = 60 * 60 * 24;
+const JWT_TOKEN_ALGORITHM = 'HS256';
+const JWT_TOKEN_TYPE = 'JWT';
 const JWT_SECRET_DEFAULT_PRODUCTION_ERROR =
   'JWT_SECRET must not use the default development secret in production';
 const JWT_SECRET_EMPTY_ERROR = 'JWT_SECRET must not be empty';
@@ -190,6 +192,24 @@ function validateJwtTokenText(token) {
   return parts;
 }
 
+function validateJwtHeader(header) {
+  if (header === null || typeof header !== 'object' || Array.isArray(header)) {
+    throw new Error('Invalid token header');
+  }
+
+  if (header.alg !== JWT_TOKEN_ALGORITHM) {
+    throw new Error('Invalid token algorithm');
+  }
+
+  if (header.typ !== JWT_TOKEN_TYPE) {
+    throw new Error('Invalid token type');
+  }
+
+  if (Object.hasOwn(header, 'crit')) {
+    throw new Error('Unsupported token header');
+  }
+}
+
 function signToken(payload, secret = resolveJwtSecret(), options = {}) {
   const now = options.now ?? Math.floor(Date.now() / 1000);
   const expiresInSeconds =
@@ -200,7 +220,7 @@ function signToken(payload, secret = resolveJwtSecret(), options = {}) {
   // so large safe durations cannot overflow past the safe integer range after adding now.
   const exp = validateJwtExpirationTimestamp(now + expiresInSeconds);
   const userId = validateJwtPayloadUserId(payload);
-  const header = { alg: 'HS256', typ: 'JWT' };
+  const header = { alg: JWT_TOKEN_ALGORITHM, typ: JWT_TOKEN_TYPE };
   const tokenPayload = {
     ...payload,
     userId,
@@ -215,9 +235,7 @@ function signToken(payload, secret = resolveJwtSecret(), options = {}) {
 function verifyToken(token, secret = resolveJwtSecret(), options = {}) {
   const [encodedHeader, encodedPayload, signature] = validateJwtTokenText(token);
   const header = decodeJsonPart(encodedHeader);
-  if (!header || header.alg !== 'HS256') {
-    throw new Error('Invalid token algorithm');
-  }
+  validateJwtHeader(header);
 
   const body = `${encodedHeader}.${encodedPayload}`;
   const expectedSignature = crypto.createHmac('sha256', secret).update(body).digest('base64url');

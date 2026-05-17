@@ -26,6 +26,12 @@ test('normalizeAuthToken accepts and trims compact JWTs with expected app claims
   assert.equal(normalizeAuthToken(`  ${token}\n`), token);
 });
 
+test('normalizeAuthToken accepts benign extra JWT header fields', () => {
+  const token = createCompactJwt({ header: { kid: 'active-key' } });
+
+  assert.equal(normalizeAuthToken(token), token);
+});
+
 test('normalizeAuthToken accepts a max-length compact JWT envelope', () => {
   const token = createMaxLengthCompactJwt();
 
@@ -86,10 +92,13 @@ test('normalizeAuthToken rejects compact strings without JSON JWT envelope data'
   }
 });
 
-test('normalizeAuthToken rejects tokens that do not match API-issued JWT claims', () => {
+test('normalizeAuthToken rejects tokens that do not match API-issued JWT headers and claims', () => {
   for (const token of [
     createCompactJwt({ header: { alg: 'HS512' } }),
     createCompactJwt({ header: { alg: 'none' } }),
+    createCompactJwt({ header: { typ: undefined } }),
+    createCompactJwt({ header: { typ: 'JWS' } }),
+    createCompactJwt({ header: { crit: ['exp'] } }),
     createCompactJwt({ payload: { userId: undefined } }),
     createCompactJwt({ payload: { userId: 0 } }),
     createCompactJwt({ payload: { userId: -1 } }),
