@@ -60,11 +60,21 @@ function isJwtUserIdClaim(value) {
   return isPositiveSafeInteger(value) && value <= MAX_POSTGRES_SERIAL_ID;
 }
 
+function isValidJwtCompactPart(part) {
+  return (
+    part.length > 0
+    // Unpadded base64url lengths can be 0, 2, or 3 mod 4; 1 mod 4
+    // cannot represent whole bytes.
+    && part.length % 4 !== 1
+    && AUTH_TOKEN_COMPACT_PART_PATTERN.test(part)
+  );
+}
+
 function hasUsableJwtEnvelope(token) {
   const parts = token.split('.');
   if (
     parts.length !== 3
-    || parts.some((part) => part.length === 0 || !AUTH_TOKEN_COMPACT_PART_PATTERN.test(part))
+    || parts.some((part) => !isValidJwtCompactPart(part))
   ) {
     return false;
   }

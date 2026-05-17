@@ -48,6 +48,7 @@ test('buildAuthHeaders returns empty headers for unsafe token strings', () => {
     'abc.def\rghi',
     'abc.def\u0000ghi',
     'abc.def\u007fghi',
+    createCompactJwt({ signature: 'a' }),
     `${createMaxLengthCompactJwt()}a`,
   ]) {
     assert.deepEqual(

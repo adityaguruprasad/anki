@@ -8,7 +8,8 @@ function createCompactJwt(options = {}) {
   const {
     header = {},
     payload = {},
-    signature = 'signature',
+    // Keep the default signature from having an impossible base64url length.
+    signature = 'signature0',
   } = options;
 
   return [

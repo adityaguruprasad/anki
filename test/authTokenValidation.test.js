@@ -12,6 +12,14 @@ const {
   createMaxLengthCompactJwt,
 } = require('./authTokenTestHelpers');
 
+function withImpossibleBase64UrlLength(part) {
+  const suffixLength = (1 - (part.length % 4) + 4) % 4 || 4;
+  const value = `${part}${'a'.repeat(suffixLength)}`;
+
+  assert.equal(value.length % 4, 1);
+  return value;
+}
+
 test('normalizeAuthToken accepts and trims compact JWTs with expected app claims', () => {
   const token = createCompactJwt();
 
@@ -47,6 +55,21 @@ test('normalizeAuthToken rejects non-compact and unsafe token strings', () => {
     `${encodedHeader}.${encodedPayload}.sig\nnature`,
     'a'.repeat(AUTH_TOKEN_MAX_LENGTH + 1),
   ]) {
+    assert.equal(normalizeAuthToken(token), null, token);
+  }
+});
+
+test('normalizeAuthToken rejects compact segments with impossible base64url lengths', () => {
+  const validToken = createCompactJwt();
+  const [encodedHeader, encodedPayload, signature] = validToken.split('.');
+
+  for (const parts of [
+    [withImpossibleBase64UrlLength(encodedHeader), encodedPayload, signature],
+    [encodedHeader, withImpossibleBase64UrlLength(encodedPayload), signature],
+    [encodedHeader, encodedPayload, withImpossibleBase64UrlLength(signature)],
+  ]) {
+    const token = parts.join('.');
+
     assert.equal(normalizeAuthToken(token), null, token);
   }
 });
