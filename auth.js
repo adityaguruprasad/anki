@@ -133,6 +133,14 @@ function decodeJsonPart(value) {
   return JSON.parse(Buffer.from(value, 'base64url').toString('utf8'));
 }
 
+function isValidJwtCompactPart(part) {
+  return (
+    part.length > 0
+    && part.length % 4 !== 1
+    && JWT_COMPACT_PART_PATTERN.test(part)
+  );
+}
+
 function validateJwtExpirationTimestamp(exp) {
   if (typeof exp !== 'number' || !Number.isSafeInteger(exp) || exp <= 0) {
     throw new Error('Token expiration must be a positive safe integer');
@@ -169,11 +177,12 @@ function validateJwtTokenText(token) {
   }
 
   // Return the three compact JWT parts only after enforcing the canonical
-  // three-part base64url shape. The malformed-token parse error is intentionally generic.
+  // three-part base64url shape. Node's decoder can ignore impossible trailing
+  // base64url quanta, so reject those before JSON parsing or HMAC work.
   const parts = token.split('.');
   if (
     parts.length !== 3
-    || parts.some((part) => part.length === 0 || !JWT_COMPACT_PART_PATTERN.test(part))
+    || parts.some((part) => !isValidJwtCompactPart(part))
   ) {
     throw new Error('Invalid token');
   }

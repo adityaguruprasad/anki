@@ -1509,6 +1509,39 @@ test('verifyToken rejects signed tokens with non-base64url compact segments', ()
   }
 });
 
+test('verifyToken rejects compact segments with impossible base64url lengths before decoding', () => {
+  const secret = 'strict-base64url-length-secret';
+  const encodedHeader = base64UrlJson({ alg: 'HS256', typ: 'JWT' });
+  const encodedPayload = base64UrlJson({ userId: 101, iat: 1000, exp: 2000 });
+  const nonCanonicalHeader = `${encodedHeader}a`;
+  const nonCanonicalPayload = `${encodedPayload}a`;
+  const encodedSignature = signRawJwtSegments(encodedHeader, encodedPayload, secret).split('.')[2];
+  const nonCanonicalSignature = `${encodedSignature}aa`;
+
+  assert.equal(nonCanonicalHeader.length % 4, 1);
+  assert.equal(nonCanonicalPayload.length % 4, 1);
+  assert.equal(nonCanonicalSignature.length % 4, 1);
+  assert.equal(
+    Buffer.from(nonCanonicalHeader, 'base64url').toString('utf8'),
+    Buffer.from(encodedHeader, 'base64url').toString('utf8')
+  );
+  assert.equal(
+    Buffer.from(nonCanonicalPayload, 'base64url').toString('utf8'),
+    Buffer.from(encodedPayload, 'base64url').toString('utf8')
+  );
+
+  for (const token of [
+    signRawJwtSegments(nonCanonicalHeader, encodedPayload, secret),
+    signRawJwtSegments(encodedHeader, nonCanonicalPayload, secret),
+    `${encodedHeader}.${encodedPayload}.${nonCanonicalSignature}`,
+  ]) {
+    assert.throws(
+      () => verifyToken(token, secret, { now: 1000 }),
+      { message: 'Invalid token' }
+    );
+  }
+});
+
 test('verifyToken rejects signed tokens without a usable userId claim', () => {
   const invalidPayloads = [
     { iat: 1000, exp: 2000 },
