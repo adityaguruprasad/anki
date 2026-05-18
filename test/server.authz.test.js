@@ -3322,7 +3322,7 @@ test('POST /api/study-session returns 409 and skips scheduling when an owned car
   const db = createDb([
     {
       rowCount: 1,
-      rows: [{
+      rows: [createCardReadRow({
         id: 7,
         deck_id: 1,
         next_review: '2026-05-20T12:00:00.000Z',
@@ -3330,7 +3330,7 @@ test('POST /api/study-session returns 409 and skips scheduling when an owned car
         interval: 2,
         review_count: 2,
         __is_due: false,
-      }],
+      })],
     },
   ]);
   const req = { body: { cardId: 7, quality: 4 }, user: { userId: 'user-1' } };
@@ -3366,10 +3366,24 @@ test('POST /api/study-session rolls back before scheduling when the locked card 
   });
   const rowMissingDueSentinel = { ...validSourceCard };
   delete rowMissingDueSentinel.__is_due;
+  const rowMissingFrontContent = { ...validSourceCard };
+  delete rowMissingFrontContent.front_content;
+  const rowMissingNextReview = { ...validSourceCard };
+  delete rowMissingNextReview.next_review;
   const malformedRows = [
     { name: 'mismatched card id', row: { ...validSourceCard, id: 8 } },
+    { name: 'invalid card id', row: { ...validSourceCard, id: 'not-a-card' } },
+    { name: 'invalid deck id', row: { ...validSourceCard, deck_id: 'not-a-deck' } },
     { name: 'missing due sentinel', row: rowMissingDueSentinel },
     { name: 'non-boolean due sentinel', row: { ...validSourceCard, __is_due: 'true' } },
+    { name: 'missing front content', row: rowMissingFrontContent },
+    { name: 'blank back content', row: { ...validSourceCard, back_content: '   ' } },
+    { name: 'invalid created timestamp', row: { ...validSourceCard, created_at: 'not-a-date' } },
+    { name: 'missing next review field', row: rowMissingNextReview },
+    { name: 'invalid next review timestamp', row: { ...validSourceCard, next_review: 'not-a-date' } },
+    { name: 'invalid interval', row: { ...validSourceCard, interval: 0 } },
+    { name: 'invalid ease factor', row: { ...validSourceCard, ease_factor: Number.NaN } },
+    { name: 'invalid review count', row: { ...validSourceCard, review_count: -1 } },
   ];
   const validUpdateRow = {
     id: 7,
@@ -3477,7 +3491,7 @@ test('POST /api/study-session locks an owned due card before scheduling and upda
 
 test('POST /api/study-session treats unscheduled owned cards as due for review', async () => {
   const nextReview = '2026-05-08T12:00:00.000Z';
-  const sourceCard = {
+  const sourceCard = createCardReadRow({
     id: 7,
     deck_id: 1,
     next_review: null,
@@ -3485,7 +3499,7 @@ test('POST /api/study-session treats unscheduled owned cards as due for review',
     interval: 2,
     review_count: 2,
     __is_due: true,
-  };
+  });
   const updatedCard = {
     id: 7,
     next_review: nextReview,
@@ -3537,7 +3551,7 @@ test('POST /api/study-session returns updated scheduling metadata for successful
   const db = createDb([
     {
       rowCount: 1,
-      rows: [{
+      rows: [createCardReadRow({
         id: 7,
         deck_id: 1,
         next_review: '2026-05-08T12:00:00.000Z',
@@ -3545,7 +3559,7 @@ test('POST /api/study-session returns updated scheduling metadata for successful
         interval: 2,
         review_count: 2,
         __is_due: true,
-      }],
+      })],
     },
     { rowCount: 1, rows: [{ ...updatedCard, __updated: true }] },
   ]);
@@ -3585,7 +3599,7 @@ test('POST /api/study-session returns 404 when final user-scoped update finds no
   const db = createDb([
     {
       rowCount: 1,
-      rows: [{
+      rows: [createCardReadRow({
         id: 7,
         deck_id: 1,
         next_review: '2026-05-08T12:00:00.000Z',
@@ -3593,7 +3607,7 @@ test('POST /api/study-session returns 404 when final user-scoped update finds no
         interval: 2,
         review_count: 2,
         __is_due: true,
-      }],
+      })],
     },
     { rowCount: 0, rows: [] },
   ]);
@@ -3623,7 +3637,7 @@ test('POST /api/study-session returns 409 when final due-gated update loses a st
   const db = createDb([
     {
       rowCount: 1,
-      rows: [{
+      rows: [createCardReadRow({
         id: 7,
         deck_id: 1,
         next_review: '2026-05-08T12:00:00.000Z',
@@ -3631,7 +3645,7 @@ test('POST /api/study-session returns 409 when final due-gated update loses a st
         interval: 2,
         review_count: 2,
         __is_due: true,
-      }],
+      })],
     },
     { rowCount: 1, rows: [{ __updated: false }] },
   ]);
@@ -3656,7 +3670,7 @@ async function assertMalformedStudySessionUpdateRowRollsBack(updateRow) {
   const db = createTransactionDb([
     {
       rowCount: 1,
-      rows: [{
+      rows: [createCardReadRow({
         id: 7,
         deck_id: 1,
         next_review: '2026-05-08T12:00:00.000Z',
@@ -3664,7 +3678,7 @@ async function assertMalformedStudySessionUpdateRowRollsBack(updateRow) {
         interval: 2,
         review_count: 2,
         __is_due: true,
-      }],
+      })],
     },
     {
       rowCount: 1,

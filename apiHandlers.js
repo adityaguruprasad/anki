@@ -138,12 +138,11 @@ function assertValidSchedulingUpdate(schedule) {
 }
 
 function assertStudySessionCardReadResult(row, expectedCardId) {
-  assertObjectHasOwnFields(row, ['id', '__is_due'], INVALID_STUDY_SESSION_CARD_READ_RESULT_ERROR);
+  assertCardReadResult(row, INVALID_STUDY_SESSION_CARD_READ_RESULT_ERROR);
 
-  const cardIdValidation = validatePositiveIntegerIdentifier(row.id, 'cardId');
   if (
-    !cardIdValidation.ok
-    || cardIdValidation.value !== expectedCardId
+    validatePositiveIntegerIdentifier(row.id, 'cardId').value !== expectedCardId
+    || !Object.hasOwn(row, '__is_due')
     || typeof row.__is_due !== 'boolean'
   ) {
     throw new TypeError(INVALID_STUDY_SESSION_CARD_READ_RESULT_ERROR);
@@ -390,11 +389,11 @@ function assertCardRemovalResult(row) {
   }
 }
 
-function assertCardReadResult(row) {
+function assertCardReadResult(row, errorMessage = INVALID_CARD_READ_RESULT_ERROR) {
   assertObjectHasOwnFields(
     row,
     CARD_READ_FIELDS,
-    INVALID_CARD_READ_RESULT_ERROR
+    errorMessage
   );
 
   const cardIdValidation = validatePositiveIntegerIdentifier(row.id, 'cardId');
@@ -405,26 +404,26 @@ function assertCardReadResult(row) {
     || !isValidPersistedCardContent(row.front_content)
     || !isValidPersistedCardContent(row.back_content)
   ) {
-    throw new TypeError(INVALID_CARD_READ_RESULT_ERROR);
+    throw new TypeError(errorMessage);
   }
 
   const timestampFields = ['created_at', 'last_reviewed', 'next_review'];
   for (const fieldName of timestampFields) {
     if (!isValidDatabaseTimestamp(row[fieldName])) {
-      throw new TypeError(INVALID_CARD_READ_RESULT_ERROR);
+      throw new TypeError(errorMessage);
     }
   }
 
   if (!isValidPersistedCardInterval(row.interval)) {
-    throw new TypeError(INVALID_CARD_READ_RESULT_ERROR);
+    throw new TypeError(errorMessage);
   }
 
   if (!isValidPersistedEaseFactor(row.ease_factor)) {
-    throw new TypeError(INVALID_CARD_READ_RESULT_ERROR);
+    throw new TypeError(errorMessage);
   }
 
   if (!isValidPersistedReviewCount(row.review_count)) {
-    throw new TypeError(INVALID_CARD_READ_RESULT_ERROR);
+    throw new TypeError(errorMessage);
   }
 }
 

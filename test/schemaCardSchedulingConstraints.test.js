@@ -249,6 +249,8 @@ test('study session update writes scheduler output within card scheduling constr
   const intervalFloor = getCheckFloor('cards_interval_min_check', 'interval');
   const intervalCeiling = getCheckCeiling('cards_interval_max_check', 'interval');
   const easeFactorFloor = getCheckFloor('cards_ease_factor_min_check', 'ease_factor');
+  // Use post-migration persisted scheduling values; locked-row validation now
+  // rejects malformed persisted rows before scheduling runs.
   const db = createStudySessionDb({
     id: 17,
     deck_id: 3,
@@ -257,9 +259,9 @@ test('study session update writes scheduler output within card scheduling constr
     created_at: '2026-05-01T12:00:00.000Z',
     last_reviewed: null,
     next_review: null,
-    interval: 0,
-    ease_factor: 1.1,
-    review_count: null,
+    interval: 1,
+    ease_factor: 1.3,
+    review_count: 0,
     __is_due: true,
   });
   const req = { body: { cardId: 17, quality: 3 }, user: { userId: 'user-1' } };
