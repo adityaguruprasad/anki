@@ -91,6 +91,7 @@ const INVALID_CARD_MUTATION_RESULT_ERROR = 'Invalid card mutation result';
 const INVALID_CARD_REMOVAL_RESULT_ERROR = 'Invalid card removal result';
 const INVALID_CARD_READ_RESULT_ERROR = 'Invalid card read result';
 const INVALID_DECK_LIST_RESULT_ERROR = 'Invalid deck-list result';
+const INVALID_DECK_RENAME_CONTROL_RESULT_ERROR = 'Invalid deck rename control result';
 const INVALID_DECK_MUTATION_RESULT_ERROR = 'Invalid deck mutation result';
 const INVALID_DECK_REMOVAL_RESULT_ERROR = 'Invalid deck removal result';
 const INVALID_CARD_BROWSE_CURSOR_RESULT_ERROR = 'Invalid card browse cursor result';
@@ -445,6 +446,30 @@ function assertDeckRemovalResult(row) {
   }
 }
 
+function assertDeckRenameControlResult(row) {
+  assertObjectHasOwnFields(
+    row,
+    ['deckExists', 'duplicateExists', 'deck'],
+    INVALID_DECK_RENAME_CONTROL_RESULT_ERROR
+  );
+
+  if (
+    typeof row.deckExists !== 'boolean'
+    || typeof row.duplicateExists !== 'boolean'
+  ) {
+    throw new TypeError(INVALID_DECK_RENAME_CONTROL_RESULT_ERROR);
+  }
+
+  if (!row.deckExists || row.duplicateExists) {
+    if (row.deck !== null) {
+      throw new TypeError(INVALID_DECK_RENAME_CONTROL_RESULT_ERROR);
+    }
+    return;
+  }
+
+  assertDeckMutationResult(row.deck);
+}
+
 function assertDeckListResult(row) {
   assertObjectHasOwnFields(
     row,
@@ -512,6 +537,37 @@ function assertSingleAggregateQueryResult(result, errorMessage) {
   ) {
     throw new TypeError(errorMessage);
   }
+}
+
+function getOptionalSingleQueryRow(result, errorMessage) {
+  if (
+    result === null
+    || typeof result !== 'object'
+    || !Array.isArray(result.rows)
+  ) {
+    throw new TypeError(errorMessage);
+  }
+
+  if (result.rowCount === 0 && result.rows.length === 0) {
+    return null;
+  }
+
+  // rowCount and rows.length must agree so malformed DB adapters cannot
+  // downgrade duplicate or impossible returned rows into normal 404/409 paths.
+  if (result.rowCount !== 1 || result.rows.length !== 1) {
+    throw new TypeError(errorMessage);
+  }
+
+  return result.rows[0];
+}
+
+function getRequiredSingleQueryRow(result, errorMessage) {
+  const row = getOptionalSingleQueryRow(result, errorMessage);
+  if (row === null) {
+    throw new TypeError(errorMessage);
+  }
+
+  return row;
 }
 
 function toCardMutationPayload(row) {
@@ -927,7 +983,7 @@ async function createCard(req, res, db) {
       return res.status(400).json({ error: backContentValidation.error });
     }
 
-    const { rows } = await db.query(
+    const result = await db.query(
       `INSERT INTO cards (
          deck_id,
          front_content,
@@ -956,11 +1012,11 @@ async function createCard(req, res, db) {
       ]
     );
 
-    if (rows.length === 0) {
+    const createdCard = getOptionalSingleQueryRow(result, INVALID_CARD_MUTATION_RESULT_ERROR);
+    if (createdCard === null) {
       return res.status(404).json({ error: 'Deck not found' });
     }
 
-    const createdCard = rows[0];
     assertCardMutationResult(createdCard);
     return res.status(201).json(toCardMutationPayload(createdCard));
   } catch (err) {
@@ -986,7 +1042,7 @@ async function updateCard(req, res, db) {
       return res.status(400).json({ error: backContentValidation.error });
     }
 
-    const { rows } = await db.query(
+    const result = await db.query(
       `UPDATE cards
        SET front_content = $3,
            back_content = $4
@@ -1013,11 +1069,11 @@ async function updateCard(req, res, db) {
       ]
     );
 
-    if (rows.length === 0) {
+    const updatedCard = getOptionalSingleQueryRow(result, INVALID_CARD_MUTATION_RESULT_ERROR);
+    if (updatedCard === null) {
       return res.status(404).json({ error: 'Card not found' });
     }
 
-    const updatedCard = rows[0];
     assertCardMutationResult(updatedCard);
     return res.json(toCardMutationPayload(updatedCard));
   } catch (err) {
@@ -1049,11 +1105,11 @@ async function deleteCard(req, res, db) {
       [cardIdValidation.value, req.user.userId]
     );
 
-    if (deleteResult.rowCount === 0) {
+    const deletedCard = getOptionalSingleQueryRow(deleteResult, INVALID_CARD_REMOVAL_RESULT_ERROR);
+    if (deletedCard === null) {
       return res.status(404).json({ error: 'Card not found' });
     }
 
-    const deletedCard = deleteResult.rows[0];
     assertCardRemovalResult(deletedCard);
     return res.json({
       success: true,
@@ -1106,12 +1162,12 @@ async function submitStudySession(req, res, db, calculateNextReview) {
        FOR UPDATE OF c`,
       [validCardId, req.user.userId]
     );
-    if (cardResult.rowCount === 0) {
+    const card = getOptionalSingleQueryRow(cardResult, INVALID_STUDY_SESSION_CARD_READ_RESULT_ERROR);
+    if (card === null) {
       await rollbackTransaction();
       return res.status(404).json({ error: 'Card not found' });
     }
 
-    const card = cardResult.rows[0];
     assertStudySessionCardReadResult(card, validCardId);
     if (card.__is_due === false) {
       await rollbackTransaction();
@@ -1175,12 +1231,12 @@ async function submitStudySession(req, res, db, calculateNextReview) {
        WHERE NOT EXISTS (SELECT 1 FROM updated)`,
       [reviewedAt, next_review, interval, ease_factor, validCardId, req.user.userId]
     );
-    if (updateResult.rowCount === 0) {
+    const updatedCard = getOptionalSingleQueryRow(updateResult, INVALID_STUDY_SESSION_UPDATE_RESULT_ERROR);
+    if (updatedCard === null) {
       await rollbackTransaction();
       return res.status(404).json({ error: 'Card not found' });
     }
 
-    const updatedCard = updateResult.rows[0];
     if (updatedCard?.__updated === false) {
       await rollbackTransaction();
       return res.status(409).json({ error: 'Card is not due' });
@@ -1223,7 +1279,7 @@ async function createDeck(req, res, db) {
     }
 
     const deckName = validationResult.value;
-    const { rows } = await db.query(
+    const result = await db.query(
       `INSERT INTO decks (user_id, name)
        VALUES ($1, $2)
        ON CONFLICT (user_id, (LOWER(TRIM(name)))) DO NOTHING
@@ -1235,11 +1291,11 @@ async function createDeck(req, res, db) {
       [req.user.userId, deckName]
     );
 
-    if (rows.length === 0) {
+    const createdDeck = getOptionalSingleQueryRow(result, INVALID_DECK_MUTATION_RESULT_ERROR);
+    if (createdDeck === null) {
       return res.status(409).json({ error: 'Deck name already exists for this user' });
     }
 
-    const createdDeck = rows[0];
     assertDeckMutationResult(createdDeck);
     return res.status(201).json(toDeckReadPayload(createdDeck));
   } catch (err) {
@@ -1262,7 +1318,7 @@ async function renameDeck(req, res, db) {
 
     const deckId = deckIdValidation.value;
     const deckName = validationResult.value;
-    const { rows } = await db.query(
+    const queryResult = await db.query(
       `WITH target AS (
          SELECT id
          FROM decks
@@ -1295,7 +1351,8 @@ async function renameDeck(req, res, db) {
       [deckId, req.user.userId, deckName]
     );
 
-    const result = rows[0] ?? {};
+    const result = getRequiredSingleQueryRow(queryResult, INVALID_DECK_RENAME_CONTROL_RESULT_ERROR);
+    assertDeckRenameControlResult(result);
     if (!result.deckExists) {
       return res.status(404).json({ error: 'Deck not found' });
     }
@@ -1304,7 +1361,6 @@ async function renameDeck(req, res, db) {
       return res.status(409).json({ error: 'Deck name already exists for this user' });
     }
 
-    assertDeckMutationResult(result.deck);
     return res.json(toDeckReadPayload(result.deck));
   } catch (err) {
     if (err?.code === '23505') {
@@ -1370,11 +1426,12 @@ async function deleteDeck(req, res, db) {
       [deckId, req.user.userId]
     );
 
-    if (deleteResult.rowCount === 0) {
+    const deletedDeck = getOptionalSingleQueryRow(deleteResult, INVALID_DECK_REMOVAL_RESULT_ERROR);
+    if (deletedDeck === null) {
       return res.status(404).json({ error: 'Deck not found' });
     }
 
-    assertDeckRemovalResult(deleteResult.rows[0]);
+    assertDeckRemovalResult(deletedDeck);
     return res.json({ success: true });
   } catch (err) {
     console.error(err);

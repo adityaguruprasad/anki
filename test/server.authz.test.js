@@ -341,6 +341,37 @@ test('POST /api/decks returns 500 when the inserted row is missing deck response
   assert.deepEqual(db.calls[0].params, ['user-1', 'Biology']);
 });
 
+test('POST /api/decks fails closed when the insert result cardinality is malformed', async (t) => {
+  const createdDeck = {
+    id: 12,
+    user_id: 'user-1',
+    name: 'Biology',
+    description: null,
+    created_at: '2026-05-08T00:00:00.000Z',
+  };
+  const malformedResults = [
+    { rowCount: 1, rows: [] },
+    { rowCount: 0, rows: [createdDeck] },
+    { rowCount: 2, rows: [createdDeck] },
+    { rowCount: 1, rows: [createdDeck, { ...createdDeck, id: 13 }] },
+    { rowCount: 2, rows: [createdDeck, { ...createdDeck, id: 13 }] },
+  ];
+  t.mock.method(console, 'error', () => {});
+
+  for (const result of malformedResults) {
+    const db = createDb([result]);
+    const req = { body: { name: 'Biology' }, user: { userId: 'user-1' } };
+    const res = createRes();
+
+    await createDeck(req, res, db);
+
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.body, { error: 'Internal server error' });
+    assert.equal(db.calls.length, 1);
+    assert.deepEqual(db.calls[0].params, ['user-1', 'Biology']);
+  }
+});
+
 test('POST /api/decks uses atomic conflict handling for duplicate deck names', async () => {
   const db = createDb([
     {
@@ -481,6 +512,41 @@ test('PATCH /api/decks/:deckId returns 500 when the renamed row is missing deck 
   assert.deepEqual(res.body, { error: 'Internal server error' });
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, [42, 'user-1', 'Organic Chemistry']);
+});
+
+test('PATCH /api/decks/:deckId fails closed when the rename control result is malformed', async (t) => {
+  const deck = {
+    id: 42,
+    user_id: 'user-1',
+    name: 'Organic Chemistry',
+    description: null,
+    created_at: '2026-05-08T00:00:00.000Z',
+  };
+  const successControlRow = { deckExists: true, duplicateExists: false, deck };
+  const malformedResults = [
+    { rowCount: 0, rows: [] },
+    { rowCount: 2, rows: [successControlRow, successControlRow] },
+    { rowCount: 1, rows: [{ deckExists: 'true', duplicateExists: false, deck }] },
+    { rowCount: 1, rows: [{ deckExists: true, duplicateExists: 'false', deck }] },
+    { rowCount: 1, rows: [{ duplicateExists: false, deck }] },
+    { rowCount: 1, rows: [{ deckExists: false, duplicateExists: false, deck }] },
+    { rowCount: 1, rows: [{ deckExists: true, duplicateExists: true, deck }] },
+    { rowCount: 1, rows: [{ deckExists: true, duplicateExists: false, deck: null }] },
+  ];
+  t.mock.method(console, 'error', () => {});
+
+  for (const result of malformedResults) {
+    const db = createDb([result]);
+    const req = { params: { deckId: '42' }, body: { name: 'Organic Chemistry' }, user: { userId: 'user-1' } };
+    const res = createRes();
+
+    await renameDeck(req, res, db);
+
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.body, { error: 'Internal server error' });
+    assert.equal(db.calls.length, 1);
+    assert.deepEqual(db.calls[0].params, [42, 'user-1', 'Organic Chemistry']);
+  }
 });
 
 test('PATCH /api/decks/:deckId returns 404 for missing or unowned deck', async () => {
@@ -745,6 +811,31 @@ test('DELETE /api/decks/:deckId returns 500 when the atomic delete result is mis
   assert.equal(db.connectCalls, 0);
   assert.deepEqual(db.calls[0].params, [42, 'user-1']);
   assertDeleteDeckAtomicSql(db.calls[0].sql);
+});
+
+test('DELETE /api/decks/:deckId fails closed when the atomic delete cardinality is malformed', async (t) => {
+  const malformedResults = [
+    { rowCount: 0, rows: [{ id: 42 }] },
+    { rowCount: 2, rows: [{ id: 42 }] },
+    { rowCount: 1, rows: [{ id: 42 }, { id: 43 }] },
+    { rowCount: 2, rows: [{ id: 42 }, { id: 43 }] },
+  ];
+  t.mock.method(console, 'error', () => {});
+
+  for (const result of malformedResults) {
+    const db = addUnexpectedConnect(createDb([result]));
+    const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+    const res = createRes();
+
+    await deleteDeck(req, res, db);
+
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.body, { error: 'Internal server error' });
+    assert.equal(db.calls.length, 1);
+    assert.equal(db.connectCalls, 0);
+    assert.deepEqual(db.calls[0].params, [42, 'user-1']);
+    assertDeleteDeckAtomicSql(db.calls[0].sql);
+  }
 });
 
 test('DELETE /api/decks/:deckId fails closed when the atomic delete result has an impossible deck id', async (t) => {
@@ -2656,6 +2747,88 @@ test('DELETE /api/cards/:cardId fails closed when the deleted row violates remov
   }
 });
 
+test('card mutation endpoints fail closed when returned-row cardinality is malformed', async (t) => {
+  const mutationCard = {
+    id: 77,
+    deck_id: 42,
+    front_content: 'Front',
+    back_content: 'Back',
+    next_review: '2026-05-08T12:00:00.000Z',
+    interval: 1,
+    ease_factor: 2.5,
+    review_count: 0,
+  };
+  const deletedCard = {
+    id: 77,
+    front_content: 'Front',
+    back_content: 'Back',
+    next_review: '2026-05-08T12:00:00.000Z',
+  };
+  const cases = [
+    {
+      name: 'create card with multiple returned rows',
+      handler: createCard,
+      req: {
+        body: { deckId: '42', frontContent: 'Front', backContent: 'Back' },
+        user: { userId: 'user-1' },
+      },
+      result: { rowCount: 2, rows: [mutationCard, { ...mutationCard, id: 78 }] },
+      params: [42, 'user-1', 'Front', 'Back'],
+    },
+    {
+      name: 'update card with rowCount zero but a returned row',
+      handler: updateCard,
+      req: {
+        params: { cardId: '77' },
+        body: { frontContent: 'Front', backContent: 'Back' },
+        user: { userId: 'user-1' },
+      },
+      result: { rowCount: 0, rows: [mutationCard] },
+      params: [77, 'user-1', 'Front', 'Back'],
+    },
+    {
+      name: 'update card with multiple returned rows',
+      handler: updateCard,
+      req: {
+        params: { cardId: '77' },
+        body: { frontContent: 'Front', backContent: 'Back' },
+        user: { userId: 'user-1' },
+      },
+      result: { rowCount: 2, rows: [mutationCard, { ...mutationCard, id: 78 }] },
+      params: [77, 'user-1', 'Front', 'Back'],
+    },
+    {
+      name: 'delete card with rowCount zero but a returned row',
+      handler: deleteCard,
+      req: { params: { cardId: '77' }, user: { userId: 'user-1' } },
+      result: { rowCount: 0, rows: [deletedCard] },
+      params: [77, 'user-1'],
+    },
+    {
+      name: 'delete card with multiple returned rows',
+      handler: deleteCard,
+      req: { params: { cardId: '77' }, user: { userId: 'user-1' } },
+      result: { rowCount: 2, rows: [deletedCard, { ...deletedCard, id: 78 }] },
+      params: [77, 'user-1'],
+    },
+  ];
+
+  for (const testCase of cases) {
+    await t.test(testCase.name, async (t) => {
+      const db = createDb([testCase.result]);
+      const res = createRes();
+      t.mock.method(console, 'error', () => {});
+
+      await testCase.handler(testCase.req, res, db);
+
+      assert.equal(res.statusCode, 500);
+      assert.deepEqual(res.body, { error: 'Internal server error' });
+      assert.equal(db.calls.length, 1);
+      assert.deepEqual(db.calls[0].params, testCase.params);
+    });
+  }
+});
+
 test('DELETE /api/cards/:cardId returns 400 for invalid cardId and skips db query', async () => {
   const invalidCardIds = [
     undefined,
@@ -3429,6 +3602,48 @@ test('POST /api/study-session rolls back before scheduling when the locked card 
   }
 });
 
+test('POST /api/study-session rolls back before scheduling when the locked card read cardinality is malformed', async (t) => {
+  const sourceCard = createCardReadRow({
+    id: 7,
+    deck_id: 1,
+    next_review: '2026-05-08T12:00:00.000Z',
+    ease_factor: 2.5,
+    interval: 2,
+    review_count: 2,
+    __is_due: true,
+  });
+  const db = createTransactionDb([
+    {
+      rowCount: 2,
+      rows: [sourceCard, { ...sourceCard, id: 8 }],
+    },
+  ]);
+  const req = { body: { cardId: 7, quality: 4 }, user: { userId: 'user-1' } };
+  const res = createRes();
+  let schedulerCalled = false;
+  t.mock.method(console, 'error', () => {});
+
+  await submitStudySession(req, res, db, () => {
+    schedulerCalled = true;
+    return {
+      ease_factor: 2.6,
+      interval: 3,
+      next_review: '2026-05-08T12:00:00.000Z',
+    };
+  });
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Internal server error' });
+  assert.equal(schedulerCalled, false);
+  assert.equal(db.connectCalls, 1);
+  assert.equal(db.client.released, true);
+  assert.equal(db.calls.length, 3);
+  assert.match(db.calls[0].sql, /^\s*BEGIN\s*$/i);
+  assertStudySessionCardReadSql(db.calls[1].sql);
+  assert.match(db.calls[2].sql, /^\s*ROLLBACK\s*$/i);
+  assert.doesNotMatch(db.calls.map(({ sql }) => sql).join('\n'), /\bUPDATE\s+cards\b|\bCOMMIT\b/i);
+});
+
 test('POST /api/study-session locks an owned due card before scheduling and updating', async () => {
   const nextReview = '2026-05-08T12:00:00.000Z';
   const sourceCard = {
@@ -3666,6 +3881,59 @@ test('POST /api/study-session returns 409 when final due-gated update loses a st
   assertStudySessionCardReadSql(db.calls[0].sql);
   assertStudySessionUpdateSql(db.calls[1].sql);
   assert.deepEqual(db.calls[1].params.slice(1), ['2026-05-08T12:00:00.000Z', 3, 2.6, 7, 'user-1']);
+});
+
+test('POST /api/study-session rolls back when the final update cardinality is malformed', async (t) => {
+  const sourceCard = createCardReadRow({
+    id: 7,
+    deck_id: 1,
+    next_review: '2026-05-08T12:00:00.000Z',
+    ease_factor: 2.5,
+    interval: 2,
+    review_count: 2,
+    __is_due: true,
+  });
+  const updatedCard = {
+    id: 7,
+    next_review: '2026-05-08T12:00:00.000Z',
+    interval: 3,
+    ease_factor: 2.6,
+    review_count: 3,
+    last_reviewed: '2026-05-08T12:05:00.000Z',
+    __updated: true,
+  };
+  const malformedUpdateResults = [
+    { rowCount: 0, rows: [updatedCard] },
+    { rowCount: 1, rows: [] },
+    { rowCount: 2, rows: [updatedCard, { ...updatedCard, id: 8 }] },
+  ];
+  t.mock.method(console, 'error', () => {});
+
+  for (const result of malformedUpdateResults) {
+    const db = createTransactionDb([
+      { rowCount: 1, rows: [sourceCard] },
+      result,
+    ]);
+    const req = { body: { cardId: 7, quality: 4 }, user: { userId: 'user-1' } };
+    const res = createRes();
+
+    await submitStudySession(req, res, db, () => ({
+      ease_factor: 2.6,
+      interval: 3,
+      next_review: '2026-05-08T12:00:00.000Z',
+    }));
+
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.body, { error: 'Internal server error' });
+    assert.equal(db.connectCalls, 1);
+    assert.equal(db.client.released, true);
+    assert.equal(db.calls.length, 4);
+    assert.match(db.calls[0].sql, /^\s*BEGIN\s*$/i);
+    assertStudySessionCardReadSql(db.calls[1].sql);
+    assertStudySessionUpdateSql(db.calls[2].sql);
+    assert.match(db.calls[3].sql, /^\s*ROLLBACK\s*$/i);
+    assert.doesNotMatch(db.calls.map(({ sql }) => sql).join('\n'), /^\s*COMMIT\s*$/im);
+  }
 });
 
 async function assertMalformedStudySessionUpdateRowRollsBack(updateRow) {
