@@ -339,6 +339,39 @@ function validatePasswordHash(passwordHash) {
   );
 }
 
+function normalizeLoginUserRow(row, normalizedEmail) {
+  if (row === null || typeof row !== 'object' || Array.isArray(row)) {
+    throw new Error('Invalid login user lookup result');
+  }
+
+  const normalizedUserId = normalizeTokenUserId(row.id);
+  if (normalizedUserId == null || row.email !== normalizedEmail) {
+    throw new Error('Invalid login user lookup result');
+  }
+
+  return {
+    id: normalizedUserId,
+    email: row.email,
+    password_hash: row.password_hash,
+  };
+}
+
+function getSingleLoginUserRow(result, normalizedEmail) {
+  if (result === null || typeof result !== 'object' || !Array.isArray(result.rows)) {
+    throw new Error('Invalid login user lookup result');
+  }
+
+  if (result.rows.length === 0) {
+    return null;
+  }
+
+  if (result.rows.length !== 1) {
+    throw new Error('Invalid login user lookup result');
+  }
+
+  return normalizeLoginUserRow(result.rows[0], normalizedEmail);
+}
+
 function resolvePositiveIntegerOption(options, fieldName, defaultValue, optionName) {
   const value = options[fieldName];
   if (value == null) {
@@ -645,16 +678,16 @@ function createAuthHandlers(db, options = {}) {
 
     try {
       const result = await db.query(
-        'SELECT id, email, password_hash FROM users WHERE email = $1',
+        'SELECT id, email, password_hash FROM users WHERE email = $1 LIMIT 2',
         [normalizedEmail]
       );
-      if (result.rows.length === 0) {
+      const user = getSingleLoginUserRow(result, normalizedEmail);
+      if (user === null) {
         // Ignore the dummy result; missing accounts must never authenticate.
         await passwordHasher.compare(password, MISSING_ACCOUNT_DUMMY_PASSWORD_HASH);
         recordLoginFailure();
         return res.status(401).json({ error: 'Invalid credentials' });
       }
-      const user = result.rows[0];
       if (!validatePasswordHash(user.password_hash)) {
         // Treat malformed persisted hashes like credential failures while still
         // doing dummy hash work.

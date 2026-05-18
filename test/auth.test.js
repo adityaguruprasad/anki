@@ -655,7 +655,7 @@ test('login accepts a password over the bcrypt byte limit and compares it unchan
 
   assert.equal(res.statusCode, 200);
   assert.equal(db.calls.length, 1);
-  assert.equal(db.calls[0].sql, 'SELECT id, email, password_hash FROM users WHERE email = $1');
+  assert.equal(db.calls[0].sql, 'SELECT id, email, password_hash FROM users WHERE email = $1 LIMIT 2');
   assert.doesNotMatch(db.calls[0].sql, /SELECT\s+\*/i);
   assert.deepEqual(db.calls[0].params, ['grace@example.com']);
   assert.deepEqual(passwordHasher.compareCalls, [
@@ -719,7 +719,92 @@ test('login compares an existing user password only against the stored hash', as
   assert.equal(verifyToken(res.body.token, 'existing-login-secret').userId, 79);
 });
 
-test('login does not mint a token when the stored user id is invalid', async () => {
+test('login fails closed when the normalized email lookup returns multiple rows', async () => {
+  const db = createDb([
+    {
+      rowCount: 2,
+      rows: [
+        { id: 79, email: 'ada@example.com', password_hash: 'stored-user-hash' },
+        { id: 80, email: 'ada@example.com', password_hash: 'other-user-hash' },
+      ],
+    },
+  ]);
+  const passwordHasher = createPasswordHasher({ compareResult: true });
+  const { login } = createAuthHandlers(db, {
+    jwtSecret: 'duplicate-login-user-secret',
+    passwordHasher,
+  });
+  const res = createRes();
+
+  await login({ body: { email: 'ada@example.com', password: 'stored-password' } }, res);
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Error logging in' });
+  assert.equal(res.body.token, undefined);
+  assert.deepEqual(passwordHasher.compareCalls, []);
+  assert.equal(db.calls.length, 1);
+  assert.equal(db.calls[0].sql, 'SELECT id, email, password_hash FROM users WHERE email = $1 LIMIT 2');
+  assert.deepEqual(db.calls[0].params, ['ada@example.com']);
+});
+
+test('login fails closed when the lookup row email does not match the normalized email', async () => {
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [{ id: 79, email: 'Ada@example.com', password_hash: 'stored-user-hash' }],
+    },
+  ]);
+  const passwordHasher = createPasswordHasher({ compareResult: true });
+  const { login } = createAuthHandlers(db, {
+    jwtSecret: 'mismatched-login-user-secret',
+    passwordHasher,
+  });
+  const res = createRes();
+
+  await login({ body: { email: ' ADA@Example.COM ', password: 'stored-password' } }, res);
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Error logging in' });
+  assert.equal(res.body.token, undefined);
+  assert.deepEqual(passwordHasher.compareCalls, []);
+  assert.equal(db.calls.length, 1);
+  assert.equal(db.calls[0].sql, 'SELECT id, email, password_hash FROM users WHERE email = $1 LIMIT 2');
+  assert.deepEqual(db.calls[0].params, ['ada@example.com']);
+});
+
+test('login fails closed when the lookup result rows shape is invalid', async (t) => {
+  const invalidResults = [
+    { name: 'missing rows', result: { rowCount: 1 } },
+    { name: 'non-array rows', result: { rowCount: 1, rows: { id: 79 } } },
+  ];
+
+  for (const { name, result } of invalidResults) {
+    await t.test(name, async () => {
+      const db = createDb([result]);
+      const passwordHasher = createPasswordHasher({ compareResult: true });
+      const { login } = createAuthHandlers(db, {
+        jwtSecret: 'invalid-login-rows-secret',
+        passwordHasher,
+      });
+      const res = createRes();
+
+      await login({ body: { email: 'ada@example.com', password: 'stored-password' } }, res);
+
+      assert.equal(res.statusCode, 500);
+      assert.deepEqual(res.body, { error: 'Error logging in' });
+      assert.equal(res.body.token, undefined);
+      assert.deepEqual(passwordHasher.compareCalls, []);
+      assert.equal(db.calls.length, 1);
+      assert.equal(
+        db.calls[0].sql,
+        'SELECT id, email, password_hash FROM users WHERE email = $1 LIMIT 2'
+      );
+      assert.deepEqual(db.calls[0].params, ['ada@example.com']);
+    });
+  }
+});
+
+test('login does not compare or mint a token when the stored user id is invalid', async () => {
   const db = createDb([
     {
       rowCount: 1,
@@ -738,9 +823,7 @@ test('login does not mint a token when the stored user id is invalid', async () 
   assert.equal(res.statusCode, 500);
   assert.deepEqual(res.body, { error: 'Error logging in' });
   assert.equal(res.body.token, undefined);
-  assert.deepEqual(passwordHasher.compareCalls, [
-    { password: 'stored-password', passwordHash: 'stored-user-hash' },
-  ]);
+  assert.deepEqual(passwordHasher.compareCalls, []);
   assert.equal(db.calls.length, 1);
 });
 
