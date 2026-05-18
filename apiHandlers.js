@@ -85,6 +85,7 @@ const SCHEDULING_INSIGHTS_RESPONSE_FIELDS = Object.freeze([
   'averageEaseFactor',
 ]);
 const INVALID_SCHEDULER_OUTPUT_ERROR = 'Invalid scheduler output';
+const INVALID_STUDY_SESSION_CARD_READ_RESULT_ERROR = 'Invalid study-session card read result';
 const INVALID_STUDY_SESSION_UPDATE_RESULT_ERROR = 'Invalid study-session update result';
 const INVALID_CARD_MUTATION_RESULT_ERROR = 'Invalid card mutation result';
 const INVALID_CARD_REMOVAL_RESULT_ERROR = 'Invalid card removal result';
@@ -136,7 +137,20 @@ function assertValidSchedulingUpdate(schedule) {
   }
 }
 
-function assertStudySessionUpdateSucceeded(row) {
+function assertStudySessionCardReadResult(row, expectedCardId) {
+  assertObjectHasOwnFields(row, ['id', '__is_due'], INVALID_STUDY_SESSION_CARD_READ_RESULT_ERROR);
+
+  const cardIdValidation = validatePositiveIntegerIdentifier(row.id, 'cardId');
+  if (
+    !cardIdValidation.ok
+    || cardIdValidation.value !== expectedCardId
+    || typeof row.__is_due !== 'boolean'
+  ) {
+    throw new TypeError(INVALID_STUDY_SESSION_CARD_READ_RESULT_ERROR);
+  }
+}
+
+function assertStudySessionUpdateSucceeded(row, expectedCardId) {
   assertObjectHasOwnFields(
     row,
     [...STUDY_SESSION_RESPONSE_CARD_FIELDS, '__updated'],
@@ -147,6 +161,7 @@ function assertStudySessionUpdateSucceeded(row) {
   if (
     row.__updated !== true
     || !cardIdValidation.ok
+    || cardIdValidation.value !== expectedCardId
     || !isValidRequiredDatabaseTimestamp(row.next_review)
     || !isValidPersistedCardInterval(row.interval)
     || !isValidPersistedEaseFactor(row.ease_factor)
@@ -1086,6 +1101,7 @@ async function submitStudySession(req, res, db, calculateNextReview) {
     }
 
     const card = cardResult.rows[0];
+    assertStudySessionCardReadResult(card, validCardId);
     if (card.__is_due === false) {
       await rollbackTransaction();
       return res.status(409).json({ error: 'Card is not due' });
@@ -1159,7 +1175,7 @@ async function submitStudySession(req, res, db, calculateNextReview) {
       return res.status(409).json({ error: 'Card is not due' });
     }
 
-    assertStudySessionUpdateSucceeded(updatedCard);
+    assertStudySessionUpdateSucceeded(updatedCard, validCardId);
     const responseCard = toStudySessionResponseCardPayload(updatedCard);
     if (transactionStarted) {
       await client.query('COMMIT');

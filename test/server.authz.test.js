@@ -3350,6 +3350,69 @@ test('POST /api/study-session returns 409 and skips scheduling when an owned car
   assert.doesNotMatch(db.calls[0].sql, /AND\s+\(\s*c\.next_review IS NULL\s+OR\s+c\.next_review <= NOW\(\)\s+\)/i);
 });
 
+test('POST /api/study-session rolls back before scheduling when the locked card read contract is malformed', async (t) => {
+  const validSourceCard = createCardReadRow({
+    id: 7,
+    deck_id: 1,
+    front_content: 'Front',
+    back_content: 'Back',
+    created_at: '2026-05-01T12:00:00.000Z',
+    last_reviewed: null,
+    next_review: '2026-05-08T12:00:00.000Z',
+    ease_factor: 2.5,
+    interval: 2,
+    review_count: 2,
+    __is_due: true,
+  });
+  const rowMissingDueSentinel = { ...validSourceCard };
+  delete rowMissingDueSentinel.__is_due;
+  const malformedRows = [
+    { name: 'mismatched card id', row: { ...validSourceCard, id: 8 } },
+    { name: 'missing due sentinel', row: rowMissingDueSentinel },
+    { name: 'non-boolean due sentinel', row: { ...validSourceCard, __is_due: 'true' } },
+  ];
+  const validUpdateRow = {
+    id: 7,
+    next_review: '2026-05-08T12:00:00.000Z',
+    interval: 3,
+    ease_factor: 2.6,
+    review_count: 3,
+    last_reviewed: '2026-05-08T12:05:00.000Z',
+    __updated: true,
+  };
+  t.mock.method(console, 'error', () => {});
+
+  for (const { row } of malformedRows) {
+    const db = createTransactionDb([
+      { rowCount: 1, rows: [row] },
+      { rowCount: 1, rows: [validUpdateRow] },
+    ]);
+    const req = { body: { cardId: 7, quality: 4 }, user: { userId: 'user-1' } };
+    const res = createRes();
+    let schedulerCalled = false;
+
+    await submitStudySession(req, res, db, () => {
+      schedulerCalled = true;
+      return {
+        ease_factor: 2.6,
+        interval: 3,
+        next_review: '2026-05-08T12:00:00.000Z',
+      };
+    });
+
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.body, { error: 'Internal server error' });
+    assert.equal(schedulerCalled, false);
+    assert.equal(db.connectCalls, 1);
+    assert.equal(db.client.released, true);
+    assert.equal(db.calls.length, 3);
+    assert.match(db.calls[0].sql, /^\s*BEGIN\s*$/i);
+    assertStudySessionCardReadSql(db.calls[1].sql);
+    assert.match(db.calls[2].sql, /^\s*ROLLBACK\s*$/i);
+    assert.doesNotMatch(db.calls.map(({ sql }) => sql).join('\n'), /\bUPDATE\s+cards\b|\bCOMMIT\b/i);
+  }
+});
+
 test('POST /api/study-session locks an owned due card before scheduling and updating', async () => {
   const nextReview = '2026-05-08T12:00:00.000Z';
   const sourceCard = {
@@ -3421,6 +3484,7 @@ test('POST /api/study-session treats unscheduled owned cards as due for review',
     ease_factor: 2.5,
     interval: 2,
     review_count: 2,
+    __is_due: true,
   };
   const updatedCard = {
     id: 7,
@@ -3480,6 +3544,7 @@ test('POST /api/study-session returns updated scheduling metadata for successful
         ease_factor: 2.5,
         interval: 2,
         review_count: 2,
+        __is_due: true,
       }],
     },
     { rowCount: 1, rows: [{ ...updatedCard, __updated: true }] },
@@ -3674,6 +3739,7 @@ test('POST /api/study-session rolls back when a successful final update result v
   const malformedRows = [
     { name: 'missing id', row: rowMissingId },
     { name: 'non-numeric id', row: { ...validUpdateRow, id: 'card-7' } },
+    { name: 'mismatched id', row: { ...validUpdateRow, id: 8 } },
     { name: 'zero id', row: { ...validUpdateRow, id: 0 } },
     { name: 'null next_review', row: { ...validUpdateRow, next_review: null } },
     { name: 'invalid next_review timestamp', row: { ...validUpdateRow, next_review: 'not-a-date' } },
