@@ -607,19 +607,14 @@ test('GET /api/decks converts aggregate strings to numbers', async () => {
   assert.equal(typeof res.body[0].dueCards, 'number');
 });
 
-test('GET /api/decks normalizes only safe non-negative integer aggregate counts', async () => {
+test('GET /api/decks normalizes safe aggregate count representations', async () => {
   const db = createDb([
     {
-      rowCount: 2,
+      rowCount: 3,
       rows: [
-        { id: 5, user_id: 'user-1', name: 'BigInt Counts', totalCards: 12n, dueCards: 2n },
-        {
-          id: 6,
-          user_id: 'user-1',
-          name: 'Malformed Counts',
-          totalCards: '1e3',
-          dueCards: Number.MAX_SAFE_INTEGER + 1,
-        },
+        { id: 5, user_id: 'user-1', name: 'String Counts', totalCards: '12', dueCards: '2' },
+        { id: 6, user_id: 'user-1', name: 'BigInt Counts', totalCards: 12n, dueCards: 2n },
+        { id: 7, user_id: 'user-1', name: 'Number Counts', totalCards: 12, dueCards: 2 },
       ],
     },
   ]);
@@ -630,13 +625,14 @@ test('GET /api/decks normalizes only safe non-negative integer aggregate counts'
 
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, [
-    { id: 5, user_id: 'user-1', name: 'BigInt Counts', totalCards: 12, dueCards: 2 },
-    { id: 6, user_id: 'user-1', name: 'Malformed Counts', totalCards: 0, dueCards: 0 },
+    { id: 5, user_id: 'user-1', name: 'String Counts', totalCards: 12, dueCards: 2 },
+    { id: 6, user_id: 'user-1', name: 'BigInt Counts', totalCards: 12, dueCards: 2 },
+    { id: 7, user_id: 'user-1', name: 'Number Counts', totalCards: 12, dueCards: 2 },
   ]);
   assert.equal(db.calls.length, 1);
 });
 
-test('GET /api/decks fails closed when a deck-list row is missing or cannot use required response fields', async () => {
+test('GET /api/decks fails closed when a deck-list row is missing or cannot use required response fields', async (t) => {
   const malformedRows = [
     { id: 7, totalCards: '3', dueCards: '1' },
     { id: 7, name: 'Biology', dueCards: '1' },
@@ -645,25 +641,24 @@ test('GET /api/decks fails closed when a deck-list row is missing or cannot use 
     { id: 7, name: '', totalCards: '3', dueCards: '1' },
     { id: 7, name: '   ', totalCards: '3', dueCards: '1' },
     { id: 7, name: null, totalCards: '3', dueCards: '1' },
+    { id: 7, name: 'Biology', totalCards: '1e3', dueCards: '1' },
+    { id: 7, name: 'Biology', totalCards: Number.MAX_SAFE_INTEGER + 1, dueCards: 0 },
+    { id: 7, name: 'Biology', totalCards: '9007199254740992', dueCards: 0 },
+    { id: 7, name: 'Biology', totalCards: 1, dueCards: 2 },
   ];
-  const originalError = console.error;
-  console.error = () => {};
+  t.mock.method(console, 'error', () => {});
 
-  try {
-    for (const row of malformedRows) {
-      const db = createDb([{ rowCount: 1, rows: [row] }]);
-      const req = { user: { userId: 'user-1' } };
-      const res = createRes();
+  for (const row of malformedRows) {
+    const db = createDb([{ rowCount: 1, rows: [row] }]);
+    const req = { user: { userId: 'user-1' } };
+    const res = createRes();
 
-      await getDecks(req, res, db);
+    await getDecks(req, res, db);
 
-      assert.equal(res.statusCode, 500);
-      assert.deepEqual(res.body, { error: 'Internal server error' });
-      assert.equal(db.calls.length, 1);
-      assert.deepEqual(db.calls[0].params, ['user-1']);
-    }
-  } finally {
-    console.error = originalError;
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.body, { error: 'Internal server error' });
+    assert.equal(db.calls.length, 1);
+    assert.deepEqual(db.calls[0].params, ['user-1']);
   }
 });
 

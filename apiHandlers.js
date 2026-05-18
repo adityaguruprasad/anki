@@ -174,40 +174,6 @@ function validatePositiveIntegerIdentifier(value, fieldName) {
   return { ok: false, error: `Invalid ${fieldName}: must be a positive integer` };
 }
 
-function toAggregateCount(value) {
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-
-    if (/^\d+$/.test(trimmed)) {
-      const normalizedDigits = trimmed.replace(/^0+/, '') || '0';
-      // Without leading zeroes, equal-length digit strings compare safely with MAX_SAFE_INTEGER_TEXT.
-      const isWithinSafeIntegerRange = (
-        normalizedDigits.length < MAX_SAFE_INTEGER_TEXT.length
-        || (
-          normalizedDigits.length === MAX_SAFE_INTEGER_TEXT.length
-          && normalizedDigits <= MAX_SAFE_INTEGER_TEXT
-        )
-      );
-
-      if (isWithinSafeIntegerRange) {
-        return Number(normalizedDigits);
-      }
-    }
-
-    return 0;
-  }
-
-  if (typeof value === 'number') {
-    return Number.isSafeInteger(value) && value >= 0 ? value : 0;
-  }
-
-  if (typeof value === 'bigint') {
-    return value >= 0n && value <= MAX_SAFE_INTEGER_BIGINT ? Number(value) : 0;
-  }
-
-  return 0;
-}
-
 function toNormalizedAggregateCount(value, errorMessage, { allowUnsafeString = false } = {}) {
   if (typeof value === 'string') {
     const trimmed = value.trim();
@@ -237,7 +203,7 @@ function toNormalizedAggregateCount(value, errorMessage, { allowUnsafeString = f
   }
 
   if (typeof value === 'bigint' && value >= 0n) {
-    if (value <= BigInt(Number.MAX_SAFE_INTEGER)) {
+    if (value <= MAX_SAFE_INTEGER_BIGINT) {
       return Number(value);
     }
 
@@ -253,6 +219,10 @@ function toStatsAggregateCount(value) {
   return toNormalizedAggregateCount(value, INVALID_STATS_RESULT_ERROR, {
     allowUnsafeString: true,
   });
+}
+
+function toDeckListAggregateCount(value) {
+  return toNormalizedAggregateCount(value, INVALID_DECK_LIST_RESULT_ERROR);
 }
 
 function toSafeAggregateCount(value, errorMessage) {
@@ -505,6 +475,22 @@ function toDeckReadPayload(row) {
   }
 
   return deck;
+}
+
+function toDeckListPayload(row) {
+  assertDeckListResult(row);
+
+  const totalCards = toDeckListAggregateCount(row.totalCards);
+  const dueCards = toDeckListAggregateCount(row.dueCards);
+  if (dueCards > totalCards) {
+    throw new TypeError(INVALID_DECK_LIST_RESULT_ERROR);
+  }
+
+  return {
+    ...toDeckReadPayload(row),
+    totalCards,
+    dueCards,
+  };
 }
 
 function toStudySessionResponseCardPayload(row) {
@@ -1260,15 +1246,7 @@ async function getDecks(req, res, db) {
       [req.user.userId]
     );
 
-    return res.json(rows.map((deck) => {
-      assertDeckListResult(deck);
-
-      return {
-        ...toDeckReadPayload(deck),
-        totalCards: toAggregateCount(deck.totalCards),
-        dueCards: toAggregateCount(deck.dueCards),
-      };
-    }));
+    return res.json(rows.map(toDeckListPayload));
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Internal server error' });
