@@ -457,6 +457,25 @@ function assertCardBrowseCursorResult(row) {
   }
 }
 
+function assertCardListRowAnchoredToDeck(row, deckId) {
+  assertObjectHasOwnFields(row, ['id', '__owned_deck_id'], INVALID_CARD_READ_RESULT_ERROR);
+
+  const ownedDeckIdValidation = validatePositiveIntegerIdentifier(row.__owned_deck_id, 'deckId');
+  if (!ownedDeckIdValidation.ok || ownedDeckIdValidation.value !== deckId) {
+    throw new TypeError(INVALID_CARD_READ_RESULT_ERROR);
+  }
+
+  if (row.id === null) {
+    return;
+  }
+
+  assertObjectHasOwnFields(row, ['deck_id'], INVALID_CARD_READ_RESULT_ERROR);
+  const cardDeckIdValidation = validatePositiveIntegerIdentifier(row.deck_id, 'deckId');
+  if (!cardDeckIdValidation.ok || cardDeckIdValidation.value !== deckId) {
+    throw new TypeError(INVALID_CARD_READ_RESULT_ERROR);
+  }
+}
+
 function assertStatsResult(row) {
   assertObjectHasOwnFields(row, STATS_RESPONSE_FIELDS, INVALID_STATS_RESULT_ERROR);
 }
@@ -752,6 +771,10 @@ async function getDueCardsByDeck(req, res, db) {
       return res.status(404).json({ error: 'Deck not found for user' });
     }
 
+    for (const row of rows) {
+      assertCardListRowAnchoredToDeck(row, deckId);
+    }
+
     const dueCards = rows
       .filter((row) => row.id !== null)
       .map((row) => {
@@ -787,7 +810,8 @@ async function getCardsByDeck(req, res, db) {
       return res.status(400).json({ error: searchValidation.error });
     }
 
-    const params = [deckIdValidation.value, req.user.userId];
+    const deckId = deckIdValidation.value;
+    const params = [deckId, req.user.userId];
     let cursorClause = '';
     if (cursorValidation.value !== null) {
       params.push(cursorValidation.value.cursorCreatedAt, cursorValidation.value.cursorId);
@@ -827,6 +851,10 @@ async function getCardsByDeck(req, res, db) {
 
     if (rows.length === 0) {
       return res.status(404).json({ error: 'Deck not found for user' });
+    }
+
+    for (const row of rows) {
+      assertCardListRowAnchoredToDeck(row, deckId);
     }
 
     const cardRows = rows.filter((row) => row.id !== null);

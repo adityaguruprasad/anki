@@ -969,6 +969,37 @@ test('GET /api/decks/:deckId/cards returns empty page for owned empty deck', asy
   assert.deepEqual(db.calls[0].params, [42, 'user-1', 51]);
 });
 
+test('GET /api/decks/:deckId/cards fails closed when rows are not anchored to the requested deck', async (t) => {
+  const card = createCardReadRow({
+    id: 3,
+    deck_id: 42,
+    front_content: 'Future card',
+    back_content: 'Answer',
+    created_at: '2026-05-08T13:00:00.000Z',
+    next_review: '2026-05-20T12:00:00.000Z',
+  });
+  const malformedRows = [
+    { id: null },
+    { id: null, __owned_deck_id: 41 },
+    { ...card, deck_id: 41, __cursor_created_at: '2026-05-08T13:00:00.000000Z', __owned_deck_id: 42 },
+    { ...card, __cursor_created_at: '2026-05-08T13:00:00.000000Z', __owned_deck_id: 41 },
+  ];
+  t.mock.method(console, 'error', () => {});
+
+  for (const row of malformedRows) {
+    const db = createDb([{ rowCount: 1, rows: [row] }]);
+    const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+    const res = createRes();
+
+    await getCardsByDeck(req, res, db);
+
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.body, { error: 'Internal server error' });
+    assert.equal(db.calls.length, 1);
+    assert.deepEqual(db.calls[0].params, [42, 'user-1', 51]);
+  }
+});
+
 test('GET /api/decks/:deckId/cards returns default-limited owned deck cards newest first', async () => {
   const cards = [
     createCardReadRow({
@@ -1919,6 +1950,36 @@ test('GET /api/cards/:deckId returns empty array for owned deck with no due card
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, [42, 'user-1', 100]);
   assert.match(db.calls[0].sql, /ORDER BY c\.next_review ASC NULLS FIRST,\s*c\.id ASC\s+LIMIT \$3/);
+});
+
+test('GET /api/cards/:deckId fails closed when rows are not anchored to the requested deck', async (t) => {
+  const dueCard = createCardReadRow({
+    id: 11,
+    deck_id: 42,
+    front_content: 'Due card',
+    back_content: 'Answer',
+    next_review: '2026-05-08T12:00:00.000Z',
+  });
+  const malformedRows = [
+    { id: null },
+    { id: null, __owned_deck_id: 41 },
+    { ...dueCard, deck_id: 41, __owned_deck_id: 42 },
+    { ...dueCard, __owned_deck_id: 41 },
+  ];
+  t.mock.method(console, 'error', () => {});
+
+  for (const row of malformedRows) {
+    const db = createDb([{ rowCount: 1, rows: [row] }]);
+    const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+    const res = createRes();
+
+    await getDueCardsByDeck(req, res, db);
+
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.body, { error: 'Internal server error' });
+    assert.equal(db.calls.length, 1);
+    assert.deepEqual(db.calls[0].params, [42, 'user-1', 100]);
+  }
 });
 
 test('GET /api/cards/:deckId fails closed when a due-card row violates read response invariants', async (t) => {
