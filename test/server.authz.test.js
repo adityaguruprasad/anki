@@ -114,6 +114,22 @@ const EXPECTED_PUBLIC_DECK_READ_FIELDS = Object.freeze([
   'created_at',
 ]);
 
+function createCardReadRow(overrides = {}) {
+  return {
+    id: 1,
+    deck_id: 42,
+    front_content: 'Front',
+    back_content: 'Back',
+    created_at: '2026-05-08T12:00:00.000Z',
+    last_reviewed: null,
+    next_review: '2026-05-08T12:00:00.000Z',
+    interval: 1,
+    review_count: 0,
+    ease_factor: 2.5,
+    ...overrides,
+  };
+}
+
 function assertExplicitPublicCardReadSelect(sql) {
   const selectMatch = /\bSELECT\b/i.exec(sql);
   const fromMatch = /\bFROM\s+decks\s+d\b/i.exec(sql);
@@ -914,22 +930,22 @@ test('GET /api/decks/:deckId/cards returns empty page for owned empty deck', asy
 
 test('GET /api/decks/:deckId/cards returns default-limited owned deck cards newest first', async () => {
   const cards = [
-    {
+    createCardReadRow({
       id: 3,
       deck_id: 42,
       front_content: 'Future card',
       back_content: 'Answer',
       created_at: '2026-05-08T13:00:00.000Z',
       next_review: '2026-05-20T12:00:00.000Z',
-    },
-    {
+    }),
+    createCardReadRow({
       id: 2,
       deck_id: 42,
       front_content: 'Due card',
       back_content: 'Answer',
       created_at: '2026-05-08T12:00:00.000Z',
       next_review: '2026-05-07T12:00:00.000Z',
-    },
+    }),
   ];
   const db = createDb([
     {
@@ -956,6 +972,49 @@ test('GET /api/decks/:deckId/cards returns default-limited owned deck cards newe
   assert.deepEqual(db.calls[0].params, [42, 'user-1', 51]);
 });
 
+test('GET /api/decks/:deckId/cards fails closed when a card row violates read response invariants', async (t) => {
+  const validCard = createCardReadRow({
+    id: 3,
+    deck_id: 42,
+    front_content: 'Future card',
+    back_content: 'Answer',
+    created_at: '2026-05-08T13:00:00.000Z',
+    next_review: '2026-05-20T12:00:00.000Z',
+  });
+  const rowWithoutFrontContent = { ...validCard };
+  delete rowWithoutFrontContent.front_content;
+  const malformedRows = [
+    { ...validCard, id: 'card-3' },
+    { ...validCard, deck_id: 'deck-42' },
+    rowWithoutFrontContent,
+    { ...validCard, back_content: '   ' },
+    { ...validCard, created_at: 'not-a-date' },
+    { ...validCard, next_review: 'not-a-date' },
+    { ...validCard, interval: 0 },
+    { ...validCard, ease_factor: 1.29 },
+    { ...validCard, review_count: -1 },
+  ];
+  t.mock.method(console, 'error', () => {});
+
+  for (const row of malformedRows) {
+    const db = createDb([
+      {
+        rowCount: 1,
+        rows: [{ ...row, __cursor_created_at: '2026-05-08T13:00:00.000000Z', __owned_deck_id: 42 }],
+      },
+    ]);
+    const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+    const res = createRes();
+
+    await getCardsByDeck(req, res, db);
+
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.body, { error: 'Internal server error' });
+    assert.equal(db.calls.length, 1);
+    assert.deepEqual(db.calls[0].params, [42, 'user-1', 51]);
+  }
+});
+
 test('GET /api/decks/:deckId/cards uses one user-scoped ordered browse query with default limit', async () => {
   const db = createDb([{ rowCount: 1, rows: [{ id: null, __owned_deck_id: 42 }] }]);
   const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
@@ -978,20 +1037,22 @@ test('GET /api/decks/:deckId/cards uses one user-scoped ordered browse query wit
 
 test('GET /api/decks/:deckId/cards returns next cursor only when limit plus one row exists', async () => {
   const createdAt = new Date('2026-05-08T13:00:00.000Z');
-  const card = {
+  const card = createCardReadRow({
     id: 3,
     deck_id: 42,
     front_content: 'Future card',
     back_content: 'Answer',
     created_at: createdAt,
-  };
-  const extraCard = {
+    next_review: '2026-05-20T12:00:00.000Z',
+  });
+  const extraCard = createCardReadRow({
     id: 2,
     deck_id: 42,
     front_content: 'Extra card',
     back_content: 'Answer',
     created_at: new Date('2026-05-08T12:00:00.000Z'),
-  };
+    next_review: '2026-05-19T12:00:00.000Z',
+  });
   const db = createDb([
     {
       rowCount: 2,
@@ -1028,22 +1089,24 @@ test('GET /api/decks/:deckId/cards returns next cursor only when limit plus one 
 });
 
 test('GET /api/decks/:deckId/cards fails closed when next cursor metadata is malformed', async (t) => {
-  const baseCard = {
+  const baseCard = createCardReadRow({
     id: 3,
     deck_id: 42,
     front_content: 'Future card',
     back_content: 'Answer',
     created_at: new Date('2026-05-08T13:00:00.000Z'),
-  };
-  const extraCard = {
+    next_review: '2026-05-20T12:00:00.000Z',
+  });
+  const extraCard = createCardReadRow({
     id: 2,
     deck_id: 42,
     front_content: 'Extra card',
     back_content: 'Answer',
     created_at: new Date('2026-05-08T12:00:00.000Z'),
+    next_review: '2026-05-19T12:00:00.000Z',
     __cursor_created_at: '2026-05-08T12:00:00.000000Z',
     __owned_deck_id: 42,
-  };
+  });
   const malformedPageRows = [
     { ...baseCard, __owned_deck_id: 42 },
     { ...baseCard, __cursor_created_at: 'not-a-date', __owned_deck_id: 42 },
@@ -1075,13 +1138,14 @@ test('GET /api/decks/:deckId/cards fails closed when next cursor metadata is mal
 });
 
 test('GET /api/decks/:deckId/cards omits next cursor when only limit rows are returned', async () => {
-  const card = {
+  const card = createCardReadRow({
     id: 3,
     deck_id: 42,
     front_content: 'Future card',
     back_content: 'Answer',
     created_at: new Date('2026-05-08T13:00:00.000Z'),
-  };
+    next_review: '2026-05-20T12:00:00.000Z',
+  });
   const db = createDb([
     {
       rowCount: 1,
@@ -1215,13 +1279,14 @@ test('GET /api/decks/:deckId/cards returns 400 for over-length q and skips db qu
 });
 
 test('GET /api/decks/:deckId/cards filters q against front and back content with parameterized SQL', async () => {
-  const card = {
+  const card = createCardReadRow({
     id: 3,
     deck_id: 42,
     front_content: 'Cell division',
     back_content: 'Mitosis',
     created_at: '2026-05-08T13:00:00.000Z',
-  };
+    next_review: '2026-05-20T12:00:00.000Z',
+  });
   const db = createDb([
     {
       rowCount: 1,
@@ -1410,13 +1475,14 @@ test('GET /api/decks/:deckId/cards rejects mixed cursor parameter families befor
 });
 
 test('GET /api/decks/:deckId/cards accepts nextCursor round-trip with both cursor families', async () => {
-  const card = {
+  const card = createCardReadRow({
     id: 2,
     deck_id: 42,
     front_content: 'Older card',
     back_content: 'Answer',
     created_at: '2026-05-08T12:00:00.000Z',
-  };
+    next_review: '2026-05-19T12:00:00.000Z',
+  });
   const nextCursor = {
     cursorCreatedAt: '2026-05-08T13:00:00.123456Z',
     cursorId: 3,
@@ -1481,13 +1547,14 @@ test('GET /api/decks/:deckId/cards rejects conflicting complete cursor families 
 });
 
 test('GET /api/decks/:deckId/cards applies keyset cursor with parameterized SQL', async () => {
-  const card = {
+  const card = createCardReadRow({
     id: 2,
     deck_id: 42,
     front_content: 'Older card',
     back_content: 'Answer',
     created_at: '2026-05-08T12:00:00.000Z',
-  };
+    next_review: '2026-05-19T12:00:00.000Z',
+  });
   const db = createDb([
     {
       rowCount: 1,
@@ -1525,13 +1592,14 @@ test('GET /api/decks/:deckId/cards applies keyset cursor with parameterized SQL'
 });
 
 test('GET /api/decks/:deckId/cards applies q and cursor with round-trippable cursor params', async () => {
-  const card = {
+  const card = createCardReadRow({
     id: 2,
     deck_id: 42,
     front_content: 'Older card',
     back_content: 'Mito answer',
     created_at: '2026-05-08T12:00:00.000Z',
-  };
+    next_review: '2026-05-19T12:00:00.000Z',
+  });
   const db = createDb([
     {
       rowCount: 1,
@@ -1569,13 +1637,14 @@ test('GET /api/decks/:deckId/cards applies q and cursor with round-trippable cur
 });
 
 test('GET /api/decks/:deckId/cards accepts cursorCreatedAt and cursorId aliases', async () => {
-  const card = {
+  const card = createCardReadRow({
     id: 2,
     deck_id: 42,
     front_content: 'Older card',
     back_content: 'Answer',
     created_at: '2026-05-08T12:00:00.000Z',
-  };
+    next_review: '2026-05-19T12:00:00.000Z',
+  });
   const db = createDb([
     {
       rowCount: 1,
@@ -1684,8 +1753,16 @@ test('GET /api/cards/:deckId returns 404 when deck is not owned by user', async 
 });
 
 test('GET /api/cards/:deckId returns unscheduled and past-due cards with a parameterized default limit when limit is omitted', async () => {
-  const unscheduledCard = { id: 1, next_review: null };
-  const pastDueCard = { id: 2, next_review: '2026-05-08T12:00:00.000Z' };
+  const unscheduledCard = createCardReadRow({
+    id: 1,
+    front_content: 'Unscheduled card',
+    next_review: null,
+  });
+  const pastDueCard = createCardReadRow({
+    id: 2,
+    front_content: 'Past due card',
+    next_review: '2026-05-08T12:00:00.000Z',
+  });
   const dueCards = [unscheduledCard, pastDueCard];
   const db = createDb([
     {
@@ -1720,8 +1797,16 @@ test('GET /api/cards/:deckId returns unscheduled and past-due cards with a param
 });
 
 test('GET /api/cards/:deckId prioritizes unscheduled due cards when limiting study fetches', async () => {
-  const unscheduledCard = { id: 9, next_review: null };
-  const scheduledDueCard = { id: 10, next_review: '2026-05-08T12:00:00.000Z' };
+  const unscheduledCard = createCardReadRow({
+    id: 9,
+    front_content: 'Unscheduled card',
+    next_review: null,
+  });
+  const scheduledDueCard = createCardReadRow({
+    id: 10,
+    front_content: 'Scheduled due card',
+    next_review: '2026-05-08T12:00:00.000Z',
+  });
   const dueCards = [unscheduledCard, scheduledDueCard];
   const db = createDb([
     {
@@ -1747,7 +1832,11 @@ test('GET /api/cards/:deckId prioritizes unscheduled due cards when limiting stu
 });
 
 test('GET /api/cards/:deckId accepts boundary limit with a parameterized limit', async () => {
-  const dueCard = { id: 1, next_review: '2026-05-07T12:00:00.000Z' };
+  const dueCard = createCardReadRow({
+    id: 1,
+    front_content: 'Boundary due card',
+    next_review: '2026-05-07T12:00:00.000Z',
+  });
   const db = createDb([
     {
       rowCount: 1,
@@ -1789,6 +1878,47 @@ test('GET /api/cards/:deckId returns empty array for owned deck with no due card
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, [42, 'user-1', 100]);
   assert.match(db.calls[0].sql, /ORDER BY c\.next_review ASC NULLS FIRST,\s*c\.id ASC\s+LIMIT \$3/);
+});
+
+test('GET /api/cards/:deckId fails closed when a due-card row violates read response invariants', async (t) => {
+  const validDueCard = createCardReadRow({
+    id: 11,
+    deck_id: 42,
+    front_content: 'Due card',
+    back_content: 'Answer',
+    next_review: '2026-05-08T12:00:00.000Z',
+  });
+  const rowWithoutBackContent = { ...validDueCard };
+  delete rowWithoutBackContent.back_content;
+  const malformedRows = [
+    { ...validDueCard, id: 'card-11' },
+    { ...validDueCard, deck_id: 0 },
+    { ...validDueCard, front_content: '' },
+    rowWithoutBackContent,
+    { ...validDueCard, last_reviewed: 'not-a-date' },
+    { ...validDueCard, interval: 36501 },
+    { ...validDueCard, ease_factor: Number.NaN },
+    { ...validDueCard, review_count: 1.5 },
+  ];
+  t.mock.method(console, 'error', () => {});
+
+  for (const row of malformedRows) {
+    const db = createDb([
+      {
+        rowCount: 1,
+        rows: [{ ...row, __owned_deck_id: 42 }],
+      },
+    ]);
+    const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+    const res = createRes();
+
+    await getDueCardsByDeck(req, res, db);
+
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.body, { error: 'Internal server error' });
+    assert.equal(db.calls.length, 1);
+    assert.deepEqual(db.calls[0].params, [42, 'user-1', 100]);
+  }
 });
 
 test('POST /api/cards creates a card in an owned deck with one atomic insert-select query', async () => {

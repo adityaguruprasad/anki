@@ -68,6 +68,7 @@ const INVALID_SCHEDULER_OUTPUT_ERROR = 'Invalid scheduler output';
 const INVALID_STUDY_SESSION_UPDATE_RESULT_ERROR = 'Invalid study-session update result';
 const INVALID_CARD_MUTATION_RESULT_ERROR = 'Invalid card mutation result';
 const INVALID_CARD_REMOVAL_RESULT_ERROR = 'Invalid card removal result';
+const INVALID_CARD_READ_RESULT_ERROR = 'Invalid card read result';
 const INVALID_DECK_LIST_RESULT_ERROR = 'Invalid deck-list result';
 const INVALID_DECK_MUTATION_RESULT_ERROR = 'Invalid deck mutation result';
 const INVALID_CARD_BROWSE_CURSOR_RESULT_ERROR = 'Invalid card browse cursor result';
@@ -330,6 +331,44 @@ function assertCardRemovalResult(row) {
     || !isValidDatabaseTimestamp(row.next_review)
   ) {
     throw new TypeError(INVALID_CARD_REMOVAL_RESULT_ERROR);
+  }
+}
+
+function assertCardReadResult(row) {
+  assertObjectHasOwnFields(
+    row,
+    CARD_READ_FIELDS,
+    INVALID_CARD_READ_RESULT_ERROR
+  );
+
+  const cardIdValidation = validatePositiveIntegerIdentifier(row.id, 'cardId');
+  const deckIdValidation = validatePositiveIntegerIdentifier(row.deck_id, 'deckId');
+  if (
+    !cardIdValidation.ok
+    || !deckIdValidation.ok
+    || !isValidPersistedCardContent(row.front_content)
+    || !isValidPersistedCardContent(row.back_content)
+  ) {
+    throw new TypeError(INVALID_CARD_READ_RESULT_ERROR);
+  }
+
+  const timestampFields = ['created_at', 'last_reviewed', 'next_review'];
+  for (const fieldName of timestampFields) {
+    if (!isValidDatabaseTimestamp(row[fieldName])) {
+      throw new TypeError(INVALID_CARD_READ_RESULT_ERROR);
+    }
+  }
+
+  if (!isValidPersistedCardInterval(row.interval)) {
+    throw new TypeError(INVALID_CARD_READ_RESULT_ERROR);
+  }
+
+  if (!isValidPersistedEaseFactor(row.ease_factor)) {
+    throw new TypeError(INVALID_CARD_READ_RESULT_ERROR);
+  }
+
+  if (!isValidPersistedReviewCount(row.review_count)) {
+    throw new TypeError(INVALID_CARD_READ_RESULT_ERROR);
   }
 }
 
@@ -637,7 +676,10 @@ async function getDueCardsByDeck(req, res, db) {
 
     const dueCards = rows
       .filter((row) => row.id !== null)
-      .map(toCardReadPayload);
+      .map((row) => {
+        assertCardReadResult(row);
+        return toCardReadPayload(row);
+      });
     return res.json(dueCards);
   } catch (err) {
     console.error(err);
@@ -712,7 +754,10 @@ async function getCardsByDeck(req, res, db) {
     const cardRows = rows.filter((row) => row.id !== null);
     const hasNextPage = cardRows.length > limitValidation.value;
     const pageRows = cardRows.slice(0, limitValidation.value);
-    const cards = pageRows.map(toCardReadPayload);
+    const cards = pageRows.map((row) => {
+      assertCardReadResult(row);
+      return toCardReadPayload(row);
+    });
 
     const lastPageRow = pageRows.at(-1);
     let nextCursor = null;
