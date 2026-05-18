@@ -502,6 +502,18 @@ function assertSchedulingInsightsResult(row) {
   );
 }
 
+function assertSingleAggregateQueryResult(result, errorMessage) {
+  if (
+    result === null
+    || typeof result !== 'object'
+    || !Array.isArray(result.rows)
+    || result.rows.length !== 1
+    || result.rowCount !== 1
+  ) {
+    throw new TypeError(errorMessage);
+  }
+}
+
 function toCardMutationPayload(row) {
   return {
     id: row.id,
@@ -1377,7 +1389,7 @@ async function getStats(req, res, db, now = new Date()) {
     const sevenDayLookbackStart = addLocalDays(todayStart, -7);
     const thirtyDayLookbackStart = addLocalDays(todayStart, -30);
 
-    const { rows } = await db.query(
+    const result = await db.query(
       `SELECT
          COUNT(c.id) AS "totalCards",
          COUNT(DISTINCT d.id) AS "totalDecks",
@@ -1399,7 +1411,8 @@ async function getStats(req, res, db, now = new Date()) {
       [req.user.userId, todayStart, tomorrowStart, sevenDayLookbackStart, thirtyDayLookbackStart]
     );
 
-    const stats = rows[0];
+    assertSingleAggregateQueryResult(result, INVALID_STATS_RESULT_ERROR);
+    const stats = result.rows[0];
     assertStatsResult(stats);
     return res.json({
       totalCards: toStatsAggregateCount(stats.totalCards),
@@ -1423,7 +1436,7 @@ async function getSchedulingInsights(req, res, db, now = new Date()) {
       sevenDayEndExclusive,
     } = getSchedulingInsightDateBoundaries(now);
 
-    const { rows } = await db.query(
+    const result = await db.query(
       `SELECT
          COUNT(c.id) AS "totalCards",
          COUNT(c.id) FILTER (
@@ -1460,7 +1473,8 @@ async function getSchedulingInsights(req, res, db, now = new Date()) {
       [req.user.userId, todayStart, tomorrowStart, afterTomorrowStart, sevenDayEndExclusive]
     );
 
-    const stats = rows[0];
+    assertSingleAggregateQueryResult(result, INVALID_SCHEDULING_INSIGHTS_RESULT_ERROR);
+    const stats = result.rows[0];
     assertSchedulingInsightsResult(stats);
 
     const counts = {};

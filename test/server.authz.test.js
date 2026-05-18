@@ -2876,6 +2876,7 @@ test('GET /api/stats fails closed for missing or malformed aggregate values', as
   delete rowMissingField.weekReviews;
   const malformedResults = [
     { rowCount: 0, rows: [] },
+    { rowCount: 2, rows: [{ ...validStats }, { ...validStats }] },
     { rowCount: 1, rows: [rowMissingField] },
     { rowCount: 1, rows: [{ ...validStats, totalCards: null }] },
     { rowCount: 1, rows: [{ ...validStats, totalDecks: '' }] },
@@ -2977,6 +2978,7 @@ test('GET /api/scheduling-insights fails closed for missing or malformed aggrega
   delete rowMissingField.dueTomorrow;
   const malformedResults = [
     { rowCount: 0, rows: [] },
+    { rowCount: 2, rows: [{ ...validInsights }, { ...validInsights }] },
     { rowCount: 1, rows: [rowMissingField] },
     { rowCount: 1, rows: [{ ...validInsights, totalCards: null }] },
     { rowCount: 1, rows: [{ ...validInsights, overdue: '-1' }] },
