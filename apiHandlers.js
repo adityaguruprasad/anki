@@ -15,6 +15,7 @@ const MAX_POSTGRES_SERIAL_ID = 2147483647;
 const MAX_POSTGRES_SERIAL_ID_TEXT = String(MAX_POSTGRES_SERIAL_ID);
 const MAX_SAFE_INTEGER_TEXT = String(Number.MAX_SAFE_INTEGER);
 const MAX_SAFE_INTEGER_BIGINT = BigInt(Number.MAX_SAFE_INTEGER);
+const AGGREGATE_DECIMAL_TEXT_PATTERN = /^\d+(?:\.\d+)?$/;
 const CARD_READ_FIELDS = Object.freeze([
   'id',
   'deck_id',
@@ -64,6 +65,25 @@ const DELETE_CARD_RESPONSE_CARD_FIELDS = Object.freeze([
   'back_content',
   'next_review',
 ]);
+const STATS_RESPONSE_FIELDS = Object.freeze([
+  'totalCards',
+  'totalDecks',
+  'todayReviews',
+  'weekReviews',
+  'monthReviews',
+]);
+const SCHEDULING_INSIGHTS_COUNT_FIELDS = Object.freeze([
+  'totalCards',
+  'overdue',
+  'dueToday',
+  'dueTomorrow',
+  'dueNext7Days',
+  'leechCandidates',
+]);
+const SCHEDULING_INSIGHTS_RESPONSE_FIELDS = Object.freeze([
+  ...SCHEDULING_INSIGHTS_COUNT_FIELDS,
+  'averageEaseFactor',
+]);
 const INVALID_SCHEDULER_OUTPUT_ERROR = 'Invalid scheduler output';
 const INVALID_STUDY_SESSION_UPDATE_RESULT_ERROR = 'Invalid study-session update result';
 const INVALID_CARD_MUTATION_RESULT_ERROR = 'Invalid card mutation result';
@@ -72,6 +92,8 @@ const INVALID_CARD_READ_RESULT_ERROR = 'Invalid card read result';
 const INVALID_DECK_LIST_RESULT_ERROR = 'Invalid deck-list result';
 const INVALID_DECK_MUTATION_RESULT_ERROR = 'Invalid deck mutation result';
 const INVALID_CARD_BROWSE_CURSOR_RESULT_ERROR = 'Invalid card browse cursor result';
+const INVALID_STATS_RESULT_ERROR = 'Invalid stats result';
+const INVALID_SCHEDULING_INSIGHTS_RESULT_ERROR = 'Invalid scheduling-insights result';
 
 function isValidQuality(quality) {
   return Number.isInteger(quality) && quality >= 0 && quality <= 5;
@@ -186,7 +208,7 @@ function toAggregateCount(value) {
   return 0;
 }
 
-function toStatsAggregateCount(value) {
+function toNormalizedAggregateCount(value, errorMessage, { allowUnsafeString = false } = {}) {
   if (typeof value === 'string') {
     const trimmed = value.trim();
 
@@ -204,7 +226,9 @@ function toStatsAggregateCount(value) {
         return Number(normalizedDigits);
       }
 
-      return normalizedDigits;
+      if (allowUnsafeString) {
+        return normalizedDigits;
+      }
     }
   }
 
@@ -217,23 +241,50 @@ function toStatsAggregateCount(value) {
       return Number(value);
     }
 
-    return String(value);
+    if (allowUnsafeString) {
+      return String(value);
+    }
   }
 
-  return 0;
+  throw new TypeError(errorMessage);
 }
 
-function toNullablePositiveAggregateNumber(value) {
-  if (value === null || value === undefined) {
+function toStatsAggregateCount(value) {
+  return toNormalizedAggregateCount(value, INVALID_STATS_RESULT_ERROR, {
+    allowUnsafeString: true,
+  });
+}
+
+function toSafeAggregateCount(value, errorMessage) {
+  return toNormalizedAggregateCount(value, errorMessage);
+}
+
+function toRequiredNullablePositiveAggregateNumber(value, errorMessage) {
+  if (value === null) {
     return null;
   }
 
-  if (typeof value === 'string' && value.trim() === '') {
-    return null;
+  if (typeof value === 'number') {
+    if (Number.isFinite(value) && value > 0) {
+      return value;
+    }
+
+    throw new TypeError(errorMessage);
   }
 
-  const number = Number(value);
-  return Number.isFinite(number) && number > 0 ? number : null;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!AGGREGATE_DECIMAL_TEXT_PATTERN.test(trimmed)) {
+      throw new TypeError(errorMessage);
+    }
+
+    const number = Number(trimmed);
+    if (Number.isFinite(number) && number > 0) {
+      return number;
+    }
+  }
+
+  throw new TypeError(errorMessage);
 }
 
 function getDueCardPredicate(tableAlias = 'c') {
@@ -405,6 +456,18 @@ function assertCardBrowseCursorResult(row) {
   if (!cardIdValidation.ok || !isValidIsoTimestamp(row.__cursor_created_at)) {
     throw new TypeError(INVALID_CARD_BROWSE_CURSOR_RESULT_ERROR);
   }
+}
+
+function assertStatsResult(row) {
+  assertObjectHasOwnFields(row, STATS_RESPONSE_FIELDS, INVALID_STATS_RESULT_ERROR);
+}
+
+function assertSchedulingInsightsResult(row) {
+  assertObjectHasOwnFields(
+    row,
+    SCHEDULING_INSIGHTS_RESPONSE_FIELDS,
+    INVALID_SCHEDULING_INSIGHTS_RESULT_ERROR
+  );
 }
 
 function toCardMutationPayload(row) {
@@ -1285,7 +1348,8 @@ async function getStats(req, res, db, now = new Date()) {
       [req.user.userId, todayStart, tomorrowStart, sevenDayLookbackStart, thirtyDayLookbackStart]
     );
 
-    const stats = rows[0] ?? {};
+    const stats = rows[0];
+    assertStatsResult(stats);
     return res.json({
       totalCards: toStatsAggregateCount(stats.totalCards),
       totalDecks: toStatsAggregateCount(stats.totalDecks),
@@ -1345,19 +1409,32 @@ async function getSchedulingInsights(req, res, db, now = new Date()) {
       [req.user.userId, todayStart, tomorrowStart, afterTomorrowStart, sevenDayEndExclusive]
     );
 
-    const stats = rows[0] ?? {};
-    const overdue = toAggregateCount(stats.overdue);
-    const dueToday = toAggregateCount(stats.dueToday);
+    const stats = rows[0];
+    assertSchedulingInsightsResult(stats);
+
+    const counts = {};
+    for (const field of SCHEDULING_INSIGHTS_COUNT_FIELDS) {
+      counts[field] = toSafeAggregateCount(
+        stats[field],
+        INVALID_SCHEDULING_INSIGHTS_RESULT_ERROR
+      );
+    }
+
+    const overdue = counts.overdue;
+    const dueToday = counts.dueToday;
     const focusLoad = overdue + dueToday;
-    const averageEaseFactor = toNullablePositiveAggregateNumber(stats.averageEaseFactor);
+    const averageEaseFactor = toRequiredNullablePositiveAggregateNumber(
+      stats.averageEaseFactor,
+      INVALID_SCHEDULING_INSIGHTS_RESULT_ERROR
+    );
 
     return res.json({
-      totalCards: toAggregateCount(stats.totalCards),
+      totalCards: counts.totalCards,
       overdue,
       dueToday,
-      dueTomorrow: toAggregateCount(stats.dueTomorrow),
-      dueNext7Days: toAggregateCount(stats.dueNext7Days),
-      leechCandidates: toAggregateCount(stats.leechCandidates),
+      dueTomorrow: counts.dueTomorrow,
+      dueNext7Days: counts.dueNext7Days,
+      leechCandidates: counts.leechCandidates,
       averageEaseFactor,
       recommendedDailyReviewTarget: Math.max(10, Math.ceil(focusLoad * 1.2)),
       suggestedNewCards: Math.max(0, 20 - focusLoad),

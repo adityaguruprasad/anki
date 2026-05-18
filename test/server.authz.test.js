@@ -2762,72 +2762,48 @@ test('GET /api/stats handles aggregate count safe integer boundaries', async () 
   });
 });
 
-test('GET /api/stats returns zero for null and empty aggregate values', async () => {
-  const db = createDb([
-    {
-      rowCount: 1,
-      rows: [
-        {
-          totalCards: null,
-          totalDecks: '',
-          todayReviews: undefined,
-          weekReviews: null,
-          monthReviews: '',
-        },
-      ],
-    },
-  ]);
-  const req = { user: { userId: 'user-1' } };
-  const res = createRes();
+test('GET /api/stats fails closed for missing or malformed aggregate values', async (t) => {
+  const validStats = {
+    totalCards: '12',
+    totalDecks: '3',
+    todayReviews: '4',
+    weekReviews: '7',
+    monthReviews: '10',
+  };
+  const rowMissingField = { ...validStats };
+  delete rowMissingField.weekReviews;
+  const malformedResults = [
+    { rowCount: 0, rows: [] },
+    { rowCount: 1, rows: [rowMissingField] },
+    { rowCount: 1, rows: [{ ...validStats, totalCards: null }] },
+    { rowCount: 1, rows: [{ ...validStats, totalDecks: '' }] },
+    { rowCount: 1, rows: [{ ...validStats, todayReviews: undefined }] },
+    { rowCount: 1, rows: [{ ...validStats, totalCards: '1e3' }] },
+    { rowCount: 1, rows: [{ ...validStats, totalDecks: '-1' }] },
+    { rowCount: 1, rows: [{ ...validStats, todayReviews: Number.MAX_SAFE_INTEGER + 1 }] },
+    { rowCount: 1, rows: [{ ...validStats, weekReviews: 1.5 }] },
+    { rowCount: 1, rows: [{ ...validStats, monthReviews: [] }] },
+  ];
+  t.mock.method(console, 'error', () => {});
 
-  await getStats(req, res, db);
+  for (const result of malformedResults) {
+    const db = createDb([result]);
+    const req = { user: { userId: 'user-1' } };
+    const res = createRes();
 
-  assert.equal(res.statusCode, 200);
-  assert.deepEqual(res.body, {
-    totalCards: 0,
-    totalDecks: 0,
-    todayReviews: 0,
-    weekReviews: 0,
-    monthReviews: 0,
-  });
-  assert.equal(db.calls.length, 1);
-  assert.equal(db.calls[0].params[0], 'user-1');
-  const dateParams = db.calls[0].params.slice(1);
-  assert.equal(dateParams.length, 4);
-  dateParams.forEach((param) => {
-    assert.ok(param instanceof Date);
-  });
-  assert.match(db.calls[0].sql, /WHERE d\.user_id = \$1/);
-});
+    await getStats(req, res, db);
 
-test('GET /api/stats falls back to zero for malformed aggregate values', async () => {
-  const db = createDb([
-    {
-      rowCount: 1,
-      rows: [
-        {
-          totalCards: '1e3',
-          totalDecks: '-1',
-          todayReviews: Number.MAX_SAFE_INTEGER + 1,
-          weekReviews: 1.5,
-          monthReviews: [],
-        },
-      ],
-    },
-  ]);
-  const req = { user: { userId: 'user-1' } };
-  const res = createRes();
-
-  await getStats(req, res, db);
-
-  assert.equal(res.statusCode, 200);
-  assert.deepEqual(res.body, {
-    totalCards: 0,
-    totalDecks: 0,
-    todayReviews: 0,
-    weekReviews: 0,
-    monthReviews: 0,
-  });
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.body, { error: 'Internal server error' });
+    assert.equal(db.calls.length, 1);
+    assert.equal(db.calls[0].params[0], 'user-1');
+    const dateParams = db.calls[0].params.slice(1);
+    assert.equal(dateParams.length, 4);
+    dateParams.forEach((param) => {
+      assert.ok(param instanceof Date);
+    });
+    assert.match(db.calls[0].sql, /WHERE d\.user_id = \$1/);
+  }
 });
 
 test('GET /api/scheduling-insights returns expected shape from one aggregate query', async () => {
@@ -2885,42 +2861,41 @@ test('GET /api/scheduling-insights returns expected shape from one aggregate que
   assert.doesNotMatch(db.calls[0].sql, /\bc\.next_review,\s*c\.ease_factor,\s*c\.review_count\b/i);
 });
 
-test('GET /api/scheduling-insights normalizes malformed aggregate counts before deriving targets', async () => {
-  const db = createDb([
-    {
-      rowCount: 1,
-      rows: [
-        {
-          totalCards: '1e3',
-          overdue: '-1',
-          dueToday: Number.MAX_SAFE_INTEGER + 1,
-          dueTomorrow: [],
-          dueNext7Days: '9007199254740993',
-          leechCandidates: 1.5,
-          averageEaseFactor: '2.35',
-        },
-      ],
-    },
-  ]);
-  const req = { user: { userId: 'user-1' } };
-  const res = createRes();
+test('GET /api/scheduling-insights fails closed for missing or malformed aggregate counts', async (t) => {
+  const validInsights = {
+    totalCards: '30',
+    overdue: '3',
+    dueToday: '2',
+    dueTomorrow: '4',
+    dueNext7Days: '12',
+    leechCandidates: '5',
+    averageEaseFactor: '2.35',
+  };
+  const rowMissingField = { ...validInsights };
+  delete rowMissingField.dueTomorrow;
+  const malformedResults = [
+    { rowCount: 0, rows: [] },
+    { rowCount: 1, rows: [rowMissingField] },
+    { rowCount: 1, rows: [{ ...validInsights, totalCards: null }] },
+    { rowCount: 1, rows: [{ ...validInsights, overdue: '-1' }] },
+    { rowCount: 1, rows: [{ ...validInsights, dueToday: Number.MAX_SAFE_INTEGER + 1 }] },
+    { rowCount: 1, rows: [{ ...validInsights, dueTomorrow: [] }] },
+    { rowCount: 1, rows: [{ ...validInsights, dueNext7Days: '9007199254740993' }] },
+    { rowCount: 1, rows: [{ ...validInsights, leechCandidates: 1.5 }] },
+  ];
+  t.mock.method(console, 'error', () => {});
 
-  await getSchedulingInsights(req, res, db, new Date(2026, 4, 8, 15, 45, 12, 345));
+  for (const result of malformedResults) {
+    const db = createDb([result]);
+    const req = { user: { userId: 'user-1' } };
+    const res = createRes();
 
-  assert.equal(res.statusCode, 200);
-  assert.deepEqual(res.body, {
-    totalCards: 0,
-    overdue: 0,
-    dueToday: 0,
-    dueTomorrow: 0,
-    dueNext7Days: 0,
-    leechCandidates: 0,
-    averageEaseFactor: 2.35,
-    // Minimum defaults after malformed counts normalize to zero.
-    recommendedDailyReviewTarget: 10,
-    suggestedNewCards: 20,
-  });
-  assert.equal(db.calls.length, 1);
+    await getSchedulingInsights(req, res, db, new Date(2026, 4, 8, 15, 45, 12, 345));
+
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.body, { error: 'Internal server error' });
+    assert.equal(db.calls.length, 1);
+  }
 });
 
 test('GET /api/scheduling-insights treats null next_review as due today load', async () => {
@@ -3046,7 +3021,7 @@ test('GET /api/scheduling-insights preserves positive averageEaseFactor values',
   }
 });
 
-test('GET /api/scheduling-insights normalizes malformed averageEaseFactor values to null', async () => {
+test('GET /api/scheduling-insights fails closed for malformed averageEaseFactor values', async (t) => {
   const malformedAverageEaseFactors = [
     '',
     '   ',
@@ -3054,10 +3029,15 @@ test('GET /api/scheduling-insights normalizes malformed averageEaseFactor values
     0,
     '-1',
     -1,
+    '1e3',
+    '0x10',
+    true,
     Number.NaN,
     Number.POSITIVE_INFINITY,
+    [2],
     [],
   ];
+  t.mock.method(console, 'error', () => {});
 
   for (const averageEaseFactor of malformedAverageEaseFactors) {
     const db = createDb([
@@ -3081,18 +3061,8 @@ test('GET /api/scheduling-insights normalizes malformed averageEaseFactor values
 
     await getSchedulingInsights(req, res, db, new Date(2026, 4, 8, 15, 45, 12, 345));
 
-    assert.equal(res.statusCode, 200);
-    assert.deepEqual(res.body, {
-      totalCards: 4,
-      overdue: 1,
-      dueToday: 2,
-      dueTomorrow: 0,
-      dueNext7Days: 2,
-      leechCandidates: 0,
-      averageEaseFactor: null,
-      recommendedDailyReviewTarget: 10,
-      suggestedNewCards: 17,
-    });
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.body, { error: 'Internal server error' });
     assert.equal(db.calls.length, 1);
   }
 });
