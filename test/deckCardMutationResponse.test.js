@@ -78,6 +78,17 @@ test('parseDeckCardMutationResponsePayload accepts matching expected card ids', 
   assert.equal(hasDeckCardMutationPayload(payload, { expectedId: '7' }), true);
 });
 
+test('parseDeckCardMutationResponsePayload accepts matching expected deck ids', () => {
+  const payload = createValidCardPayload({
+    deck_id: '00042',
+  });
+
+  assert.equal(parseDeckCardMutationResponsePayload(payload, { expectedDeckId: 42 }), payload);
+  assert.equal(parseDeckCardMutationResponsePayload(payload, { expectedDeckId: '42' }), payload);
+  assert.equal(parseDeckCardMutationResponsePayload(payload, { expectedDeckId: ' 00042 ' }), payload);
+  assert.equal(hasDeckCardMutationPayload(payload, { expectedDeckId: 42 }), true);
+});
+
 test('parseDeckCardMutationResponsePayload rejects malformed top-level payloads', () => {
   [
     undefined,
@@ -205,4 +216,23 @@ test('parseDeckCardMutationResponsePayload rejects responses for a different exp
   assert.equal(hasDeckCardMutationPayload(payload, { expectedId: 7 }), false);
   assert.equal(hasDeckCardMutationPayload(payload, { expectedId: '7' }), false);
   assert.equal(hasDeckCardMutationPayload({ ...payload, id: 7 }, { expectedId: null }), false);
+});
+
+test('parseDeckCardMutationResponsePayload rejects missing or mismatched expected deck ids', () => {
+  [
+    createValidCardPayload(),
+    createValidCardPayload({ deck_id: 8 }),
+    createValidCardPayload({ deck_id: 'deck-7' }),
+    createValidCardPayload({ deck_id: 0 }),
+    createValidCardPayload({ deck_id: MAX_POSTGRES_SERIAL_ID + 1 }),
+  ].forEach((payload) => {
+    assertMalformed(payload, { expectedDeckId: 7 });
+    assert.equal(hasDeckCardMutationPayload(payload, { expectedDeckId: 7 }), false);
+  });
+
+  assertMalformed(createValidCardPayload({ deck_id: 7 }), { expectedDeckId: null });
+  assert.equal(
+    hasDeckCardMutationPayload(createValidCardPayload({ deck_id: 7 }), { expectedDeckId: null }),
+    false,
+  );
 });

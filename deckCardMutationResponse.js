@@ -1,7 +1,9 @@
 const MALFORMED_DECK_CARD_MUTATION_PAYLOAD_ERROR = 'Malformed deck-card mutation payload';
 const {
   hasRouteSafeCardId,
+  hasRouteSafeId,
   hasSameRouteSafeCardId,
+  normalizeRouteSafeId,
 } = require('./cardIdentifier');
 const { isValidIsoTimestamp } = require('./isoTimestampValidation');
 
@@ -17,6 +19,13 @@ function hasSameCardId(leftId, rightId) {
   return hasSameRouteSafeCardId(leftId, rightId);
 }
 
+function hasSameDeckId(leftId, rightId) {
+  const normalizedLeftId = normalizeRouteSafeId(leftId);
+  const normalizedRightId = normalizeRouteSafeId(rightId);
+
+  return normalizedLeftId !== null && normalizedLeftId === normalizedRightId;
+}
+
 function isNonBlankCardContent(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
@@ -30,8 +39,9 @@ function hasValidMutationNextReview(card) {
 }
 
 function hasDeckCardMutationPayload(payload, options = {}) {
-  const { expectedId } = options;
+  const { expectedDeckId, expectedId } = options;
   const hasExpectedId = expectedId !== undefined;
+  const hasExpectedDeckId = expectedDeckId !== undefined;
 
   return (
     isObjectRecord(payload)
@@ -40,6 +50,14 @@ function hasDeckCardMutationPayload(payload, options = {}) {
     && isNonBlankCardContent(payload.back_content)
     && hasValidMutationNextReview(payload)
     && (!hasExpectedId || (hasUsableCardId(expectedId) && hasSameCardId(payload.id, expectedId)))
+    && (
+      !hasExpectedDeckId
+      || (
+        hasRouteSafeId(expectedDeckId)
+        && hasRouteSafeId(payload.deck_id)
+        && hasSameDeckId(payload.deck_id, expectedDeckId)
+      )
+    )
   );
 }
 

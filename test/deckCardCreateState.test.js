@@ -216,6 +216,62 @@ test('card-create response completion returns current validated success plans', 
   );
 });
 
+test('card-create response completion preserves legacy parser calls without an expected deck id', () => {
+  const createdCard = createValidCreatedCard();
+
+  assert.deepEqual(
+    getCardCreateResponseCompletion({
+      isCurrent: true,
+      responseOk: true,
+      payload: createdCard,
+      parseCreatedCard(payload) {
+        assert.equal(arguments.length, 1);
+        assert.equal(payload, createdCard);
+        return payload;
+      },
+    }),
+    {
+      type: CARD_CREATE_COMPLETION_TYPES.SUCCESS,
+      ignored: false,
+      createdCard,
+      success: CARD_CREATE_MESSAGES.success,
+    },
+  );
+});
+
+test('card-create response completion can require created cards to match the target deck', () => {
+  const createdCard = createValidCreatedCard({ deck_id: '00042' });
+
+  assert.deepEqual(
+    getCardCreateResponseCompletion({
+      expectedDeckId: 42,
+      isCurrent: true,
+      responseOk: true,
+      payload: createdCard,
+    }),
+    {
+      type: CARD_CREATE_COMPLETION_TYPES.SUCCESS,
+      ignored: false,
+      createdCard,
+      success: CARD_CREATE_MESSAGES.success,
+    },
+  );
+
+  assert.deepEqual(
+    getCardCreateResponseCompletion({
+      expectedDeckId: 41,
+      isCurrent: true,
+      responseOk: true,
+      payload: createdCard,
+    }),
+    {
+      type: CARD_CREATE_COMPLETION_TYPES.INVALID_RESPONSE,
+      ignored: false,
+      error: CARD_CREATE_MESSAGES.createFailed,
+    },
+  );
+});
+
 test('card-create response completion accepts null, past, and future next_review metadata', () => {
   [
     null,

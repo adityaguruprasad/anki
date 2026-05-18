@@ -80,6 +80,7 @@ function getCreateCardFailureMessage(payload) {
 
 function getCardCreateResponseCompletion(options = {}) {
   const {
+    expectedDeckId,
     isCurrent,
     responseOk,
     payload,
@@ -99,10 +100,14 @@ function getCardCreateResponseCompletion(options = {}) {
   }
 
   try {
+    const createdCard = expectedDeckId === undefined
+      ? parseCreatedCard(payload)
+      : parseCreatedCard(payload, { expectedDeckId });
+
     return {
       type: CARD_CREATE_COMPLETION_TYPES.SUCCESS,
       ignored: false,
-      createdCard: parseCreatedCard(payload),
+      createdCard,
       success: CARD_CREATE_MESSAGES.success,
     };
   } catch {

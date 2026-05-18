@@ -1041,6 +1041,7 @@ const DeckManagement = ({ env, onAuthExpired }) => {
 
       if (!response.ok) {
         const completion = getCardCreateResponseCompletion({
+          expectedDeckId: deckId,
           isCurrent: isCurrentMutation(),
           responseOk: response.ok,
           payload: data,
@@ -1056,6 +1057,7 @@ const DeckManagement = ({ env, onAuthExpired }) => {
       }
 
       const completion = getCardCreateResponseCompletion({
+        expectedDeckId: deckId,
         isCurrent: isCurrentMutation(),
         responseOk: response.ok,
         payload: data,
@@ -1170,7 +1172,10 @@ const DeckManagement = ({ env, onAuthExpired }) => {
 
       let savedCard;
       try {
-        savedCard = parseDeckCardMutationResponsePayload(data, { expectedId: card.id });
+        savedCard = parseDeckCardMutationResponsePayload(data, {
+          expectedDeckId: deckId,
+          expectedId: card.id,
+        });
       } catch {
         if (!isCurrentMutation()) {
           return;

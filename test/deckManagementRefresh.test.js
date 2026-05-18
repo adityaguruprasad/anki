@@ -285,6 +285,7 @@ test('card mutations validate successful payloads before updating visible state'
     'const completion = getCardCreateResponseCompletion({',
     addNonOkCompletionIndex + 1,
   );
+  const addExpectedDeckIdIndex = addBody.indexOf('expectedDeckId: deckId,', addValidationIndex);
   const addInvalidResponseIndex = addBody.indexOf(
     'completion.type === CARD_CREATE_COMPLETION_TYPES.INVALID_RESPONSE',
     addValidationIndex,
@@ -297,8 +298,10 @@ test('card mutations validate successful payloads before updating visible state'
   const saveJsonIndex = saveBody.indexOf('const data = await response.json().catch(() => ({}));');
   const saveResponseOkIndex = saveBody.indexOf('if (!response.ok) {');
   const saveValidationIndex = saveBody.indexOf(
-    'savedCard = parseDeckCardMutationResponsePayload(data, { expectedId: card.id });',
+    'savedCard = parseDeckCardMutationResponsePayload(data, {',
   );
+  const saveExpectedDeckIdIndex = saveBody.indexOf('expectedDeckId: deckId,', saveValidationIndex);
+  const saveExpectedCardIdIndex = saveBody.indexOf('expectedId: card.id,', saveValidationIndex);
   const saveMergeIndex = saveBody.indexOf('updateLoadedCard(deckId, card.id, savedCard);');
   const saveEditFormIndex = saveBody.indexOf('frontContent: savedCard.front_content ?? frontContent,');
 
@@ -318,6 +321,7 @@ test('card mutations validate successful payloads before updating visible state'
   assert.notEqual(addResponseOkIndex, -1, 'Expected addCard to keep non-2xx handling');
   assert.notEqual(addNonOkCompletionIndex, -1, 'Expected addCard non-2xx handling to use the card-create helper');
   assert.notEqual(addValidationIndex, -1, 'Expected addCard to validate successful payloads');
+  assert.notEqual(addExpectedDeckIdIndex, -1, 'Expected addCard to validate created card deck metadata');
   assert.notEqual(addInvalidResponseIndex, -1, 'Expected addCard to keep malformed-success handling');
   assert.notEqual(addCreatedCardIndex, -1, 'Expected addCard to use the helper-validated card');
   assert.notEqual(addClearFormIndex, -1, 'Expected addCard to clear the form only after validation');
@@ -326,6 +330,7 @@ test('card mutations validate successful payloads before updating visible state'
   assert.ok(addAuthExpiredIndex < addJsonIndex, 'Expected addCard auth expiration before JSON parsing');
   assert.ok(addJsonIndex < addResponseOkIndex, 'Expected addCard non-2xx handling after JSON parsing');
   assert.ok(addResponseOkIndex < addValidationIndex, 'Expected addCard validation after non-2xx handling');
+  assert.ok(addValidationIndex < addExpectedDeckIdIndex, 'Expected addCard deck id validation to be parser-owned');
   assert.ok(addValidationIndex < addInvalidResponseIndex, 'Expected addCard validation before malformed-success handling');
   assert.ok(addValidationIndex < addCreatedCardIndex, 'Expected addCard to read created cards from the validation helper');
   assert.ok(addCreatedCardIndex < addClearFormIndex, 'Expected addCard to derive created cards before clearing the form');
@@ -347,11 +352,15 @@ test('card mutations validate successful payloads before updating visible state'
   assert.notEqual(saveJsonIndex, -1, 'Expected saveCard to parse response JSON');
   assert.notEqual(saveResponseOkIndex, -1, 'Expected saveCard to keep non-2xx handling');
   assert.notEqual(saveValidationIndex, -1, 'Expected saveCard to validate successful payloads');
+  assert.notEqual(saveExpectedDeckIdIndex, -1, 'Expected saveCard to validate deck ownership metadata');
+  assert.notEqual(saveExpectedCardIdIndex, -1, 'Expected saveCard to validate submitted card id metadata');
   assert.notEqual(saveMergeIndex, -1, 'Expected saveCard to merge only the parsed card');
   assert.notEqual(saveEditFormIndex, -1, 'Expected saveCard to overwrite forms only from the parsed card');
   assert.ok(saveAuthExpiredIndex < saveJsonIndex, 'Expected saveCard auth expiration before JSON parsing');
   assert.ok(saveJsonIndex < saveResponseOkIndex, 'Expected saveCard non-2xx handling after JSON parsing');
   assert.ok(saveResponseOkIndex < saveValidationIndex, 'Expected saveCard validation after non-2xx handling');
+  assert.ok(saveValidationIndex < saveExpectedDeckIdIndex, 'Expected saveCard deck id validation to be parser-owned');
+  assert.ok(saveExpectedDeckIdIndex < saveExpectedCardIdIndex, 'Expected saveCard deck and card ids to both be validated');
   assert.ok(saveValidationIndex < saveMergeIndex, 'Expected saveCard validation before merging card data');
   assert.ok(saveValidationIndex < saveEditFormIndex, 'Expected saveCard validation before edit form writes');
   assert.match(
