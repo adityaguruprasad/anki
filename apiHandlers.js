@@ -136,7 +136,22 @@ function assertValidSchedulingUpdate(schedule) {
 }
 
 function assertStudySessionUpdateSucceeded(row) {
-  if (row === null || typeof row !== 'object' || Array.isArray(row) || row.__updated !== true) {
+  assertObjectHasOwnFields(
+    row,
+    [...STUDY_SESSION_RESPONSE_CARD_FIELDS, '__updated'],
+    INVALID_STUDY_SESSION_UPDATE_RESULT_ERROR
+  );
+
+  const cardIdValidation = validatePositiveIntegerIdentifier(row.id, 'cardId');
+  if (
+    row.__updated !== true
+    || !cardIdValidation.ok
+    || !isValidRequiredDatabaseTimestamp(row.next_review)
+    || !isValidPersistedCardInterval(row.interval)
+    || !isValidPersistedEaseFactor(row.ease_factor)
+    || !isValidPersistedReviewCount(row.review_count)
+    || !isValidRequiredDatabaseTimestamp(row.last_reviewed)
+  ) {
     throw new TypeError(INVALID_STUDY_SESSION_UPDATE_RESULT_ERROR);
   }
 }
@@ -304,6 +319,10 @@ function isValidDatabaseTimestamp(value) {
   }
 
   return isValidIsoTimestamp(value);
+}
+
+function isValidRequiredDatabaseTimestamp(value) {
+  return value !== null && isValidDatabaseTimestamp(value);
 }
 
 function isValidPersistedCardContent(value) {

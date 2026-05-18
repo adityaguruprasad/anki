@@ -3551,3 +3551,46 @@ test('POST /api/study-session rolls back when a card-shaped final update result 
   assert.equal(Object.hasOwn(updateRow, '__updated'), false);
   await assertMalformedStudySessionUpdateRowRollsBack(updateRow);
 });
+
+test('POST /api/study-session rolls back when a successful final update result violates response invariants', async (t) => {
+  const validUpdateRow = {
+    id: 7,
+    next_review: '2026-05-08T12:00:00.000Z',
+    interval: 3,
+    ease_factor: 2.6,
+    review_count: 3,
+    last_reviewed: '2026-05-08T12:05:00.000Z',
+    __updated: true,
+  };
+  const rowMissingId = { ...validUpdateRow };
+  delete rowMissingId.id;
+  const malformedRows = [
+    { name: 'missing id', row: rowMissingId },
+    { name: 'non-numeric id', row: { ...validUpdateRow, id: 'card-7' } },
+    { name: 'zero id', row: { ...validUpdateRow, id: 0 } },
+    { name: 'null next_review', row: { ...validUpdateRow, next_review: null } },
+    { name: 'invalid next_review timestamp', row: { ...validUpdateRow, next_review: 'not-a-date' } },
+    { name: 'zero interval', row: { ...validUpdateRow, interval: 0 } },
+    { name: 'fractional interval', row: { ...validUpdateRow, interval: 3.5 } },
+    { name: 'string interval', row: { ...validUpdateRow, interval: '3' } },
+    { name: 'non-finite interval', row: { ...validUpdateRow, interval: Number.NaN } },
+    { name: 'interval above maximum', row: { ...validUpdateRow, interval: 36501 } },
+    { name: 'ease factor below minimum', row: { ...validUpdateRow, ease_factor: 1.29 } },
+    { name: 'string ease factor', row: { ...validUpdateRow, ease_factor: '2.6' } },
+    { name: 'non-finite ease factor', row: { ...validUpdateRow, ease_factor: Number.NaN } },
+    { name: 'infinite ease factor', row: { ...validUpdateRow, ease_factor: Number.POSITIVE_INFINITY } },
+    { name: 'negative review count', row: { ...validUpdateRow, review_count: -1 } },
+    { name: 'fractional review count', row: { ...validUpdateRow, review_count: 1.5 } },
+    { name: 'string review count', row: { ...validUpdateRow, review_count: '3' } },
+    { name: 'non-finite review count', row: { ...validUpdateRow, review_count: Number.NaN } },
+    { name: 'infinite review count', row: { ...validUpdateRow, review_count: Number.POSITIVE_INFINITY } },
+    { name: 'null last_reviewed', row: { ...validUpdateRow, last_reviewed: null } },
+    { name: 'invalid last_reviewed timestamp', row: { ...validUpdateRow, last_reviewed: 'not-a-date' } },
+  ];
+
+  for (const { name, row } of malformedRows) {
+    await t.test(name, async () => {
+      await assertMalformedStudySessionUpdateRowRollsBack(row);
+    });
+  }
+});
