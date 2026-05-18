@@ -698,6 +698,42 @@ test('GET /api/decks normalizes safe aggregate count representations', async () 
   assert.equal(db.calls.length, 1);
 });
 
+test('GET /api/decks fails closed when the deck-list query result shape is malformed', async (t) => {
+  const validRow = {
+    id: 7,
+    user_id: 'user-1',
+    name: 'Biology',
+    description: null,
+    created_at: '2026-05-08',
+    totalCards: '3',
+    dueCards: '1',
+  };
+  const malformedResults = [
+    null,
+    { rowCount: 0, rows: [validRow] },
+    { rowCount: 2, rows: [validRow] },
+    { rowCount: 1, rows: [validRow, { ...validRow, id: 8 }] },
+    { rowCount: '1', rows: [validRow] },
+    { rowCount: -1, rows: [] },
+    { rowCount: 1 },
+    { rowCount: 1, rows: { ...validRow } },
+  ];
+  t.mock.method(console, 'error', () => {});
+
+  for (const result of malformedResults) {
+    const db = createDb([result]);
+    const req = { user: { userId: 'user-1' } };
+    const res = createRes();
+
+    await getDecks(req, res, db);
+
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.body, { error: 'Internal server error' });
+    assert.equal(db.calls.length, 1);
+    assert.deepEqual(db.calls[0].params, ['user-1']);
+  }
+});
+
 test('GET /api/decks fails closed when a deck-list row is missing or cannot use required response fields', async (t) => {
   const malformedRows = [
     { id: 7, totalCards: '3', dueCards: '1' },

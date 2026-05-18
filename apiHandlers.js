@@ -539,6 +539,19 @@ function assertSingleAggregateQueryResult(result, errorMessage) {
   }
 }
 
+function assertListQueryResult(result, errorMessage) {
+  if (
+    result === null
+    || typeof result !== 'object'
+    || !Array.isArray(result.rows)
+    || !Number.isSafeInteger(result.rowCount)
+    || result.rowCount < 0
+    || result.rowCount !== result.rows.length
+  ) {
+    throw new TypeError(errorMessage);
+  }
+}
+
 function getOptionalSingleQueryRow(result, errorMessage) {
   if (
     result === null
@@ -1374,7 +1387,7 @@ async function renameDeck(req, res, db) {
 
 async function getDecks(req, res, db) {
   try {
-    const { rows } = await db.query(
+    const result = await db.query(
       `SELECT ${DECK_READ_SELECT_LIST},
          COUNT(c.id) AS "totalCards",
          COUNT(c.id) FILTER (WHERE ${getDueCardPredicate('c')}) AS "dueCards"
@@ -1386,7 +1399,8 @@ async function getDecks(req, res, db) {
       [req.user.userId]
     );
 
-    return res.json(rows.map(toDeckListPayload));
+    assertListQueryResult(result, INVALID_DECK_LIST_RESULT_ERROR);
+    return res.json(result.rows.map(toDeckListPayload));
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Internal server error' });
