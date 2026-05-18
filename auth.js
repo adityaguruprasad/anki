@@ -33,6 +33,8 @@ if (!Number.isSafeInteger(MAX_POSTGRES_SERIAL_ID)) {
 const MAX_POSTGRES_SERIAL_ID_BIGINT = BigInt(MAX_POSTGRES_SERIAL_ID);
 const LOGIN_RATE_LIMIT_ERROR = 'Too many login attempts. Please try again later.';
 const REGISTRATION_RATE_LIMIT_ERROR = 'Too many registration attempts. Please try again later.';
+const INVALID_REGISTRATION_INSERT_RESULT_ERROR = 'Invalid registration insert result';
+const INVALID_LOGIN_USER_LOOKUP_RESULT_ERROR = 'Invalid login user lookup result';
 const DEFAULT_LOGIN_RATE_LIMIT_MAX_FAILURES = 5;
 const DEFAULT_LOGIN_SOURCE_RATE_LIMIT_MAX_FAILURES = 25;
 const DEFAULT_REGISTRATION_RATE_LIMIT_MAX_ATTEMPTS = 10;
@@ -341,12 +343,12 @@ function validatePasswordHash(passwordHash) {
 
 function normalizeLoginUserRow(row, normalizedEmail) {
   if (row === null || typeof row !== 'object' || Array.isArray(row)) {
-    throw new Error('Invalid login user lookup result');
+    throw new Error(INVALID_LOGIN_USER_LOOKUP_RESULT_ERROR);
   }
 
   const normalizedUserId = normalizeTokenUserId(row.id);
   if (normalizedUserId == null || row.email !== normalizedEmail) {
-    throw new Error('Invalid login user lookup result');
+    throw new Error(INVALID_LOGIN_USER_LOOKUP_RESULT_ERROR);
   }
 
   return {
@@ -356,9 +358,18 @@ function normalizeLoginUserRow(row, normalizedEmail) {
   };
 }
 
-function getSingleLoginUserRow(result, normalizedEmail) {
-  if (result === null || typeof result !== 'object' || !Array.isArray(result.rows)) {
-    throw new Error('Invalid login user lookup result');
+function getOptionalSingleAuthQueryRow(result, errorMessage) {
+  // Auth queries use node-postgres result objects; require rowCount to agree
+  // with rows before trusting a row for password checks or token issuance.
+  if (
+    result === null
+    || typeof result !== 'object'
+    || !Array.isArray(result.rows)
+    || !Number.isSafeInteger(result.rowCount)
+    || result.rowCount < 0
+    || result.rowCount !== result.rows.length
+  ) {
+    throw new Error(errorMessage);
   }
 
   if (result.rows.length === 0) {
@@ -366,10 +377,25 @@ function getSingleLoginUserRow(result, normalizedEmail) {
   }
 
   if (result.rows.length !== 1) {
-    throw new Error('Invalid login user lookup result');
+    throw new Error(errorMessage);
   }
 
-  return normalizeLoginUserRow(result.rows[0], normalizedEmail);
+  return result.rows[0];
+}
+
+function getSingleRegistrationUserId(result) {
+  const row = getOptionalSingleAuthQueryRow(result, INVALID_REGISTRATION_INSERT_RESULT_ERROR);
+  const normalizedUserId = row === null ? null : normalizeTokenUserId(row.id);
+  if (normalizedUserId == null) {
+    throw new Error(INVALID_REGISTRATION_INSERT_RESULT_ERROR);
+  }
+
+  return normalizedUserId;
+}
+
+function getSingleLoginUserRow(result, normalizedEmail) {
+  const row = getOptionalSingleAuthQueryRow(result, INVALID_LOGIN_USER_LOOKUP_RESULT_ERROR);
+  return row === null ? null : normalizeLoginUserRow(row, normalizedEmail);
 }
 
 function resolvePositiveIntegerOption(options, fieldName, defaultValue, optionName) {
@@ -628,7 +654,8 @@ function createAuthHandlers(db, options = {}) {
         'INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3) RETURNING id',
         [trimmedUsername, normalizedEmail, hashedPassword]
       );
-      const token = signToken({ userId: result.rows[0].id }, jwtSecret, {
+      const userId = getSingleRegistrationUserId(result);
+      const token = signToken({ userId }, jwtSecret, {
         expiresInSeconds: jwtExpiresInSeconds,
       });
       res.status(201).json({ token });

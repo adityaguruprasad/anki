@@ -184,6 +184,44 @@ test('register does not mint a token when the inserted user id is invalid', asyn
   assert.equal(db.calls.length, 1);
 });
 
+test('register fails closed when the insert result cardinality is malformed', async (t) => {
+  const malformedResults = [
+    { name: 'rowCount zero with returned id', result: { rowCount: 0, rows: [{ id: 42 }] } },
+    { name: 'rowCount one with no rows', result: { rowCount: 1, rows: [] } },
+    { name: 'string rowCount with one returned id', result: { rowCount: '1', rows: [{ id: 42 }] } },
+    { name: 'multiple returned rows', result: { rowCount: 2, rows: [{ id: 42 }, { id: 43 }] } },
+    { name: 'missing rows array', result: { rowCount: 1 } },
+  ];
+
+  for (const { name, result } of malformedResults) {
+    await t.test(name, async () => {
+      const db = createDb([result]);
+      const passwordHasher = createPasswordHasher();
+      const { register } = createAuthHandlers(db, {
+        jwtSecret: 'malformed-register-result-secret',
+        passwordHasher,
+      });
+      const res = createRes();
+
+      await register({
+        body: {
+          username: 'ada',
+          email: 'ada@example.com',
+          password: 'correct horse battery staple',
+        },
+      }, res);
+
+      assert.equal(res.statusCode, 500);
+      assert.deepEqual(res.body, { error: 'Error registering user' });
+      assert.equal(res.body.token, undefined);
+      assert.deepEqual(passwordHasher.hashCalls, [
+        { password: 'correct horse battery staple', rounds: PASSWORD_HASH_COST },
+      ]);
+      assert.equal(db.calls.length, 1);
+    });
+  }
+});
+
 test('register rejects invalid input before hashing or querying', async (t) => {
   const cases = [
     {
@@ -745,6 +783,48 @@ test('login fails closed when the normalized email lookup returns multiple rows'
   assert.equal(db.calls.length, 1);
   assert.equal(db.calls[0].sql, 'SELECT id, email, password_hash FROM users WHERE email = $1 LIMIT 2');
   assert.deepEqual(db.calls[0].params, ['ada@example.com']);
+});
+
+test('login fails closed when the lookup result cardinality is malformed', async (t) => {
+  const malformedResults = [
+    {
+      name: 'rowCount zero with returned user',
+      result: {
+        rowCount: 0,
+        rows: [{ id: 79, email: 'ada@example.com', password_hash: 'stored-user-hash' }],
+      },
+    },
+    { name: 'rowCount one with no rows', result: { rowCount: 1, rows: [] } },
+    {
+      name: 'fractional rowCount with returned user',
+      result: {
+        rowCount: 1.5,
+        rows: [{ id: 79, email: 'ada@example.com', password_hash: 'stored-user-hash' }],
+      },
+    },
+  ];
+
+  for (const { name, result } of malformedResults) {
+    await t.test(name, async () => {
+      const db = createDb([result]);
+      const passwordHasher = createPasswordHasher({ compareResult: true });
+      const { login } = createAuthHandlers(db, {
+        jwtSecret: 'malformed-login-result-secret',
+        passwordHasher,
+      });
+      const res = createRes();
+
+      await login({ body: { email: 'ada@example.com', password: 'stored-password' } }, res);
+
+      assert.equal(res.statusCode, 500);
+      assert.deepEqual(res.body, { error: 'Error logging in' });
+      assert.equal(res.body.token, undefined);
+      assert.deepEqual(passwordHasher.compareCalls, []);
+      assert.equal(db.calls.length, 1);
+      assert.equal(db.calls[0].sql, 'SELECT id, email, password_hash FROM users WHERE email = $1 LIMIT 2');
+      assert.deepEqual(db.calls[0].params, ['ada@example.com']);
+    });
+  }
 });
 
 test('login fails closed when the lookup row email does not match the normalized email', async () => {
