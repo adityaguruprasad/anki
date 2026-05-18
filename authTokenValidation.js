@@ -57,6 +57,10 @@ function isPositiveSafeInteger(value) {
   return Number.isSafeInteger(value) && value > 0;
 }
 
+function isNonNegativeSafeInteger(value) {
+  return Number.isSafeInteger(value) && value >= 0;
+}
+
 function isJwtUserIdClaim(value) {
   return isPositiveSafeInteger(value) && value <= MAX_POSTGRES_SERIAL_ID;
 }
@@ -99,7 +103,9 @@ function hasUsableJwtEnvelope(token) {
   return (
     payload !== null
     && isJwtUserIdClaim(payload.userId)
+    && isNonNegativeSafeInteger(payload.iat)
     && isPositiveSafeInteger(payload.exp)
+    && payload.iat < payload.exp
   );
 }
 

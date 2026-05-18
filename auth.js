@@ -153,6 +153,14 @@ function validateJwtExpirationTimestamp(exp) {
   return exp;
 }
 
+function validateJwtIssuedAtTimestamp(iat) {
+  if (typeof iat !== 'number' || !Number.isSafeInteger(iat) || iat < 0) {
+    throw new Error('Token issued-at must be a non-negative safe integer');
+  }
+
+  return iat;
+}
+
 function validateJwtPayloadUserId(payload) {
   if (
     payload === null ||
@@ -213,7 +221,7 @@ function validateJwtHeader(header) {
 }
 
 function signToken(payload, secret = resolveJwtSecret(), options = {}) {
-  const now = options.now ?? Math.floor(Date.now() / 1000);
+  const now = validateJwtIssuedAtTimestamp(options.now ?? Math.floor(Date.now() / 1000));
   const expiresInSeconds =
     options.expiresInSeconds == null
       ? resolveJwtExpiresInSeconds(options.env)
@@ -256,6 +264,14 @@ function verifyToken(token, secret = resolveJwtSecret(), options = {}) {
     throw new Error('Token expiration is required');
   }
   const exp = validateJwtExpirationTimestamp(payload.exp);
+
+  if (payload.iat == null) {
+    throw new Error('Token issued-at is required');
+  }
+  const iat = validateJwtIssuedAtTimestamp(payload.iat);
+  if (iat >= exp) {
+    throw new Error('Token issued-at must be before expiration');
+  }
 
   const normalizedUserId = normalizeTokenUserId(payload.userId);
   if (normalizedUserId == null) {

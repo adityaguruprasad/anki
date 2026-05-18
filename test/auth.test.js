@@ -1538,6 +1538,70 @@ test('verifyToken rejects non-integer, string, and unsafe exp claims before expi
   }
 });
 
+test('verifyToken rejects missing, malformed, and out-of-order issued-at claims', () => {
+  const invalidIssuedAtClaims = [
+    {
+      label: 'missing',
+      payload: { userId: 101, exp: 2000 },
+      message: /Token issued-at is required/,
+    },
+    {
+      label: 'fractional',
+      payload: { userId: 101, iat: 1000.5, exp: 2000 },
+      message: /Token issued-at must be a non-negative safe integer/,
+    },
+    {
+      label: 'string',
+      payload: { userId: 101, iat: '1000', exp: 2000 },
+      message: /Token issued-at must be a non-negative safe integer/,
+    },
+    {
+      label: 'unsafe',
+      payload: { userId: 101, iat: Number.MAX_SAFE_INTEGER + 1, exp: 2000 },
+      message: /Token issued-at must be a non-negative safe integer/,
+    },
+    {
+      label: 'negative',
+      payload: { userId: 101, iat: -1, exp: 2000 },
+      message: /Token issued-at must be a non-negative safe integer/,
+    },
+    {
+      label: 'equal to exp',
+      payload: { userId: 101, iat: 2000, exp: 2000 },
+      message: /Token issued-at must be before expiration/,
+    },
+    {
+      label: 'after exp',
+      payload: { userId: 101, iat: 2001, exp: 2000 },
+      message: /Token issued-at must be before expiration/,
+    },
+  ];
+
+  for (const { label, payload, message } of invalidIssuedAtClaims) {
+    const token = signRawJwt(
+      { alg: 'HS256', typ: 'JWT' },
+      payload,
+      'strict-iat-secret'
+    );
+
+    assert.throws(
+      () => verifyToken(token, 'strict-iat-secret', { now: 1000 }),
+      message,
+      label
+    );
+  }
+});
+
+test('signToken rejects malformed issued-at options before issuing a token', () => {
+  for (const now of [-1, 1000.5, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.throws(
+      () => signToken({ userId: 101 }, 'sign-iat-secret', { now, expiresInSeconds: 60 }),
+      /Token issued-at must be a non-negative safe integer/,
+      String(now)
+    );
+  }
+});
+
 test('verifyToken accepts PostgreSQL SERIAL userId claims as normalized numbers', () => {
   const validClaims = [
     { userId: 42, expected: 42 },
