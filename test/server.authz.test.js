@@ -729,6 +729,52 @@ test('DELETE /api/decks/:deckId deletes scoped cards and deck with one atomic qu
   assertDeleteDeckAtomicSql(db.calls[0].sql);
 });
 
+test('DELETE /api/decks/:deckId returns 500 when the atomic delete result is missing the returned deck row', async (t) => {
+  const db = addUnexpectedConnect(createDb([
+    { rowCount: 1, rows: [] },
+  ]));
+  const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+  const res = createRes();
+  t.mock.method(console, 'error', () => {});
+
+  await deleteDeck(req, res, db);
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Internal server error' });
+  assert.equal(db.calls.length, 1);
+  assert.equal(db.connectCalls, 0);
+  assert.deepEqual(db.calls[0].params, [42, 'user-1']);
+  assertDeleteDeckAtomicSql(db.calls[0].sql);
+});
+
+test('DELETE /api/decks/:deckId fails closed when the atomic delete result has an impossible deck id', async (t) => {
+  const malformedRows = [
+    { id: null },
+    { id: 'deck-42' },
+    { id: 0 },
+    { id: -1 },
+    { id: 2147483648 },
+  ];
+  t.mock.method(console, 'error', () => {});
+
+  for (const row of malformedRows) {
+    const db = addUnexpectedConnect(createDb([
+      { rowCount: 1, rows: [row] },
+    ]));
+    const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+    const res = createRes();
+
+    await deleteDeck(req, res, db);
+
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.body, { error: 'Internal server error' });
+    assert.equal(db.calls.length, 1);
+    assert.equal(db.connectCalls, 0);
+    assert.deepEqual(db.calls[0].params, [42, 'user-1']);
+    assertDeleteDeckAtomicSql(db.calls[0].sql);
+  }
+});
+
 test('DELETE /api/decks/:deckId returns 404 for missing or unowned deck', async () => {
   const db = addUnexpectedConnect(createDb([
     { rowCount: 0, rows: [] },

@@ -91,6 +91,7 @@ const INVALID_CARD_REMOVAL_RESULT_ERROR = 'Invalid card removal result';
 const INVALID_CARD_READ_RESULT_ERROR = 'Invalid card read result';
 const INVALID_DECK_LIST_RESULT_ERROR = 'Invalid deck-list result';
 const INVALID_DECK_MUTATION_RESULT_ERROR = 'Invalid deck mutation result';
+const INVALID_DECK_REMOVAL_RESULT_ERROR = 'Invalid deck removal result';
 const INVALID_CARD_BROWSE_CURSOR_RESULT_ERROR = 'Invalid card browse cursor result';
 const INVALID_STATS_RESULT_ERROR = 'Invalid stats result';
 const INVALID_SCHEDULING_INSIGHTS_RESULT_ERROR = 'Invalid scheduling-insights result';
@@ -418,6 +419,15 @@ function assertDeckMutationResult(row) {
   const deckIdValidation = validatePositiveIntegerIdentifier(row.id, 'deckId');
   if (!deckIdValidation.ok || typeof row.name !== 'string' || row.name.trim() === '') {
     throw new TypeError(INVALID_DECK_MUTATION_RESULT_ERROR);
+  }
+}
+
+function assertDeckRemovalResult(row) {
+  assertObjectHasOwnFields(row, ['id'], INVALID_DECK_REMOVAL_RESULT_ERROR);
+
+  const deckIdValidation = validatePositiveIntegerIdentifier(row.id, 'deckId');
+  if (!deckIdValidation.ok) {
+    throw new TypeError(INVALID_DECK_REMOVAL_RESULT_ERROR);
   }
 }
 
@@ -1309,6 +1319,7 @@ async function deleteDeck(req, res, db) {
       return res.status(404).json({ error: 'Deck not found' });
     }
 
+    assertDeckRemovalResult(deleteResult.rows[0]);
     return res.json({ success: true });
   } catch (err) {
     console.error(err);
