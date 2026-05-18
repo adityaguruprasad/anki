@@ -1749,6 +1749,34 @@ test('authenticateToken normalizes numeric string userId claims to numbers', () 
   assert.equal(typeof req.user.userId, 'number');
 });
 
+test('authenticateToken exposes only the authorized request principal shape', () => {
+  const { authenticateToken } = createAuthHandlers(createDb([]), {
+    jwtSecret: 'principal-shape-secret',
+    passwordHasher: createPasswordHasher(),
+  });
+  const token = signRawJwt(
+    { alg: 'HS256', typ: 'JWT' },
+    {
+      userId: 303,
+      role: 'admin',
+      email: 'ada@example.com',
+      iat: 1000,
+      exp: Math.floor(Date.now() / 1000) + 60,
+    },
+    'principal-shape-secret'
+  );
+  const req = { headers: { authorization: `Bearer ${token}` } };
+  const res = createRes();
+  let nextCalled = false;
+
+  authenticateToken(req, res, () => {
+    nextCalled = true;
+  });
+
+  assert.equal(nextCalled, true);
+  assert.deepEqual(req.user, { userId: 303 });
+});
+
 test('authenticateToken rejects malformed authorization headers before token verification', () => {
   const signedToken = signToken({ userId: 301 }, 'auth-scheme-secret');
   const { authenticateToken } = createAuthHandlers(createDb([]), {

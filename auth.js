@@ -683,7 +683,7 @@ function createAuthHandlers(db, options = {}) {
 
     try {
       const user = verifyToken(token, jwtSecret);
-      req.user = user;
+      req.user = { userId: user.userId };
       return next();
     } catch {
       return res.sendStatus(403);
