@@ -22,7 +22,8 @@ function hasStudySessionDueCardRowPayload(card) {
 }
 
 function selectValidatedStudySessionDueCard(payload) {
-  if (!Array.isArray(payload)) {
+  // This client requests due cards with limit=1; multiple rows mean the response contract is malformed.
+  if (!Array.isArray(payload) || payload.length > 1) {
     throw new Error(MALFORMED_DUE_CARD_PAYLOAD_ERROR);
   }
 

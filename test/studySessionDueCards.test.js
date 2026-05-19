@@ -26,6 +26,18 @@ test('selectValidatedStudySessionDueCard selects a valid card and preserves extr
   assert.equal(selectValidatedStudySessionDueCard([card]), card);
 });
 
+test('selectValidatedStudySessionDueCard rejects multiple cards for the limit-one study request', () => {
+  const cards = [
+    { id: 41, front_content: 'Question 1', back_content: 'Answer 1' },
+    { id: 42, front_content: 'Question 2', back_content: 'Answer 2' },
+  ];
+
+  assert.throws(
+    () => selectValidatedStudySessionDueCard(cards),
+    new RegExp(MALFORMED_DUE_CARD_PAYLOAD_ERROR),
+  );
+});
+
 test('selectValidatedStudySessionDueCard rejects malformed top-level payloads', () => {
   [
     undefined,
