@@ -98,9 +98,26 @@ const INVALID_DECK_REMOVAL_RESULT_ERROR = 'Invalid deck removal result';
 const INVALID_CARD_BROWSE_CURSOR_RESULT_ERROR = 'Invalid card browse cursor result';
 const INVALID_STATS_RESULT_ERROR = 'Invalid stats result';
 const INVALID_SCHEDULING_INSIGHTS_RESULT_ERROR = 'Invalid scheduling-insights result';
+const INVALID_AUTH_PRINCIPAL_ERROR = 'Invalid authenticated user principal';
 
 function isValidQuality(quality) {
   return Number.isInteger(quality) && quality >= 0 && quality <= 5;
+}
+
+function getAuthenticatedUserId(req) {
+  const user = req?.user;
+  if (
+    user === null
+    || typeof user !== 'object'
+    || Array.isArray(user)
+    || !Object.hasOwn(user, 'userId')
+    || user.userId === null
+    || user.userId === undefined
+  ) {
+    throw new TypeError(INVALID_AUTH_PRINCIPAL_ERROR);
+  }
+
+  return user.userId;
 }
 
 function isValidSchedulerNextReview(value) {
@@ -952,7 +969,8 @@ async function getDueCardsByDeck(req, res, db) {
     }
 
     const deckId = deckIdValidation.value;
-    const params = [deckId, req.user.userId, limitValidation.value];
+    const userId = getAuthenticatedUserId(req);
+    const params = [deckId, userId, limitValidation.value];
 
     const result = await db.query(
       `SELECT ${CARD_READ_SELECT_LIST},
@@ -1013,7 +1031,8 @@ async function getCardsByDeck(req, res, db) {
     }
 
     const deckId = deckIdValidation.value;
-    const params = [deckId, req.user.userId];
+    const userId = getAuthenticatedUserId(req);
+    const params = [deckId, userId];
     let cursorClause = '';
     if (cursorValidation.value !== null) {
       params.push(cursorValidation.value.cursorCreatedAt, cursorValidation.value.cursorId);
@@ -1105,6 +1124,7 @@ async function createCard(req, res, db) {
       return res.status(400).json({ error: backContentValidation.error });
     }
 
+    const userId = getAuthenticatedUserId(req);
     const result = await db.query(
       `WITH inserted AS (
          INSERT INTO cards (
@@ -1141,7 +1161,7 @@ async function createCard(req, res, db) {
        JOIN decks d ON d.id = i.deck_id`,
       [
         deckIdValidation.value,
-        req.user.userId,
+        userId,
         frontContentValidation.value,
         backContentValidation.value,
       ]
@@ -1154,7 +1174,7 @@ async function createCard(req, res, db) {
 
     assertCardMutationResult(createdCard, {
       expectedDeckId: deckIdValidation.value,
-      expectedUserId: req.user.userId,
+      expectedUserId: userId,
     });
     return res.status(201).json(toCardMutationPayload(createdCard));
   } catch (err) {
@@ -1180,6 +1200,7 @@ async function updateCard(req, res, db) {
       return res.status(400).json({ error: backContentValidation.error });
     }
 
+    const userId = getAuthenticatedUserId(req);
     const result = await db.query(
       `UPDATE cards
        SET front_content = $3,
@@ -1199,7 +1220,7 @@ async function updateCard(req, res, db) {
                  d.user_id AS "__owned_user_id"`,
       [
         cardIdValidation.value,
-        req.user.userId,
+        userId,
         frontContentValidation.value,
         backContentValidation.value,
       ]
@@ -1212,7 +1233,7 @@ async function updateCard(req, res, db) {
 
     assertCardMutationResult(updatedCard, {
       expectedCardId: cardIdValidation.value,
-      expectedUserId: req.user.userId,
+      expectedUserId: userId,
     });
     return res.json(toCardMutationPayload(updatedCard));
   } catch (err) {
@@ -1228,6 +1249,7 @@ async function deleteCard(req, res, db) {
       return res.status(400).json({ error: cardIdValidation.error });
     }
 
+    const userId = getAuthenticatedUserId(req);
     const deleteResult = await db.query(
       `DELETE FROM cards
        USING decks d
@@ -1239,7 +1261,7 @@ async function deleteCard(req, res, db) {
                  cards.back_content,
                  cards.next_review,
                  d.user_id AS "__owned_user_id"`,
-      [cardIdValidation.value, req.user.userId]
+      [cardIdValidation.value, userId]
     );
 
     const deletedCard = getOptionalSingleQueryRow(deleteResult, INVALID_CARD_REMOVAL_RESULT_ERROR);
@@ -1249,7 +1271,7 @@ async function deleteCard(req, res, db) {
 
     assertCardRemovalResult(deletedCard, {
       expectedCardId: cardIdValidation.value,
-      expectedUserId: req.user.userId,
+      expectedUserId: userId,
     });
     return res.json({
       success: true,
@@ -1285,6 +1307,7 @@ async function submitStudySession(req, res, db, calculateNextReview) {
       return res.status(400).json({ error: 'Invalid quality: must be an integer between 0 and 5' });
     }
 
+    const userId = getAuthenticatedUserId(req);
     if (typeof db.connect === 'function') {
       client = await db.connect();
       shouldReleaseClient = true;
@@ -1301,7 +1324,7 @@ async function submitStudySession(req, res, db, calculateNextReview) {
        WHERE c.id = $1
          AND d.user_id = $2
        FOR UPDATE OF c`,
-      [validCardId, req.user.userId]
+      [validCardId, userId]
     );
     const card = getOptionalSingleQueryRow(cardResult, INVALID_STUDY_SESSION_CARD_READ_RESULT_ERROR);
     if (card === null) {
@@ -1309,7 +1332,7 @@ async function submitStudySession(req, res, db, calculateNextReview) {
       return res.status(404).json({ error: 'Card not found' });
     }
 
-    assertStudySessionCardReadResult(card, validCardId, req.user.userId);
+    assertStudySessionCardReadResult(card, validCardId, userId);
     if (card.__is_due === false) {
       await rollbackTransaction();
       return res.status(409).json({ error: 'Card is not due' });
@@ -1371,7 +1394,7 @@ async function submitStudySession(req, res, db, calculateNextReview) {
               FALSE AS "__updated"
        FROM target
        WHERE NOT EXISTS (SELECT 1 FROM updated)`,
-      [reviewedAt, next_review, interval, ease_factor, validCardId, req.user.userId]
+      [reviewedAt, next_review, interval, ease_factor, validCardId, userId]
     );
     const updatedCard = getOptionalSingleQueryRow(updateResult, INVALID_STUDY_SESSION_UPDATE_RESULT_ERROR);
     if (updatedCard === null) {
@@ -1379,14 +1402,14 @@ async function submitStudySession(req, res, db, calculateNextReview) {
       return res.status(404).json({ error: 'Card not found' });
     }
 
-    assertStudySessionUpdateControlResult(updatedCard, req.user.userId);
+    assertStudySessionUpdateControlResult(updatedCard, userId);
     if (updatedCard?.__updated === false) {
-      assertStudySessionUpdateConflict(updatedCard, req.user.userId);
+      assertStudySessionUpdateConflict(updatedCard, userId);
       await rollbackTransaction();
       return res.status(409).json({ error: 'Card is not due' });
     }
 
-    assertStudySessionUpdateSucceeded(updatedCard, validCardId, req.user.userId);
+    assertStudySessionUpdateSucceeded(updatedCard, validCardId, userId);
     const responseCard = toStudySessionResponseCardPayload(updatedCard);
     if (transactionStarted) {
       await client.query('COMMIT');
@@ -1423,6 +1446,7 @@ async function createDeck(req, res, db) {
     }
 
     const deckName = validationResult.value;
+    const userId = getAuthenticatedUserId(req);
     const result = await db.query(
       `INSERT INTO decks (user_id, name)
        VALUES ($1, $2)
@@ -1432,7 +1456,7 @@ async function createDeck(req, res, db) {
                  name,
                  description,
                  created_at`,
-      [req.user.userId, deckName]
+      [userId, deckName]
     );
 
     const createdDeck = getOptionalSingleQueryRow(result, INVALID_DECK_MUTATION_RESULT_ERROR);
@@ -1440,7 +1464,7 @@ async function createDeck(req, res, db) {
       return res.status(409).json({ error: 'Deck name already exists for this user' });
     }
 
-    assertDeckMutationResult(createdDeck, { expectedUserId: req.user.userId });
+    assertDeckMutationResult(createdDeck, { expectedUserId: userId });
     return res.status(201).json(toDeckReadPayload(createdDeck));
   } catch (err) {
     console.error(err);
@@ -1462,6 +1486,7 @@ async function renameDeck(req, res, db) {
 
     const deckId = deckIdValidation.value;
     const deckName = validationResult.value;
+    const userId = getAuthenticatedUserId(req);
     const queryResult = await db.query(
       `WITH target AS (
          SELECT id
@@ -1500,13 +1525,13 @@ async function renameDeck(req, res, db) {
                    to_char((updated.created_at AT TIME ZONE 'UTC') AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS created_at
             FROM updated
           ) deck_payload) AS deck`,
-      [deckId, req.user.userId, deckName]
+      [deckId, userId, deckName]
     );
 
     const result = getRequiredSingleQueryRow(queryResult, INVALID_DECK_RENAME_CONTROL_RESULT_ERROR);
     assertDeckRenameControlResult(result, {
       expectedDeckId: deckId,
-      expectedUserId: req.user.userId,
+      expectedUserId: userId,
     });
     if (!result.deckExists) {
       return res.status(404).json({ error: 'Deck not found' });
@@ -1529,6 +1554,7 @@ async function renameDeck(req, res, db) {
 
 async function getDecks(req, res, db) {
   try {
+    const userId = getAuthenticatedUserId(req);
     const result = await db.query(
       `SELECT ${DECK_READ_SELECT_LIST},
          COUNT(c.id) AS "totalCards",
@@ -1538,12 +1564,12 @@ async function getDecks(req, res, db) {
        WHERE d.user_id = $1
        GROUP BY d.id
        ORDER BY d.created_at DESC, d.id DESC`,
-      [req.user.userId]
+      [userId]
     );
 
     assertListQueryResult(result, INVALID_DECK_LIST_RESULT_ERROR);
     return res.json(result.rows.map((row) => toDeckListPayload(row, {
-      expectedUserId: req.user.userId,
+      expectedUserId: userId,
     })));
   } catch (err) {
     console.error(err);
@@ -1560,6 +1586,7 @@ async function deleteDeck(req, res, db) {
   const deckId = deckIdValidation.value;
 
   try {
+    const userId = getAuthenticatedUserId(req);
     const deleteResult = await db.query(
       `WITH target AS (
          SELECT id
@@ -1583,7 +1610,7 @@ async function deleteDeck(req, res, db) {
        SELECT id,
               user_id
        FROM deleted_deck`,
-      [deckId, req.user.userId]
+      [deckId, userId]
     );
 
     const deletedDeck = getOptionalSingleQueryRow(deleteResult, INVALID_DECK_REMOVAL_RESULT_ERROR);
@@ -1593,7 +1620,7 @@ async function deleteDeck(req, res, db) {
 
     assertDeckRemovalResult(deletedDeck, {
       expectedDeckId: deckId,
-      expectedUserId: req.user.userId,
+      expectedUserId: userId,
     });
     return res.json({ success: true });
   } catch (err) {
@@ -1604,6 +1631,7 @@ async function deleteDeck(req, res, db) {
 
 async function getStats(req, res, db, now = new Date()) {
   try {
+    const userId = getAuthenticatedUserId(req);
     const todayStart = startOfLocalDay(now);
     const tomorrowStart = addLocalDays(todayStart, 1);
     const sevenDayLookbackStart = addLocalDays(todayStart, -7);
@@ -1628,7 +1656,7 @@ async function getStats(req, res, db, now = new Date()) {
        FROM decks d
        LEFT JOIN cards c ON c.deck_id = d.id
        WHERE d.user_id = $1`,
-      [req.user.userId, todayStart, tomorrowStart, sevenDayLookbackStart, thirtyDayLookbackStart]
+      [userId, todayStart, tomorrowStart, sevenDayLookbackStart, thirtyDayLookbackStart]
     );
 
     const stats = getRequiredSingleAggregateQueryRow(result, INVALID_STATS_RESULT_ERROR);
@@ -1641,6 +1669,7 @@ async function getStats(req, res, db, now = new Date()) {
 
 async function getSchedulingInsights(req, res, db, now = new Date()) {
   try {
+    const userId = getAuthenticatedUserId(req);
     const {
       todayStart,
       tomorrowStart,
@@ -1682,7 +1711,7 @@ async function getSchedulingInsights(req, res, db, now = new Date()) {
        FROM cards c
        JOIN decks d ON d.id = c.deck_id
        WHERE d.user_id = $1`,
-      [req.user.userId, todayStart, tomorrowStart, afterTomorrowStart, sevenDayEndExclusive]
+      [userId, todayStart, tomorrowStart, afterTomorrowStart, sevenDayEndExclusive]
     );
 
     const stats = getRequiredSingleAggregateQueryRow(

@@ -406,29 +406,28 @@ test('POST /api/decks fails closed when the inserted deck owner mismatches the r
   assert.deepEqual(db.calls[0].params, ['user-1', 'Biology']);
 });
 
-test('POST /api/decks fails closed when the expected deck owner is unavailable', async (t) => {
-  const db = createDb([
-    {
-      rowCount: 1,
-      rows: [{
-        id: 12,
-        user_id: 'user-1',
-        name: 'Biology',
-        description: null,
-        created_at: '2026-05-08T00:00:00.000Z',
-      }],
-    },
-  ]);
-  const req = { body: { name: 'Biology' }, user: {} };
-  const res = createRes();
+test('POST /api/decks fails closed before db access when the auth principal is malformed', async (t) => {
+  const malformedRequests = [
+    { body: { name: 'Biology' } },
+    { body: { name: 'Biology' }, user: null },
+    { body: { name: 'Biology' }, user: [] },
+    { body: { name: 'Biology' }, user: {} },
+    { body: { name: 'Biology' }, user: { userId: null } },
+    { body: { name: 'Biology' }, user: { userId: undefined } },
+  ];
   t.mock.method(console, 'error', () => {});
 
-  await createDeck(req, res, db);
+  for (const req of malformedRequests) {
+    const db = addUnexpectedConnect(createDb([]));
+    const res = createRes();
 
-  assert.equal(res.statusCode, 500);
-  assert.deepEqual(res.body, { error: 'Internal server error' });
-  assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [undefined, 'Biology']);
+    await createDeck(req, res, db);
+
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.body, { error: 'Internal server error' });
+    assert.equal(db.calls.length, 0);
+    assert.equal(db.connectCalls, 0);
+  }
 });
 
 test('POST /api/decks returns 500 when the inserted row is missing deck response fields', async (t) => {
@@ -948,33 +947,130 @@ test('GET /api/decks fails closed when the deck-list query result shape is malfo
   }
 });
 
-test('GET /api/decks fails closed when the expected deck owner is unavailable', async (t) => {
-  const db = createDb([
-    {
-      rowCount: 1,
-      rows: [
-        {
-          id: 7,
-          user_id: 'user-1',
-          name: 'Biology',
-          description: null,
-          created_at: '2026-05-08T00:00:00.000Z',
-          totalCards: '3',
-          dueCards: '1',
-        },
-      ],
-    },
-  ]);
-  const req = { user: {} };
-  const res = createRes();
+test('GET /api/decks fails closed before db access when the auth principal is malformed', async (t) => {
+  const malformedRequests = [
+    {},
+    { user: null },
+    { user: [] },
+    { user: {} },
+    { user: { userId: null } },
+    { user: { userId: undefined } },
+  ];
   t.mock.method(console, 'error', () => {});
 
-  await getDecks(req, res, db);
+  for (const req of malformedRequests) {
+    const db = addUnexpectedConnect(createDb([]));
+    const res = createRes();
 
-  assert.equal(res.statusCode, 500);
-  assert.deepEqual(res.body, { error: 'Internal server error' });
-  assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [undefined]);
+    await getDecks(req, res, db);
+
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.body, { error: 'Internal server error' });
+    assert.equal(db.calls.length, 0);
+    assert.equal(db.connectCalls, 0);
+  }
+});
+
+test('protected API handlers reject missing auth principal before db, transaction, or scheduler work', async (t) => {
+  let schedulerCalled = false;
+  const now = new Date(2026, 4, 8, 15, 45, 12, 345);
+  const cases = [
+    {
+      name: 'GET /api/decks',
+      handler: getDecks,
+      req: { user: {} },
+    },
+    {
+      name: 'POST /api/decks',
+      handler: createDeck,
+      req: { body: { name: 'Biology' }, user: {} },
+    },
+    {
+      name: 'PATCH /api/decks/:deckId',
+      handler: renameDeck,
+      req: { params: { deckId: '42' }, body: { name: 'Biology' }, user: {} },
+    },
+    {
+      name: 'DELETE /api/decks/:deckId',
+      handler: deleteDeck,
+      req: { params: { deckId: '42' }, user: {} },
+    },
+    {
+      name: 'GET /api/decks/:deckId/cards',
+      handler: getCardsByDeck,
+      req: { params: { deckId: '42' }, query: {}, user: {} },
+    },
+    {
+      name: 'GET /api/cards/:deckId',
+      handler: getDueCardsByDeck,
+      req: { params: { deckId: '42' }, query: {}, user: {} },
+    },
+    {
+      name: 'POST /api/cards',
+      handler: createCard,
+      req: {
+        body: { deckId: '42', frontContent: 'Front', backContent: 'Back' },
+        user: {},
+      },
+    },
+    {
+      name: 'PATCH /api/cards/:cardId',
+      handler: updateCard,
+      req: {
+        params: { cardId: '77' },
+        body: { frontContent: 'Front', backContent: 'Back' },
+        user: {},
+      },
+    },
+    {
+      name: 'DELETE /api/cards/:cardId',
+      handler: deleteCard,
+      req: { params: { cardId: '77' }, user: {} },
+    },
+    {
+      name: 'POST /api/study-session',
+      handler(req, res, db) {
+        return submitStudySession(req, res, db, () => {
+          schedulerCalled = true;
+          return {
+            interval: 3,
+            ease_factor: 2.6,
+            next_review: '2026-05-08T12:00:00.000Z',
+          };
+        });
+      },
+      req: { body: { cardId: '7', quality: 4 }, user: {} },
+    },
+    {
+      name: 'GET /api/stats',
+      handler(req, res, db) {
+        return getStats(req, res, db, now);
+      },
+      req: { user: {} },
+    },
+    {
+      name: 'GET /api/scheduling-insights',
+      handler(req, res, db) {
+        return getSchedulingInsights(req, res, db, now);
+      },
+      req: { user: {} },
+    },
+  ];
+  t.mock.method(console, 'error', () => {});
+
+  for (const testCase of cases) {
+    const db = addUnexpectedConnect(createDb([]));
+    const res = createRes();
+    schedulerCalled = false;
+
+    await testCase.handler(testCase.req, res, db);
+
+    assert.equal(res.statusCode, 500, testCase.name);
+    assert.deepEqual(res.body, { error: 'Internal server error' }, testCase.name);
+    assert.equal(db.calls.length, 0, testCase.name);
+    assert.equal(db.connectCalls, 0, testCase.name);
+    assert.equal(schedulerCalled, false, testCase.name);
+  }
 });
 
 test('GET /api/decks fails closed when a deck-list row is missing or cannot use required response fields', async (t) => {
