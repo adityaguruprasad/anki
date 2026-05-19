@@ -1,7 +1,9 @@
 const { isValidIsoTimestamp } = require('./isoTimestampValidation');
 const {
   hasRouteSafeCardId,
+  hasRouteSafeId,
   normalizeRouteSafeCardId,
+  normalizeRouteSafeId,
 } = require('./cardIdentifier');
 
 const MALFORMED_DECK_CARD_BROWSE_PAYLOAD_ERROR = 'Malformed deck-card browse payload';
@@ -22,10 +24,32 @@ function hasUsableId(value) {
   return hasRouteSafeCardId(value);
 }
 
-function hasDeckCardBrowseRowPayload(card) {
+function hasSameDeckId(leftId, rightId) {
+  const normalizedLeftId = normalizeRouteSafeId(leftId);
+  const normalizedRightId = normalizeRouteSafeId(rightId);
+
+  return normalizedLeftId !== null && normalizedLeftId === normalizedRightId;
+}
+
+function hasExpectedDeckAnchor(card, expectedDeckId) {
+  if (expectedDeckId === undefined) {
+    return true;
+  }
+
+  return (
+    hasRouteSafeId(expectedDeckId)
+    && hasRouteSafeId(card.deck_id)
+    && hasSameDeckId(card.deck_id, expectedDeckId)
+  );
+}
+
+function hasDeckCardBrowseRowPayload(card, options = {}) {
+  const { expectedDeckId } = options;
+
   return (
     isObjectRecord(card)
     && hasUsableId(card.id)
+    && hasExpectedDeckAnchor(card, expectedDeckId)
     && isNonBlankString(card.front_content)
     && isNonBlankString(card.back_content)
   );
@@ -108,13 +132,13 @@ function parseDeckCardBrowseNextCursor(payload) {
   return nextCursor;
 }
 
-function parseDeckCardBrowseResponsePayload(payload) {
+function parseDeckCardBrowseResponsePayload(payload, options = {}) {
   if (!isObjectRecord(payload) || !Array.isArray(payload.cards)) {
     throw new Error(MALFORMED_DECK_CARD_BROWSE_PAYLOAD_ERROR);
   }
 
   for (const card of payload.cards) {
-    if (!hasDeckCardBrowseRowPayload(card)) {
+    if (!hasDeckCardBrowseRowPayload(card, options)) {
       throw new Error(MALFORMED_DECK_CARD_BROWSE_PAYLOAD_ERROR);
     }
   }

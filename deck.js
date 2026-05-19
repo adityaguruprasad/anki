@@ -891,7 +891,9 @@ const DeckManagement = ({ env, onAuthExpired }) => {
 
       let browseResponse;
       try {
-        browseResponse = parseDeckCardBrowseResponsePayload(data);
+        browseResponse = parseDeckCardBrowseResponsePayload(data, {
+          expectedDeckId: deckId,
+        });
       } catch (error) {
         clearCurrentAppendRequest();
         setDeckCardBrowserFailure(append ? 'Unable to load more cards.' : 'Unable to load cards.');

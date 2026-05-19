@@ -9,9 +9,9 @@ const {
 } = require('../deckCardBrowseResponse');
 const { MAX_POSTGRES_SERIAL_ID } = require('../cardIdentifier');
 
-function assertMalformed(payload) {
+function assertMalformed(payload, options) {
   assert.throws(
-    () => parseDeckCardBrowseResponsePayload(payload),
+    () => parseDeckCardBrowseResponsePayload(payload, options),
     new RegExp(MALFORMED_DECK_CARD_BROWSE_PAYLOAD_ERROR),
   );
 }
@@ -48,6 +48,90 @@ test('parseDeckCardBrowseResponsePayload preserves valid card rows and extra fie
   assert.equal(parsed.cards[0], cardWithStringId);
   assert.deepEqual(parsed.cards[0], cardWithStringId);
   assert.equal(parsed.nextCursor, null);
+});
+
+test('parseDeckCardBrowseResponsePayload accepts matching expected deck ids', () => {
+  const payload = {
+    cards: [
+      {
+        id: 1,
+        deck_id: '00042',
+        front_content: 'Front',
+        back_content: 'Back',
+        created_at: '2026-05-08T12:00:00.000Z',
+      },
+      {
+        id: '2',
+        deck_id: 42,
+        front_content: 'Front 2',
+        back_content: 'Back 2',
+      },
+    ],
+    nextCursor: null,
+  };
+
+  const parsed = parseDeckCardBrowseResponsePayload(payload, { expectedDeckId: ' 42 ' });
+
+  assert.equal(parsed.cards, payload.cards);
+  assert.equal(parsed.cards[0], payload.cards[0]);
+  assert.deepEqual(parsed, { cards: payload.cards, nextCursor: null });
+  assert.equal(
+    hasDeckCardBrowseRowPayload(payload.cards[0], { expectedDeckId: 42 }),
+    true,
+  );
+});
+
+test('parseDeckCardBrowseResponsePayload rejects cards not anchored to the expected deck', () => {
+  const baseCard = {
+    id: 1,
+    deck_id: 42,
+    front_content: 'Front',
+    back_content: 'Back',
+  };
+  const malformedCards = [
+    { ...baseCard, deck_id: undefined },
+    { ...baseCard, deck_id: null },
+    { ...baseCard, deck_id: '' },
+    { ...baseCard, deck_id: '  ' },
+    { ...baseCard, deck_id: 'deck-42' },
+    { ...baseCard, deck_id: '0' },
+    { ...baseCard, deck_id: 0 },
+    { ...baseCard, deck_id: MAX_POSTGRES_SERIAL_ID + 1 },
+    { ...baseCard, deck_id: 41 },
+    { ...baseCard, deck_id: '0041' },
+  ];
+
+  malformedCards.forEach((card) => {
+    assertMalformed({ cards: [card], nextCursor: null }, { expectedDeckId: 42 });
+    assert.equal(hasDeckCardBrowseRowPayload(card, { expectedDeckId: 42 }), false);
+  });
+});
+
+test('parseDeckCardBrowseResponsePayload rejects unusable expected deck ids', () => {
+  const payload = {
+    cards: [{
+      id: 1,
+      deck_id: 42,
+      front_content: 'Front',
+      back_content: 'Back',
+    }],
+    nextCursor: null,
+  };
+
+  [
+    null,
+    '',
+    'deck-42',
+    '0',
+    0,
+    MAX_POSTGRES_SERIAL_ID + 1,
+  ].forEach((expectedDeckId) => {
+    assertMalformed(payload, { expectedDeckId });
+    assert.equal(
+      hasDeckCardBrowseRowPayload(payload.cards[0], { expectedDeckId }),
+      false,
+    );
+  });
 });
 
 test('parseDeckCardBrowseResponsePayload preserves valid cursor objects', () => {

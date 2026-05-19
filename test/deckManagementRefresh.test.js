@@ -232,7 +232,8 @@ test('fetchDeckCards validates successful browse payloads before storing them', 
   const authExpiredIndex = body.indexOf('if (handleAuthExpiredResponse(response, onAuthExpired))');
   const jsonIndex = body.indexOf('const data = await response.json().catch(() => ({}));');
   const responseOkIndex = body.indexOf('if (!response.ok) {');
-  const validationIndex = body.indexOf('browseResponse = parseDeckCardBrowseResponsePayload(data);');
+  const validationIndex = body.indexOf('browseResponse = parseDeckCardBrowseResponsePayload(data, {');
+  const expectedDeckIdIndex = body.indexOf('expectedDeckId: deckId,', validationIndex);
   const staleGuardIndex = body.lastIndexOf('if (!isCurrentDeckCardBrowserResponse()) {', validationIndex);
   const setCardsIndex = body.indexOf(
     'cards: append ? mergeUniqueCards(currentRows, browseResponse.cards) : browseResponse.cards,',
@@ -254,12 +255,18 @@ test('fetchDeckCards validates successful browse payloads before storing them', 
   assert.notEqual(responseOkIndex, -1, 'Expected fetchDeckCards to keep non-2xx handling');
   assert.notEqual(staleGuardIndex, -1, 'Expected fetchDeckCards to keep stale response protection');
   assert.notEqual(validationIndex, -1, 'Expected fetchDeckCards to validate successful payloads');
+  assert.notEqual(
+    expectedDeckIdIndex,
+    -1,
+    'Expected fetchDeckCards to validate card rows against the requested deck id',
+  );
   assert.notEqual(setCardsIndex, -1, 'Expected fetchDeckCards to store parsed cards');
   assert.notEqual(setCursorIndex, -1, 'Expected fetchDeckCards to store the parsed cursor');
   assert.ok(authExpiredIndex < jsonIndex, 'Expected auth expiration handling before JSON parsing');
   assert.ok(jsonIndex < responseOkIndex, 'Expected non-2xx handling after JSON parsing');
   assert.ok(responseOkIndex < staleGuardIndex, 'Expected success stale guard after non-2xx handling');
   assert.ok(staleGuardIndex < validationIndex, 'Expected validation after the stale response guard');
+  assert.ok(validationIndex < expectedDeckIdIndex, 'Expected expected-deck validation to be part of parsing');
   assert.ok(validationIndex < setCardsIndex, 'Expected validation before storing cards');
   assert.ok(validationIndex < setCursorIndex, 'Expected validation before storing the cursor');
   assert.match(
