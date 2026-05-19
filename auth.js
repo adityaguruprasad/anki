@@ -400,10 +400,22 @@ function getOptionalSingleAuthQueryRow(result, errorMessage) {
   return result.rows[0];
 }
 
-function getSingleRegistrationUserId(result) {
+function getSingleRegistrationUserId(result, normalizedEmail) {
   const row = getOptionalSingleAuthQueryRow(result, INVALID_REGISTRATION_INSERT_RESULT_ERROR);
-  const normalizedUserId = row === null ? null : normalizeTokenUserId(row.id);
-  if (normalizedUserId == null) {
+  if (
+    row === null
+    || typeof row !== 'object'
+    || Array.isArray(row)
+    || !Object.hasOwn(row, 'id')
+    || !Object.hasOwn(row, 'email')
+  ) {
+    throw new Error(INVALID_REGISTRATION_INSERT_RESULT_ERROR);
+  }
+
+  const normalizedUserId = normalizeTokenUserId(row.id);
+  // Before minting a JWT, require the database to echo the exact normalized email
+  // inserted for this registration row.
+  if (normalizedUserId == null || row.email !== normalizedEmail) {
     throw new Error(INVALID_REGISTRATION_INSERT_RESULT_ERROR);
   }
 
@@ -668,10 +680,10 @@ function createAuthHandlers(db, options = {}) {
       }
 
       const result = await db.query(
-        'INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3) RETURNING id',
+        'INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3) RETURNING id, email',
         [trimmedUsername, normalizedEmail, hashedPassword]
       );
-      const userId = getSingleRegistrationUserId(result);
+      const userId = getSingleRegistrationUserId(result, normalizedEmail);
       const token = signToken({ userId }, jwtSecret, {
         expiresInSeconds: jwtExpiresInSeconds,
       });

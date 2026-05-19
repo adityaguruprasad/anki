@@ -69,6 +69,10 @@ function createDb(results) {
   };
 }
 
+function createRegistrationRow(id, email = 'ada@example.com') {
+  return { id, email };
+}
+
 function createUniqueViolation(constraint) {
   const error = new Error('duplicate key value violates unique constraint');
   error.code = '23505';
@@ -118,7 +122,7 @@ function signRawJwtSegments(encodedHeader, encodedPayload, secret) {
 }
 
 test('register uses injected db and returns a signed token with inserted user id', async () => {
-  const db = createDb([{ rowCount: 1, rows: [{ id: 42 }] }]);
+  const db = createDb([{ rowCount: 1, rows: [createRegistrationRow(42)] }]);
   const passwordHasher = createPasswordHasher();
   const { register, authenticateToken } = createAuthHandlers(db, {
     jwtSecret: 'unit-test-secret',
@@ -142,6 +146,7 @@ test('register uses injected db and returns a signed token with inserted user id
   ]);
   assert.equal(db.calls.length, 1);
   assert.match(db.calls[0].sql, /INSERT INTO users/i);
+  assert.match(db.calls[0].sql, /RETURNING\s+id\s*,\s*email/i);
   assert.deepEqual(db.calls[0].params, [
     'ada',
     'ada@example.com',
@@ -159,7 +164,7 @@ test('register uses injected db and returns a signed token with inserted user id
 });
 
 test('register does not mint a token when the inserted user id is invalid', async () => {
-  const db = createDb([{ rowCount: 1, rows: [{ id: 'not-a-number' }] }]);
+  const db = createDb([{ rowCount: 1, rows: [createRegistrationRow('not-a-number')] }]);
   const passwordHasher = createPasswordHasher();
   const { register } = createAuthHandlers(db, {
     jwtSecret: 'invalid-register-user-secret',
@@ -184,12 +189,106 @@ test('register does not mint a token when the inserted user id is invalid', asyn
   assert.equal(db.calls.length, 1);
 });
 
+test('register does not mint a token when the inserted row email mismatches the request', async (t) => {
+  const cases = [
+    { name: 'missing returned email', row: { id: 42 } },
+    { name: 'wrong returned email', row: createRegistrationRow(42, 'other@example.com') },
+  ];
+
+  for (const { name, row } of cases) {
+    await t.test(name, async () => {
+      const db = createDb([{ rowCount: 1, rows: [row] }]);
+      const passwordHasher = createPasswordHasher();
+      const { register } = createAuthHandlers(db, {
+        jwtSecret: 'mismatched-register-email-secret',
+        passwordHasher,
+      });
+      const res = createRes();
+
+      await register({
+        body: {
+          username: 'ada',
+          email: ' ADA@Example.COM ',
+          password: 'correct horse battery staple',
+        },
+      }, res);
+
+      assert.equal(res.statusCode, 500);
+      assert.deepEqual(res.body, { error: 'Error registering user' });
+      assert.equal(res.body.token, undefined);
+      assert.deepEqual(passwordHasher.hashCalls, [
+        { password: 'correct horse battery staple', rounds: PASSWORD_HASH_COST },
+      ]);
+      assert.equal(db.calls.length, 1);
+      assert.deepEqual(db.calls[0].params, [
+        'ada',
+        'ada@example.com',
+        'hashed:correct horse battery staple',
+      ]);
+    });
+  }
+});
+
+test('register does not mint a token when the inserted row is not an object record', async (t) => {
+  const cases = [
+    { name: 'null returned row', row: null },
+    { name: 'string returned row', row: '42' },
+    { name: 'number returned row', row: 42 },
+    { name: 'array returned row', row: Object.assign([], createRegistrationRow(42)) },
+  ];
+
+  for (const { name, row } of cases) {
+    await t.test(name, async () => {
+      const db = createDb([{ rowCount: 1, rows: [row] }]);
+      const passwordHasher = createPasswordHasher();
+      const { register } = createAuthHandlers(db, {
+        jwtSecret: 'malformed-register-row-secret',
+        passwordHasher,
+      });
+      const res = createRes();
+
+      await register({
+        body: {
+          username: 'ada',
+          email: ' ADA@Example.COM ',
+          password: 'correct horse battery staple',
+        },
+      }, res);
+
+      assert.equal(res.statusCode, 500);
+      assert.deepEqual(res.body, { error: 'Error registering user' });
+      assert.equal(res.body.token, undefined);
+      assert.deepEqual(passwordHasher.hashCalls, [
+        { password: 'correct horse battery staple', rounds: PASSWORD_HASH_COST },
+      ]);
+      assert.equal(db.calls.length, 1);
+      assert.deepEqual(db.calls[0].params, [
+        'ada',
+        'ada@example.com',
+        'hashed:correct horse battery staple',
+      ]);
+    });
+  }
+});
+
 test('register fails closed when the insert result cardinality is malformed', async (t) => {
   const malformedResults = [
-    { name: 'rowCount zero with returned id', result: { rowCount: 0, rows: [{ id: 42 }] } },
+    {
+      name: 'rowCount zero with returned id',
+      result: { rowCount: 0, rows: [createRegistrationRow(42)] },
+    },
     { name: 'rowCount one with no rows', result: { rowCount: 1, rows: [] } },
-    { name: 'string rowCount with one returned id', result: { rowCount: '1', rows: [{ id: 42 }] } },
-    { name: 'multiple returned rows', result: { rowCount: 2, rows: [{ id: 42 }, { id: 43 }] } },
+    {
+      name: 'string rowCount with one returned id',
+      result: { rowCount: '1', rows: [createRegistrationRow(42)] },
+    },
+    {
+      name: 'multiple returned rows',
+      result: {
+        rowCount: 2,
+        rows: [createRegistrationRow(42), createRegistrationRow(43)],
+      },
+    },
     { name: 'missing rows array', result: { rowCount: 1 } },
   ];
 
@@ -331,7 +430,7 @@ test('register rejects invalid input before hashing or querying', async (t) => {
 
 test('register accepts a password exactly at the bcrypt byte limit', async () => {
   const password = 'a'.repeat(AUTH_PASSWORD_MAX_BYTES);
-  const db = createDb([{ rowCount: 1, rows: [{ id: 44 }] }]);
+  const db = createDb([{ rowCount: 1, rows: [createRegistrationRow(44)] }]);
   const passwordHasher = createPasswordHasher();
   const { register } = createAuthHandlers(db, {
     jwtSecret: 'boundary-register-secret',
@@ -353,7 +452,7 @@ test('register accepts a password exactly at the bcrypt byte limit', async () =>
 });
 
 test('register trims username and surrounding email whitespace before storing', async () => {
-  const db = createDb([{ rowCount: 1, rows: [{ id: 43 }] }]);
+  const db = createDb([{ rowCount: 1, rows: [createRegistrationRow(43)] }]);
   const passwordHasher = createPasswordHasher();
   const { register } = createAuthHandlers(db, {
     jwtSecret: 'normal-register-secret',
@@ -499,8 +598,8 @@ test('register keeps unrelated unique violations on the 500 registration failure
 
 test('register throttles repeated source attempts before hashing or inserting users', async () => {
   const db = createDb([
-    { rowCount: 1, rows: [{ id: 51 }] },
-    { rowCount: 1, rows: [{ id: 52 }] },
+    { rowCount: 1, rows: [createRegistrationRow(51, 'ada-0@example.com')] },
+    { rowCount: 1, rows: [createRegistrationRow(52, 'ada-1@example.com')] },
   ]);
   const passwordHasher = createPasswordHasher();
   const { register } = createAuthHandlers(db, {
@@ -555,7 +654,7 @@ test('register throttles repeated source attempts before hashing or inserting us
 });
 
 test('register invalid input does not consume registration throttle attempts', async () => {
-  const db = createDb([{ rowCount: 1, rows: [{ id: 53 }] }]);
+  const db = createDb([{ rowCount: 1, rows: [createRegistrationRow(53)] }]);
   const passwordHasher = createPasswordHasher();
   const { register } = createAuthHandlers(db, {
     jwtSecret: 'invalid-register-rate-limit-secret',
@@ -609,8 +708,8 @@ test('register invalid input does not consume registration throttle attempts', a
 test('register allows valid attempts after the throttle window expires', async () => {
   let now = 2300;
   const db = createDb([
-    { rowCount: 1, rows: [{ id: 54 }] },
-    { rowCount: 1, rows: [{ id: 55 }] },
+    { rowCount: 1, rows: [createRegistrationRow(54, 'ada-first@example.com')] },
+    { rowCount: 1, rows: [createRegistrationRow(55, 'ada-retried@example.com')] },
   ]);
   const passwordHasher = createPasswordHasher();
   const { register } = createAuthHandlers(db, {
