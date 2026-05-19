@@ -248,8 +248,8 @@ function assertDeleteDeckAtomicSql(sql) {
   assert.match(sql, /deleted_deck\s+AS\s*\(\s*DELETE\s+FROM\s+decks\s+d/i);
   assert.match(sql, /WHERE\s+d\.id\s+=\s+target\.id/i);
   assert.match(sql, /SELECT\s+COUNT\(\*\)\s+FROM\s+deleted_cards/i);
-  assert.match(sql, /RETURNING\s+d\.id/i);
-  assert.match(sql, /SELECT\s+id\s+FROM\s+deleted_deck/i);
+  assert.match(sql, /RETURNING\s+d\.id\s*,\s*d\.user_id/i);
+  assert.match(sql, /SELECT\s+id\s*,\s*user_id\s+FROM\s+deleted_deck/i);
   assert.doesNotMatch(sql, /\bBEGIN\b|\bCOMMIT\b|\bROLLBACK\b/i);
 }
 
@@ -891,7 +891,7 @@ test('DELETE /api/decks/:deckId returns 400 for invalid deckId and skips db quer
 
 test('DELETE /api/decks/:deckId deletes scoped cards and deck with one atomic query', async () => {
   const db = addUnexpectedConnect(createDb([
-    { rowCount: 1, rows: [{ id: 42 }] },
+    { rowCount: 1, rows: [{ id: 42, user_id: 'user-1' }] },
   ]));
   const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
   const res = createRes();
@@ -951,12 +951,12 @@ test('DELETE /api/decks/:deckId fails closed when the atomic delete cardinality 
 
 test('DELETE /api/decks/:deckId fails closed when the atomic delete result has an impossible or mismatched deck id', async (t) => {
   const malformedRows = [
-    { id: null },
-    { id: 'deck-42' },
-    { id: 0 },
-    { id: -1 },
-    { id: 2147483648 },
-    { id: 43 },
+    { id: null, user_id: 'user-1' },
+    { id: 'deck-42', user_id: 'user-1' },
+    { id: 0, user_id: 'user-1' },
+    { id: -1, user_id: 'user-1' },
+    { id: 2147483648, user_id: 'user-1' },
+    { id: 43, user_id: 'user-1' },
   ];
   t.mock.method(console, 'error', () => {});
 
@@ -976,6 +976,24 @@ test('DELETE /api/decks/:deckId fails closed when the atomic delete result has a
     assert.deepEqual(db.calls[0].params, [42, 'user-1']);
     assertDeleteDeckAtomicSql(db.calls[0].sql);
   }
+});
+
+test('DELETE /api/decks/:deckId fails closed when the atomic delete result owner mismatches the request user', async (t) => {
+  const db = addUnexpectedConnect(createDb([
+    { rowCount: 1, rows: [{ id: 42, user_id: 'other-user' }] },
+  ]));
+  const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+  const res = createRes();
+  t.mock.method(console, 'error', () => {});
+
+  await deleteDeck(req, res, db);
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Internal server error' });
+  assert.equal(db.calls.length, 1);
+  assert.equal(db.connectCalls, 0);
+  assert.deepEqual(db.calls[0].params, [42, 'user-1']);
+  assertDeleteDeckAtomicSql(db.calls[0].sql);
 });
 
 test('DELETE /api/decks/:deckId returns 404 for missing or unowned deck', async () => {

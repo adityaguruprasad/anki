@@ -482,7 +482,7 @@ function assertDeckMutationResult(row, options = {}) {
 }
 
 function assertDeckRemovalResult(row, options = {}) {
-  assertObjectHasOwnFields(row, ['id'], INVALID_DECK_REMOVAL_RESULT_ERROR);
+  assertObjectHasOwnFields(row, ['id', 'user_id'], INVALID_DECK_REMOVAL_RESULT_ERROR);
 
   const deckIdValidation = validatePositiveIntegerIdentifier(row.id, 'deckId');
   if (
@@ -491,6 +491,8 @@ function assertDeckRemovalResult(row, options = {}) {
   ) {
     throw new TypeError(INVALID_DECK_REMOVAL_RESULT_ERROR);
   }
+
+  assertExpectedDeckOwner(row, options.expectedUserId, INVALID_DECK_REMOVAL_RESULT_ERROR);
 }
 
 function assertDeckRenameControlResult(row, options = {}) {
@@ -1532,9 +1534,11 @@ async function deleteDeck(req, res, db) {
          USING target
          WHERE d.id = target.id
            AND (SELECT COUNT(*) FROM deleted_cards) >= 0
-         RETURNING d.id
+         RETURNING d.id,
+                   d.user_id
        )
-       SELECT id
+       SELECT id,
+              user_id
        FROM deleted_deck`,
       [deckId, req.user.userId]
     );
@@ -1544,7 +1548,10 @@ async function deleteDeck(req, res, db) {
       return res.status(404).json({ error: 'Deck not found' });
     }
 
-    assertDeckRemovalResult(deletedDeck, { expectedDeckId: deckId });
+    assertDeckRemovalResult(deletedDeck, {
+      expectedDeckId: deckId,
+      expectedUserId: req.user.userId,
+    });
     return res.json({ success: true });
   } catch (err) {
     console.error(err);
