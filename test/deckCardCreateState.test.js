@@ -198,6 +198,50 @@ test('card-create response completion preserves current non-OK error behavior', 
   assert.equal(getCreateCardFailureMessage({}), CARD_CREATE_MESSAGES.createFailed);
 });
 
+test('getCreateCardFailureMessage returns trimmed non-empty string server errors', () => {
+  [
+    [{ error: 'Deck not found' }, 'Deck not found'],
+    [{ error: '  Deck not found  ' }, 'Deck not found'],
+    [{ error: '\nDeck not found\t' }, 'Deck not found'],
+    [{ error: 'Deck   not found' }, 'Deck   not found'],
+  ].forEach(([payload, expected]) => {
+    assert.equal(getCreateCardFailureMessage(payload), expected);
+  });
+});
+
+test('getCreateCardFailureMessage falls back when response has no usable server error', () => {
+  [
+    undefined,
+    null,
+    {},
+    { error: '' },
+    { error: '   ' },
+    { error: 404 },
+    { error: { message: 'Deck not found' } },
+    { error: ['Deck not found'] },
+  ].forEach((payload) => {
+    assert.equal(
+      getCreateCardFailureMessage(payload),
+      CARD_CREATE_MESSAGES.createFailed,
+    );
+  });
+});
+
+test('card-create response completion trims non-OK string server errors', () => {
+  assert.deepEqual(
+    getCardCreateResponseCompletion({
+      isCurrent: true,
+      responseOk: false,
+      payload: { error: '  Deck not found  ' },
+    }),
+    {
+      type: CARD_CREATE_COMPLETION_TYPES.SERVER_ERROR,
+      ignored: false,
+      error: 'Deck not found',
+    },
+  );
+});
+
 test('card-create response completion returns current validated success plans', () => {
   const createdCard = createValidCreatedCard();
 

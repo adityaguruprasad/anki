@@ -75,7 +75,14 @@ function createIgnoredCardCreateCompletion() {
 }
 
 function getCreateCardFailureMessage(payload) {
-  return (payload && payload.error) || CARD_CREATE_MESSAGES.createFailed;
+  if (payload && typeof payload.error === 'string') {
+    const error = payload.error.trim();
+    if (error) {
+      return error;
+    }
+  }
+
+  return CARD_CREATE_MESSAGES.createFailed;
 }
 
 function getCardCreateResponseCompletion(options = {}) {
