@@ -1,3 +1,5 @@
+const { hasReviewActivityStats } = require('./dashboardReviewActivityDisplayState');
+
 const DASHBOARD_STATS_COPY = Object.freeze({
   loading: 'Loading stats...',
   unavailable: 'Unavailable',
@@ -46,6 +48,10 @@ function hasStatsPayload(stats) {
       && isStatsCount(stats[key])
     ))
   );
+}
+
+function hasDashboardStatsPayload(stats) {
+  return hasStatsPayload(stats) && hasReviewActivityStats(stats);
 }
 
 function toDisplayCount(value) {
@@ -108,6 +114,7 @@ function buildDashboardStatsDisplayState({
 module.exports = {
   DASHBOARD_STATS_COPY,
   buildDashboardStatsDisplayState,
+  hasDashboardStatsPayload,
   hasStatsPayload,
   toDisplayCount,
 };

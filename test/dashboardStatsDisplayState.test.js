@@ -4,9 +4,21 @@ const assert = require('node:assert/strict');
 const {
   DASHBOARD_STATS_COPY,
   buildDashboardStatsDisplayState,
+  hasDashboardStatsPayload,
   hasStatsPayload,
   toDisplayCount,
 } = require('../dashboardStatsDisplayState');
+
+function createValidDashboardStats(overrides = {}) {
+  return {
+    totalCards: 12,
+    totalDecks: 3,
+    todayReviews: 1,
+    weekReviews: 4,
+    monthReviews: 9,
+    ...overrides,
+  };
+}
 
 test('hasStatsPayload requires valid dashboard total count fields', () => {
   [
@@ -55,6 +67,32 @@ test('hasStatsPayload requires valid dashboard total count fields', () => {
     { totalCards: 1, totalDecks: Number.MAX_SAFE_INTEGER + 1 },
   ].forEach((stats) => {
     assert.equal(hasStatsPayload(stats), false);
+  });
+});
+
+test('hasDashboardStatsPayload requires the full stats endpoint contract', () => {
+  [
+    createValidDashboardStats(),
+    createValidDashboardStats({
+      totalCards: '900719925474099312345',
+      totalDecks: '00012',
+      todayReviews: ' 0 ',
+      weekReviews: '0007',
+      monthReviews: String(Number.MAX_SAFE_INTEGER),
+    }),
+  ].forEach((stats) => {
+    assert.equal(hasDashboardStatsPayload(stats), true);
+  });
+
+  [
+    { totalCards: 12, totalDecks: 3 },
+    createValidDashboardStats({ todayReviews: undefined }),
+    createValidDashboardStats({ weekReviews: '1e3' }),
+    createValidDashboardStats({ monthReviews: '9007199254740992' }),
+    createValidDashboardStats({ totalCards: null }),
+    createValidDashboardStats({ totalDecks: -1 }),
+  ].forEach((stats) => {
+    assert.equal(hasDashboardStatsPayload(stats), false);
   });
 });
 

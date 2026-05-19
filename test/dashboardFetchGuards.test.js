@@ -191,12 +191,12 @@ test('fetchStats rejects malformed successful payloads after stale guards before
   const body = extractConstFunctionBody('fetchStats');
   const jsonIndex = body.indexOf('const data = await response.json();');
   const staleGuardAfterJsonIndex = body.indexOf('if (shouldSkipUpdate()) {', jsonIndex);
-  const validationIndex = body.indexOf('if (!hasStatsPayload(data)) {');
+  const validationIndex = body.indexOf('if (!hasDashboardStatsPayload(data)) {');
   const setStatsIndex = body.indexOf('setStats(data);');
 
   assert.match(
     dashboardSource,
-    /const \{ buildDashboardStatsDisplayState, hasStatsPayload \} = dashboardStatsDisplayState;/,
+    /const \{ buildDashboardStatsDisplayState, hasDashboardStatsPayload \} = dashboardStatsDisplayState;/,
     'Expected dashboard to import the stats payload validator'
   );
   assert.notEqual(jsonIndex, -1, 'Expected fetchStats to parse response JSON');
