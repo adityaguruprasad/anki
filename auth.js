@@ -26,6 +26,7 @@ const JWT_EXPIRES_IN_SECONDS_ERROR =
 const MAX_JWT_TOKEN_LENGTH = 4096;
 const JWT_TOKEN_TOO_LONG_ERROR = `JWT token must be ${MAX_JWT_TOKEN_LENGTH} characters or fewer`;
 const JWT_COMPACT_PART_PATTERN = /^[A-Za-z0-9_-]+$/;
+const BEARER_AUTH_HEADER_PATTERN = /^[ \t]*Bearer[ \t]+([A-Za-z0-9._~+/-]+=*)[ \t]*$/i;
 // users.id is a PostgreSQL SERIAL/INTEGER id, matching the protected API route id contract.
 if (!Number.isSafeInteger(MAX_POSTGRES_SERIAL_ID)) {
   throw new Error('MAX_POSTGRES_SERIAL_ID must remain a safe integer');
@@ -315,7 +316,7 @@ function extractBearerToken(authHeader) {
     return null;
   }
 
-  const match = authHeader.match(/^\s*Bearer\s+(\S+)\s*$/i);
+  const match = authHeader.match(BEARER_AUTH_HEADER_PATTERN);
   return match ? match[1] : null;
 }
 

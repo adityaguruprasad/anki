@@ -1847,7 +1847,9 @@ test('verifyToken rejects signed tokens without a usable userId claim', () => {
 test('extractBearerToken accepts only a single bearer credential', () => {
   assert.equal(extractBearerToken('Bearer token-123'), 'token-123');
   assert.equal(extractBearerToken('  bearer   token-123  '), 'token-123');
+  assert.equal(extractBearerToken('\tbearer\ttoken-123\t'), 'token-123');
   assert.equal(extractBearerToken('BEARER abc.def.ghi'), 'abc.def.ghi');
+  assert.equal(extractBearerToken('Bearer abc=='), 'abc==');
 
   const malformedHeaders = [
     undefined,
@@ -1859,6 +1861,13 @@ test('extractBearerToken accepts only a single bearer credential', () => {
     'Bearer',
     'Bearer   ',
     'Bearer token-123 extra',
+    'Bearer abc=def',
+    '\nBearer token-123',
+    'Bearer\r\n token-123',
+    'Bearer token-123\r\n',
+    'Bearer token\u0000123',
+    'Bearer token\u007f123',
+    'Bearer token\u00a0123',
     ['Bearer token-123'],
     42,
   ];
@@ -2015,6 +2024,12 @@ test('authenticateToken rejects malformed authorization headers before token ver
     `Basic ${signedToken}`,
     signedToken,
     `Bearer ${signedToken} extra`,
+    `\nBearer ${signedToken}`,
+    `Bearer\r\n ${signedToken}`,
+    `Bearer ${signedToken}\r\n`,
+    `Bearer ${signedToken.slice(0, 8)}\u0000${signedToken.slice(8)}`,
+    `Bearer ${signedToken.slice(0, 8)}\u007f${signedToken.slice(8)}`,
+    `Bearer ${signedToken.slice(0, 8)}\u00a0${signedToken.slice(8)}`,
     ['Bearer', signedToken],
   ];
 
