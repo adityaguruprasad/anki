@@ -3002,6 +3002,13 @@ test('GET /api/stats returns expected shape with a single user-scoped query', as
   await getStats(req, res, db, now);
 
   assert.equal(res.statusCode, 200);
+  assert.deepEqual(Object.keys(res.body), [
+    'totalCards',
+    'totalDecks',
+    'todayReviews',
+    'weekReviews',
+    'monthReviews',
+  ]);
   assert.deepEqual(res.body, {
     totalCards: 12,
     totalDecks: 3,
@@ -3149,7 +3156,7 @@ test('GET /api/stats handles aggregate count safe integer boundaries', async () 
   });
 });
 
-test('GET /api/stats fails closed for missing or malformed aggregate values', async (t) => {
+test('GET /api/stats fails closed for malformed successful aggregate results', async (t) => {
   const validStats = {
     totalCards: '12',
     totalDecks: '3',
@@ -3159,38 +3166,43 @@ test('GET /api/stats fails closed for missing or malformed aggregate values', as
   };
   const rowMissingField = { ...validStats };
   delete rowMissingField.weekReviews;
-  const malformedResults = [
-    { rowCount: 0, rows: [] },
-    { rowCount: 2, rows: [{ ...validStats }, { ...validStats }] },
-    { rowCount: 1, rows: [rowMissingField] },
-    { rowCount: 1, rows: [{ ...validStats, totalCards: null }] },
-    { rowCount: 1, rows: [{ ...validStats, totalDecks: '' }] },
-    { rowCount: 1, rows: [{ ...validStats, todayReviews: undefined }] },
-    { rowCount: 1, rows: [{ ...validStats, totalCards: '1e3' }] },
-    { rowCount: 1, rows: [{ ...validStats, totalDecks: '-1' }] },
-    { rowCount: 1, rows: [{ ...validStats, todayReviews: Number.MAX_SAFE_INTEGER + 1 }] },
-    { rowCount: 1, rows: [{ ...validStats, weekReviews: 1.5 }] },
-    { rowCount: 1, rows: [{ ...validStats, monthReviews: [] }] },
+  const malformedCases = [
+    ['missing aggregate row', { rowCount: 0, rows: [] }],
+    ['duplicate aggregate rows', { rowCount: 2, rows: [{ ...validStats }, { ...validStats }] }],
+    ['missing aggregate field', { rowCount: 1, rows: [rowMissingField] }],
+    ['null aggregate value', { rowCount: 1, rows: [{ ...validStats, totalCards: null }] }],
+    ['empty aggregate value', { rowCount: 1, rows: [{ ...validStats, totalDecks: '' }] }],
+    ['undefined aggregate value', { rowCount: 1, rows: [{ ...validStats, todayReviews: undefined }] }],
+    ['exponent aggregate value', { rowCount: 1, rows: [{ ...validStats, totalCards: '1e3' }] }],
+    ['negative aggregate value', { rowCount: 1, rows: [{ ...validStats, totalDecks: '-1' }] }],
+    [
+      'unsafe numeric aggregate value',
+      { rowCount: 1, rows: [{ ...validStats, todayReviews: Number.MAX_SAFE_INTEGER + 1 }] },
+    ],
+    ['decimal aggregate value', { rowCount: 1, rows: [{ ...validStats, weekReviews: 1.5 }] }],
+    ['array aggregate value', { rowCount: 1, rows: [{ ...validStats, monthReviews: [] }] }],
   ];
   t.mock.method(console, 'error', () => {});
 
-  for (const result of malformedResults) {
-    const db = createDb([result]);
-    const req = { user: { userId: 'user-1' } };
-    const res = createRes();
+  for (const [name, result] of malformedCases) {
+    await t.test(name, async () => {
+      const db = createDb([result]);
+      const req = { user: { userId: 'user-1' } };
+      const res = createRes();
 
-    await getStats(req, res, db);
+      await getStats(req, res, db);
 
-    assert.equal(res.statusCode, 500);
-    assert.deepEqual(res.body, { error: 'Internal server error' });
-    assert.equal(db.calls.length, 1);
-    assert.equal(db.calls[0].params[0], 'user-1');
-    const dateParams = db.calls[0].params.slice(1);
-    assert.equal(dateParams.length, 4);
-    dateParams.forEach((param) => {
-      assert.ok(param instanceof Date);
+      assert.equal(res.statusCode, 500);
+      assert.deepEqual(res.body, { error: 'Internal server error' });
+      assert.equal(db.calls.length, 1);
+      assert.equal(db.calls[0].params[0], 'user-1');
+      const dateParams = db.calls[0].params.slice(1);
+      assert.equal(dateParams.length, 4);
+      dateParams.forEach((param) => {
+        assert.ok(param instanceof Date);
+      });
+      assert.match(db.calls[0].sql, /WHERE d\.user_id = \$1/);
     });
-    assert.match(db.calls[0].sql, /WHERE d\.user_id = \$1/);
   }
 });
 

@@ -539,6 +539,11 @@ function assertSingleAggregateQueryResult(result, errorMessage) {
   }
 }
 
+function getRequiredSingleAggregateQueryRow(result, errorMessage) {
+  assertSingleAggregateQueryResult(result, errorMessage);
+  return result.rows[0];
+}
+
 function assertListQueryResult(result, errorMessage) {
   if (
     result === null
@@ -634,6 +639,17 @@ function toDeckListPayload(row) {
     totalCards,
     dueCards,
   };
+}
+
+function toStatsResponsePayload(row) {
+  assertStatsResult(row);
+
+  const payload = {};
+  for (const field of STATS_RESPONSE_FIELDS) {
+    payload[field] = toStatsAggregateCount(row[field]);
+  }
+
+  return payload;
 }
 
 function toStudySessionResponseCardPayload(row) {
@@ -1486,16 +1502,8 @@ async function getStats(req, res, db, now = new Date()) {
       [req.user.userId, todayStart, tomorrowStart, sevenDayLookbackStart, thirtyDayLookbackStart]
     );
 
-    assertSingleAggregateQueryResult(result, INVALID_STATS_RESULT_ERROR);
-    const stats = result.rows[0];
-    assertStatsResult(stats);
-    return res.json({
-      totalCards: toStatsAggregateCount(stats.totalCards),
-      totalDecks: toStatsAggregateCount(stats.totalDecks),
-      todayReviews: toStatsAggregateCount(stats.todayReviews),
-      weekReviews: toStatsAggregateCount(stats.weekReviews),
-      monthReviews: toStatsAggregateCount(stats.monthReviews),
-    });
+    const stats = getRequiredSingleAggregateQueryRow(result, INVALID_STATS_RESULT_ERROR);
+    return res.json(toStatsResponsePayload(stats));
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Internal server error' });
@@ -1548,8 +1556,10 @@ async function getSchedulingInsights(req, res, db, now = new Date()) {
       [req.user.userId, todayStart, tomorrowStart, afterTomorrowStart, sevenDayEndExclusive]
     );
 
-    assertSingleAggregateQueryResult(result, INVALID_SCHEDULING_INSIGHTS_RESULT_ERROR);
-    const stats = result.rows[0];
+    const stats = getRequiredSingleAggregateQueryRow(
+      result,
+      INVALID_SCHEDULING_INSIGHTS_RESULT_ERROR
+    );
     assertSchedulingInsightsResult(stats);
 
     const counts = {};
