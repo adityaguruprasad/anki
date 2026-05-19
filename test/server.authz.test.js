@@ -532,6 +532,7 @@ test('PATCH /api/decks/:deckId fails closed when the rename control result is ma
     { rowCount: 1, rows: [{ deckExists: false, duplicateExists: false, deck }] },
     { rowCount: 1, rows: [{ deckExists: true, duplicateExists: true, deck }] },
     { rowCount: 1, rows: [{ deckExists: true, duplicateExists: false, deck: null }] },
+    { rowCount: 1, rows: [{ deckExists: true, duplicateExists: false, deck: { ...deck, id: 43 } }] },
   ];
   t.mock.method(console, 'error', () => {});
 
@@ -874,13 +875,14 @@ test('DELETE /api/decks/:deckId fails closed when the atomic delete cardinality 
   }
 });
 
-test('DELETE /api/decks/:deckId fails closed when the atomic delete result has an impossible deck id', async (t) => {
+test('DELETE /api/decks/:deckId fails closed when the atomic delete result has an impossible or mismatched deck id', async (t) => {
   const malformedRows = [
     { id: null },
     { id: 'deck-42' },
     { id: 0 },
     { id: -1 },
     { id: 2147483648 },
+    { id: 43 },
   ];
   t.mock.method(console, 'error', () => {});
 
@@ -2321,6 +2323,7 @@ test('POST /api/cards fails closed when the inserted row violates card mutation 
     { ...validInsertedCard, id: 'card-77' },
     { ...validInsertedCard, id: 2147483648 },
     { ...validInsertedCard, deck_id: 2147483648 },
+    { ...validInsertedCard, deck_id: 43 },
     { ...validInsertedCard, front_content: '   ' },
     { ...validInsertedCard, back_content: '' },
     { ...validInsertedCard, next_review: 'not-a-date' },
@@ -2684,38 +2687,41 @@ test('PATCH /api/cards/:cardId returns 500 when the updated row is missing mutat
 });
 
 test('PATCH /api/cards/:cardId fails closed when the updated row violates card mutation response invariants', async (t) => {
-  const db = createDb([
-    {
-      rowCount: 1,
-      rows: [{
-        id: 77,
-        deck_id: 'not-a-deck',
-        front_content: 'Updated front',
-        back_content: 'Updated back',
-        next_review: '2026-05-08T12:00:00.000Z',
-        interval: 1,
-        ease_factor: 2.5,
-        review_count: 0,
-      }],
-    },
-  ]);
-  const req = {
-    params: { cardId: '77' },
-    body: {
-      frontContent: 'Updated front',
-      backContent: 'Updated back',
-    },
-    user: { userId: 'user-1' },
+  const validUpdatedCard = {
+    id: 77,
+    deck_id: 42,
+    front_content: 'Updated front',
+    back_content: 'Updated back',
+    next_review: '2026-05-08T12:00:00.000Z',
+    interval: 1,
+    ease_factor: 2.5,
+    review_count: 0,
   };
-  const res = createRes();
+  const malformedRows = [
+    { ...validUpdatedCard, id: 78 },
+    { ...validUpdatedCard, deck_id: 'not-a-deck' },
+  ];
   t.mock.method(console, 'error', () => {});
 
-  await updateCard(req, res, db);
+  for (const row of malformedRows) {
+    const db = createDb([{ rowCount: 1, rows: [row] }]);
+    const req = {
+      params: { cardId: '77' },
+      body: {
+        frontContent: 'Updated front',
+        backContent: 'Updated back',
+      },
+      user: { userId: 'user-1' },
+    };
+    const res = createRes();
 
-  assert.equal(res.statusCode, 500);
-  assert.deepEqual(res.body, { error: 'Internal server error' });
-  assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [77, 'user-1', 'Updated front', 'Updated back']);
+    await updateCard(req, res, db);
+
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.body, { error: 'Internal server error' });
+    assert.equal(db.calls.length, 1);
+    assert.deepEqual(db.calls[0].params, [77, 'user-1', 'Updated front', 'Updated back']);
+  }
 });
 
 test('PATCH /api/cards/:cardId returns 404 for missing or unowned card with one user-scoped query', async () => {
@@ -2839,6 +2845,7 @@ test('DELETE /api/cards/:cardId fails closed when the deleted row violates remov
   };
   const malformedRows = [
     { ...validDeletedCard, id: 'card-77' },
+    { ...validDeletedCard, id: 78 },
     { ...validDeletedCard, front_content: '   ' },
     { ...validDeletedCard, back_content: '' },
     { ...validDeletedCard, next_review: 'not-a-date' },

@@ -357,7 +357,16 @@ function isValidPersistedReviewCount(value) {
   return Number.isSafeInteger(value) && value >= 0;
 }
 
-function assertCardMutationResult(row) {
+function matchesExpectedIdentifier(validation, expectedValue, fieldName) {
+  if (expectedValue === undefined) {
+    return true;
+  }
+
+  const expectedValidation = validatePositiveIntegerIdentifier(expectedValue, fieldName);
+  return expectedValidation.ok && validation.value === expectedValidation.value;
+}
+
+function assertCardMutationResult(row, options = {}) {
   assertObjectHasOwnFields(row, CARD_MUTATION_RESPONSE_CARD_FIELDS, INVALID_CARD_MUTATION_RESULT_ERROR);
 
   const cardIdValidation = validatePositiveIntegerIdentifier(row.id, 'cardId');
@@ -365,6 +374,8 @@ function assertCardMutationResult(row) {
   if (
     !cardIdValidation.ok
     || !deckIdValidation.ok
+    || !matchesExpectedIdentifier(cardIdValidation, options.expectedCardId, 'cardId')
+    || !matchesExpectedIdentifier(deckIdValidation, options.expectedDeckId, 'deckId')
     || !isValidPersistedCardContent(row.front_content)
     || !isValidPersistedCardContent(row.back_content)
     || !isValidDatabaseTimestamp(row.next_review)
@@ -376,12 +387,13 @@ function assertCardMutationResult(row) {
   }
 }
 
-function assertCardRemovalResult(row) {
+function assertCardRemovalResult(row, options = {}) {
   assertObjectHasOwnFields(row, DELETE_CARD_RESPONSE_CARD_FIELDS, INVALID_CARD_REMOVAL_RESULT_ERROR);
 
   const cardIdValidation = validatePositiveIntegerIdentifier(row.id, 'cardId');
   if (
     !cardIdValidation.ok
+    || !matchesExpectedIdentifier(cardIdValidation, options.expectedCardId, 'cardId')
     || !isValidPersistedCardContent(row.front_content)
     || !isValidPersistedCardContent(row.back_content)
     || !isValidDatabaseTimestamp(row.next_review)
@@ -428,25 +440,33 @@ function assertCardReadResult(row, errorMessage = INVALID_CARD_READ_RESULT_ERROR
   }
 }
 
-function assertDeckMutationResult(row) {
+function assertDeckMutationResult(row, options = {}) {
   assertObjectHasOwnFields(row, DECK_READ_FIELDS, INVALID_DECK_MUTATION_RESULT_ERROR);
 
   const deckIdValidation = validatePositiveIntegerIdentifier(row.id, 'deckId');
-  if (!deckIdValidation.ok || typeof row.name !== 'string' || row.name.trim() === '') {
+  if (
+    !deckIdValidation.ok
+    || !matchesExpectedIdentifier(deckIdValidation, options.expectedDeckId, 'deckId')
+    || typeof row.name !== 'string'
+    || row.name.trim() === ''
+  ) {
     throw new TypeError(INVALID_DECK_MUTATION_RESULT_ERROR);
   }
 }
 
-function assertDeckRemovalResult(row) {
+function assertDeckRemovalResult(row, options = {}) {
   assertObjectHasOwnFields(row, ['id'], INVALID_DECK_REMOVAL_RESULT_ERROR);
 
   const deckIdValidation = validatePositiveIntegerIdentifier(row.id, 'deckId');
-  if (!deckIdValidation.ok) {
+  if (
+    !deckIdValidation.ok
+    || !matchesExpectedIdentifier(deckIdValidation, options.expectedDeckId, 'deckId')
+  ) {
     throw new TypeError(INVALID_DECK_REMOVAL_RESULT_ERROR);
   }
 }
 
-function assertDeckRenameControlResult(row) {
+function assertDeckRenameControlResult(row, options = {}) {
   assertObjectHasOwnFields(
     row,
     ['deckExists', 'duplicateExists', 'deck'],
@@ -467,7 +487,7 @@ function assertDeckRenameControlResult(row) {
     return;
   }
 
-  assertDeckMutationResult(row.deck);
+  assertDeckMutationResult(row.deck, { expectedDeckId: options.expectedDeckId });
 }
 
 function assertDeckListResult(row) {
@@ -1050,7 +1070,7 @@ async function createCard(req, res, db) {
       return res.status(404).json({ error: 'Deck not found' });
     }
 
-    assertCardMutationResult(createdCard);
+    assertCardMutationResult(createdCard, { expectedDeckId: deckIdValidation.value });
     return res.status(201).json(toCardMutationPayload(createdCard));
   } catch (err) {
     console.error(err);
@@ -1107,7 +1127,7 @@ async function updateCard(req, res, db) {
       return res.status(404).json({ error: 'Card not found' });
     }
 
-    assertCardMutationResult(updatedCard);
+    assertCardMutationResult(updatedCard, { expectedCardId: cardIdValidation.value });
     return res.json(toCardMutationPayload(updatedCard));
   } catch (err) {
     console.error(err);
@@ -1143,7 +1163,7 @@ async function deleteCard(req, res, db) {
       return res.status(404).json({ error: 'Card not found' });
     }
 
-    assertCardRemovalResult(deletedCard);
+    assertCardRemovalResult(deletedCard, { expectedCardId: cardIdValidation.value });
     return res.json({
       success: true,
       card: toDeleteCardResponseCardPayload(deletedCard),
@@ -1385,7 +1405,7 @@ async function renameDeck(req, res, db) {
     );
 
     const result = getRequiredSingleQueryRow(queryResult, INVALID_DECK_RENAME_CONTROL_RESULT_ERROR);
-    assertDeckRenameControlResult(result);
+    assertDeckRenameControlResult(result, { expectedDeckId: deckId });
     if (!result.deckExists) {
       return res.status(404).json({ error: 'Deck not found' });
     }
@@ -1465,7 +1485,7 @@ async function deleteDeck(req, res, db) {
       return res.status(404).json({ error: 'Deck not found' });
     }
 
-    assertDeckRemovalResult(deletedDeck);
+    assertDeckRemovalResult(deletedDeck, { expectedDeckId: deckId });
     return res.json({ success: true });
   } catch (err) {
     console.error(err);
