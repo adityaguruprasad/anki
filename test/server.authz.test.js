@@ -361,6 +361,26 @@ test('POST /api/decks creates normalized deck with one query', async () => {
   assertExplicitPublicDeckReturning(db.calls[0].sql);
 });
 
+test('POST /api/decks accepts Date created_at returned from pg', async () => {
+  const createdAt = new Date('2026-05-08T00:00:00.000Z');
+  const deck = {
+    id: 12,
+    user_id: 'user-1',
+    name: 'Biology',
+    description: null,
+    created_at: createdAt,
+  };
+  const db = createDb([{ rowCount: 1, rows: [deck] }]);
+  const req = { body: { name: 'Biology' }, user: { userId: 'user-1' } };
+  const res = createRes();
+
+  await createDeck(req, res, db);
+
+  assert.equal(res.statusCode, 201);
+  assert.deepEqual(res.body, deck);
+  assert.equal(res.body.created_at, createdAt);
+});
+
 test('POST /api/decks fails closed when the inserted deck owner mismatches the request user', async (t) => {
   const db = createDb([
     {
@@ -428,6 +448,35 @@ test('POST /api/decks returns 500 when the inserted row is missing deck response
   assert.deepEqual(res.body, { error: 'Internal server error' });
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, ['user-1', 'Biology']);
+});
+
+test('POST /api/decks fails closed when inserted deck read fields are malformed', async (t) => {
+  const createdDeck = {
+    id: 12,
+    user_id: 'user-1',
+    name: 'Biology',
+    description: null,
+    created_at: '2026-05-08T00:00:00.000Z',
+  };
+  const malformedRows = [
+    { ...createdDeck, description: 123 },
+    { ...createdDeck, created_at: null },
+    { ...createdDeck, created_at: 'not-a-date' },
+  ];
+  t.mock.method(console, 'error', () => {});
+
+  for (const row of malformedRows) {
+    const db = createDb([{ rowCount: 1, rows: [row] }]);
+    const req = { body: { name: 'Biology' }, user: { userId: 'user-1' } };
+    const res = createRes();
+
+    await createDeck(req, res, db);
+
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.body, { error: 'Internal server error' });
+    assert.equal(db.calls.length, 1);
+    assert.deepEqual(db.calls[0].params, ['user-1', 'Biology']);
+  }
 });
 
 test('POST /api/decks fails closed when the insert result cardinality is malformed', async (t) => {
@@ -552,7 +601,7 @@ test('PATCH /api/decks/:deckId renames an owned deck with one atomic query', asy
     user_id: 'user-1',
     name: 'Organic Chemistry',
     description: null,
-    created_at: '2026-05-08T00:00:00.000Z',
+    created_at: '2026-05-08T00:00:00.123456Z',
   };
   const db = createDb([
     {
@@ -576,8 +625,34 @@ test('PATCH /api/decks/:deckId renames an owned deck with one atomic query', asy
   assert.match(db.calls[0].sql, /WHERE\s+id\s+=\s+\$1\s+AND\s+user_id\s+=\s+\$2/i);
   assert.match(db.calls[0].sql, /LOWER\(TRIM\(name\)\)\s+=\s+LOWER\(TRIM\(\$3\)\)/i);
   assert.match(db.calls[0].sql, /NOT\s+EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+duplicate\s*\)/i);
+  assert.match(db.calls[0].sql, /row_to_json\(deck_payload\)/i);
+  assert.match(db.calls[0].sql, /to_char\(\s*\(\s*updated\.created_at\s+AT\s+TIME\s+ZONE\s+'UTC'\s*\)\s+AT\s+TIME\s+ZONE\s+'UTC'\s*,\s*'YYYY-MM-DD"T"HH24:MI:SS\.US"Z"'\s*\)\s+AS\s+created_at/i);
+  assert.doesNotMatch(db.calls[0].sql, /row_to_json\(updated\)/i);
   assertExplicitPublicDeckReturning(db.calls[0].sql);
   assert.doesNotMatch(db.calls[0].sql, /RETURNING\s+d\.\*/i);
+});
+
+test('PATCH /api/decks/:deckId accepts timezone-qualified nested deck created_at from rename control result', async () => {
+  const deck = {
+    id: 42,
+    user_id: 'user-1',
+    name: 'Organic Chemistry',
+    description: null,
+    created_at: '2026-05-08T00:00:00.123456Z',
+  };
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [{ deckExists: true, duplicateExists: false, deck }],
+    },
+  ]);
+  const req = { params: { deckId: '42' }, body: { name: 'Organic Chemistry' }, user: { userId: 'user-1' } };
+  const res = createRes();
+
+  await renameDeck(req, res, db);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, deck);
 });
 
 test('PATCH /api/decks/:deckId returns 500 when the renamed row is missing deck response fields', async (t) => {
@@ -603,6 +678,44 @@ test('PATCH /api/decks/:deckId returns 500 when the renamed row is missing deck 
   assert.deepEqual(db.calls[0].params, [42, 'user-1', 'Organic Chemistry']);
 });
 
+test('PATCH /api/decks/:deckId rejects date-only or timezone-less nested deck created_at from rename control result', async (t) => {
+  const deck = {
+    id: 42,
+    user_id: 'user-1',
+    name: 'Organic Chemistry',
+    description: null,
+    created_at: '2026-05-08T00:00:00.000Z',
+  };
+  const invalidCreatedAtValues = [
+    '2026-05-08',
+    '2026-05-08T00:00:00',
+    '2026-05-08T00:00:00.000',
+  ];
+  t.mock.method(console, 'error', () => {});
+
+  for (const createdAt of invalidCreatedAtValues) {
+    const db = createDb([
+      {
+        rowCount: 1,
+        rows: [{
+          deckExists: true,
+          duplicateExists: false,
+          deck: { ...deck, created_at: createdAt },
+        }],
+      },
+    ]);
+    const req = { params: { deckId: '42' }, body: { name: 'Organic Chemistry' }, user: { userId: 'user-1' } };
+    const res = createRes();
+
+    await renameDeck(req, res, db);
+
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.body, { error: 'Internal server error' });
+    assert.equal(db.calls.length, 1);
+    assert.deepEqual(db.calls[0].params, [42, 'user-1', 'Organic Chemistry']);
+  }
+});
+
 test('PATCH /api/decks/:deckId fails closed when the rename control result is malformed', async (t) => {
   const deck = {
     id: 42,
@@ -623,6 +736,9 @@ test('PATCH /api/decks/:deckId fails closed when the rename control result is ma
     { rowCount: 1, rows: [{ deckExists: true, duplicateExists: false, deck: null }] },
     { rowCount: 1, rows: [{ deckExists: true, duplicateExists: false, deck: { ...deck, id: 43 } }] },
     { rowCount: 1, rows: [{ deckExists: true, duplicateExists: false, deck: { ...deck, user_id: 'other-user' } }] },
+    { rowCount: 1, rows: [{ deckExists: true, duplicateExists: false, deck: { ...deck, description: 123 } }] },
+    { rowCount: 1, rows: [{ deckExists: true, duplicateExists: false, deck: { ...deck, created_at: null } }] },
+    { rowCount: 1, rows: [{ deckExists: true, duplicateExists: false, deck: { ...deck, created_at: 'not-a-date' } }] },
   ];
   t.mock.method(console, 'error', () => {});
 
@@ -690,8 +806,8 @@ test('GET /api/decks returns decks with one user-scoped aggregate query', async 
     {
       rowCount: 2,
       rows: [
-        { id: 1, user_id: 'user-1', name: 'Biology', description: null, created_at: '2026-05-08', totalCards: '10', dueCards: '3', private_note: 'do not expose' },
-        { id: 2, user_id: 'user-1', name: 'Math', description: 'Algebra', created_at: '2026-05-08', totalCards: '4', dueCards: '0', private_note: 'do not expose' },
+        { id: 1, user_id: 'user-1', name: 'Biology', description: null, created_at: '2026-05-08T00:00:00.000Z', totalCards: '10', dueCards: '3', private_note: 'do not expose' },
+        { id: 2, user_id: 'user-1', name: 'Math', description: 'Algebra', created_at: '2026-05-08T00:00:00.000Z', totalCards: '4', dueCards: '0', private_note: 'do not expose' },
       ],
     },
   ]);
@@ -702,8 +818,8 @@ test('GET /api/decks returns decks with one user-scoped aggregate query', async 
 
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, [
-    { id: 1, user_id: 'user-1', name: 'Biology', description: null, created_at: '2026-05-08', totalCards: 10, dueCards: 3 },
-    { id: 2, user_id: 'user-1', name: 'Math', description: 'Algebra', created_at: '2026-05-08', totalCards: 4, dueCards: 0 },
+    { id: 1, user_id: 'user-1', name: 'Biology', description: null, created_at: '2026-05-08T00:00:00.000Z', totalCards: 10, dueCards: 3 },
+    { id: 2, user_id: 'user-1', name: 'Math', description: 'Algebra', created_at: '2026-05-08T00:00:00.000Z', totalCards: 4, dueCards: 0 },
   ]);
   assert.equal(Object.hasOwn(res.body[0], 'private_note'), false);
   assert.equal(db.calls.length, 1);
@@ -725,7 +841,7 @@ test('GET /api/decks preserves empty decks with zero counts', async () => {
     {
       rowCount: 1,
       rows: [
-        { id: 3, user_id: 'user-1', name: 'Empty', description: null, created_at: '2026-05-08', totalCards: '0', dueCards: '0' },
+        { id: 3, user_id: 'user-1', name: 'Empty', description: null, created_at: '2026-05-08T00:00:00.000Z', totalCards: '0', dueCards: '0' },
       ],
     },
   ]);
@@ -736,18 +852,25 @@ test('GET /api/decks preserves empty decks with zero counts', async () => {
 
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, [
-    { id: 3, user_id: 'user-1', name: 'Empty', description: null, created_at: '2026-05-08', totalCards: 0, dueCards: 0 },
+    { id: 3, user_id: 'user-1', name: 'Empty', description: null, created_at: '2026-05-08T00:00:00.000Z', totalCards: 0, dueCards: 0 },
   ]);
   assert.equal(db.calls.length, 1);
   assert.match(db.calls[0].sql, /LEFT JOIN cards c/);
 });
 
 test('GET /api/decks converts aggregate strings to numbers', async () => {
+  const deck = {
+    id: 4,
+    user_id: 'user-1',
+    name: 'Chemistry',
+    description: null,
+    created_at: '2026-05-08T00:00:00.000Z',
+  };
   const db = createDb([
     {
       rowCount: 1,
       rows: [
-        { id: 4, user_id: 'user-1', name: 'Chemistry', totalCards: '12', dueCards: '5' },
+        { ...deck, totalCards: '12', dueCards: '5' },
       ],
     },
   ]);
@@ -758,7 +881,7 @@ test('GET /api/decks converts aggregate strings to numbers', async () => {
 
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, [
-    { id: 4, user_id: 'user-1', name: 'Chemistry', totalCards: 12, dueCards: 5 },
+    { ...deck, totalCards: 12, dueCards: 5 },
   ]);
   assert.equal(typeof res.body[0].totalCards, 'number');
   assert.equal(typeof res.body[0].dueCards, 'number');
@@ -769,9 +892,9 @@ test('GET /api/decks normalizes safe aggregate count representations', async () 
     {
       rowCount: 3,
       rows: [
-        { id: 5, user_id: 'user-1', name: 'String Counts', totalCards: '12', dueCards: '2' },
-        { id: 6, user_id: 'user-1', name: 'BigInt Counts', totalCards: 12n, dueCards: 2n },
-        { id: 7, user_id: 'user-1', name: 'Number Counts', totalCards: 12, dueCards: 2 },
+        { id: 5, user_id: 'user-1', name: 'String Counts', description: null, created_at: '2026-05-08T00:00:00.000Z', totalCards: '12', dueCards: '2' },
+        { id: 6, user_id: 'user-1', name: 'BigInt Counts', description: null, created_at: '2026-05-08T00:00:00.000Z', totalCards: 12n, dueCards: 2n },
+        { id: 7, user_id: 'user-1', name: 'Number Counts', description: null, created_at: '2026-05-08T00:00:00.000Z', totalCards: 12, dueCards: 2 },
       ],
     },
   ]);
@@ -782,9 +905,9 @@ test('GET /api/decks normalizes safe aggregate count representations', async () 
 
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, [
-    { id: 5, user_id: 'user-1', name: 'String Counts', totalCards: 12, dueCards: 2 },
-    { id: 6, user_id: 'user-1', name: 'BigInt Counts', totalCards: 12, dueCards: 2 },
-    { id: 7, user_id: 'user-1', name: 'Number Counts', totalCards: 12, dueCards: 2 },
+    { id: 5, user_id: 'user-1', name: 'String Counts', description: null, created_at: '2026-05-08T00:00:00.000Z', totalCards: 12, dueCards: 2 },
+    { id: 6, user_id: 'user-1', name: 'BigInt Counts', description: null, created_at: '2026-05-08T00:00:00.000Z', totalCards: 12, dueCards: 2 },
+    { id: 7, user_id: 'user-1', name: 'Number Counts', description: null, created_at: '2026-05-08T00:00:00.000Z', totalCards: 12, dueCards: 2 },
   ]);
   assert.equal(db.calls.length, 1);
 });
@@ -795,7 +918,7 @@ test('GET /api/decks fails closed when the deck-list query result shape is malfo
     user_id: 'user-1',
     name: 'Biology',
     description: null,
-    created_at: '2026-05-08',
+    created_at: '2026-05-08T00:00:00.000Z',
     totalCards: '3',
     dueCards: '1',
   };
@@ -830,7 +953,15 @@ test('GET /api/decks fails closed when the expected deck owner is unavailable', 
     {
       rowCount: 1,
       rows: [
-        { id: 7, user_id: 'user-1', name: 'Biology', totalCards: '3', dueCards: '1' },
+        {
+          id: 7,
+          user_id: 'user-1',
+          name: 'Biology',
+          description: null,
+          created_at: '2026-05-08T00:00:00.000Z',
+          totalCards: '3',
+          dueCards: '1',
+        },
       ],
     },
   ]);
@@ -847,20 +978,34 @@ test('GET /api/decks fails closed when the expected deck owner is unavailable', 
 });
 
 test('GET /api/decks fails closed when a deck-list row is missing or cannot use required response fields', async (t) => {
+  const validRow = {
+    id: 7,
+    user_id: 'user-1',
+    name: 'Biology',
+    description: null,
+    created_at: '2026-05-08T00:00:00.000Z',
+    totalCards: '3',
+    dueCards: '1',
+  };
   const malformedRows = [
-    { id: 7, totalCards: '3', dueCards: '1' },
-    { id: 7, name: 'Biology', totalCards: '3', dueCards: '1' },
-    { id: 7, user_id: 'other-user', name: 'Biology', totalCards: '3', dueCards: '1' },
-    { id: 7, name: 'Biology', dueCards: '1' },
-    { id: 7, name: 'Biology', totalCards: '3' },
-    { id: 'deck-7', name: 'Biology', totalCards: '3', dueCards: '1' },
-    { id: 7, name: '', totalCards: '3', dueCards: '1' },
-    { id: 7, name: '   ', totalCards: '3', dueCards: '1' },
-    { id: 7, name: null, totalCards: '3', dueCards: '1' },
-    { id: 7, name: 'Biology', totalCards: '1e3', dueCards: '1' },
-    { id: 7, name: 'Biology', totalCards: Number.MAX_SAFE_INTEGER + 1, dueCards: 0 },
-    { id: 7, name: 'Biology', totalCards: '9007199254740992', dueCards: 0 },
-    { id: 7, name: 'Biology', totalCards: 1, dueCards: 2 },
+    { ...validRow, user_id: undefined },
+    { ...validRow, user_id: 'other-user' },
+    { ...validRow, id: 'deck-7' },
+    { ...validRow, name: '' },
+    { ...validRow, name: '   ' },
+    { ...validRow, name: null },
+    { ...validRow, description: undefined },
+    { ...validRow, description: 123 },
+    { ...validRow, created_at: undefined },
+    { ...validRow, created_at: null },
+    { ...validRow, created_at: '2026-05-08' },
+    { ...validRow, created_at: 'not-a-date' },
+    { ...validRow, totalCards: undefined },
+    { ...validRow, dueCards: undefined },
+    { ...validRow, totalCards: '1e3' },
+    { ...validRow, totalCards: Number.MAX_SAFE_INTEGER + 1 },
+    { ...validRow, totalCards: '9007199254740992' },
+    { ...validRow, totalCards: 1, dueCards: 2 },
   ];
   t.mock.method(console, 'error', () => {});
 

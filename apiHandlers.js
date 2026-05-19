@@ -389,6 +389,10 @@ function isValidPersistedReviewCount(value) {
   return Number.isSafeInteger(value) && value >= 0;
 }
 
+function isValidPersistedDeckDescription(value) {
+  return value === null || typeof value === 'string';
+}
+
 function matchesExpectedIdentifier(validation, expectedValue, fieldName) {
   if (expectedValue === undefined) {
     return true;
@@ -496,8 +500,8 @@ function assertCardReadResult(row, errorMessage = INVALID_CARD_READ_RESULT_ERROR
   }
 }
 
-function assertDeckMutationResult(row, options = {}) {
-  assertObjectHasOwnFields(row, DECK_READ_FIELDS, INVALID_DECK_MUTATION_RESULT_ERROR);
+function assertDeckReadResult(row, errorMessage, options = {}) {
+  assertObjectHasOwnFields(row, DECK_READ_FIELDS, errorMessage);
 
   const deckIdValidation = validatePositiveIntegerIdentifier(row.id, 'deckId');
   if (
@@ -505,11 +509,17 @@ function assertDeckMutationResult(row, options = {}) {
     || !matchesExpectedIdentifier(deckIdValidation, options.expectedDeckId, 'deckId')
     || typeof row.name !== 'string'
     || row.name.trim() === ''
+    || !isValidPersistedDeckDescription(row.description)
+    || !isValidRequiredDatabaseTimestamp(row.created_at)
   ) {
-    throw new TypeError(INVALID_DECK_MUTATION_RESULT_ERROR);
+    throw new TypeError(errorMessage);
   }
 
-  assertExpectedDeckOwner(row, options.expectedUserId, INVALID_DECK_MUTATION_RESULT_ERROR);
+  assertExpectedDeckOwner(row, options.expectedUserId, errorMessage);
+}
+
+function assertDeckMutationResult(row, options = {}) {
+  assertDeckReadResult(row, INVALID_DECK_MUTATION_RESULT_ERROR, options);
 }
 
 function assertDeckRemovalResult(row, options = {}) {
@@ -554,22 +564,12 @@ function assertDeckRenameControlResult(row, options = {}) {
 }
 
 function assertDeckListResult(row, options = {}) {
+  assertDeckReadResult(row, INVALID_DECK_LIST_RESULT_ERROR, options);
   assertObjectHasOwnFields(
     row,
-    ['id', 'user_id', 'name', 'totalCards', 'dueCards'],
+    ['totalCards', 'dueCards'],
     INVALID_DECK_LIST_RESULT_ERROR
   );
-
-  const deckIdValidation = validatePositiveIntegerIdentifier(row.id, 'deckId');
-  if (
-    !deckIdValidation.ok
-    || typeof row.name !== 'string'
-    || row.name.trim() === ''
-  ) {
-    throw new TypeError(INVALID_DECK_LIST_RESULT_ERROR);
-  }
-
-  assertExpectedDeckOwner(row, options.expectedUserId, INVALID_DECK_LIST_RESULT_ERROR);
 }
 
 function assertCardBrowseCursorResult(row) {
@@ -1491,7 +1491,15 @@ async function renameDeck(req, res, db) {
        SELECT
          EXISTS (SELECT 1 FROM target) AS "deckExists",
          EXISTS (SELECT 1 FROM duplicate) AS "duplicateExists",
-         (SELECT row_to_json(updated) FROM updated) AS deck`,
+         (SELECT row_to_json(deck_payload)
+          FROM (
+            SELECT updated.id,
+                   updated.user_id,
+                   updated.name,
+                   updated.description,
+                   to_char((updated.created_at AT TIME ZONE 'UTC') AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS created_at
+            FROM updated
+          ) deck_payload) AS deck`,
       [deckId, req.user.userId, deckName]
     );
 
