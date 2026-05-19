@@ -26,7 +26,11 @@ test('StudySession validates due-card JSON before storing or branching on cards'
     jsonIndex,
   );
   const validationIndex = studySessionSource.indexOf(
-    'const selectedCard = selectValidatedStudySessionDueCard(cards);',
+    'const selectedCard = selectValidatedStudySessionDueCard(cards, {',
+  );
+  const expectedDeckIndex = studySessionSource.indexOf(
+    'expectedDeckId: requestDeckId,',
+    validationIndex,
   );
   const setCurrentCardIndex = studySessionSource.indexOf('setCurrentCard(selectedCard);');
   const dueBranchIndex = studySessionSource.indexOf('if (selectedCard) {');
@@ -41,6 +45,10 @@ test('StudySession validates due-card JSON before storing or branching on cards'
     'Expected the stale-request guard to stay before due-card validation',
   );
   assert.ok(validationIndex > jsonIndex, 'Expected validation to happen after JSON parsing');
+  assert.ok(
+    expectedDeckIndex > validationIndex && expectedDeckIndex < setCurrentCardIndex,
+    'Expected due-card validation to require the requested deck id before storing a card',
+  );
   assert.ok(
     validationIndex < setCurrentCardIndex,
     'Expected validation to happen before storing the selected card',

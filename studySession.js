@@ -110,7 +110,9 @@ const StudySession = ({ env, onAuthExpired }) => {
 
       if (!isCurrentRequest()) return;
 
-      const selectedCard = selectValidatedStudySessionDueCard(cards);
+      const selectedCard = selectValidatedStudySessionDueCard(cards, {
+        expectedDeckId: requestDeckId,
+      });
 
       activeDeckIdRef.current = requestDeckId;
       if (selectedCard) {

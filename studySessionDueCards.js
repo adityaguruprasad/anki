@@ -1,4 +1,4 @@
-const { hasRouteSafeCardId } = require('./cardIdentifier');
+const { hasRouteSafeCardId, normalizeRouteSafeId } = require('./cardIdentifier');
 
 const MALFORMED_DUE_CARD_PAYLOAD_ERROR = 'Malformed due-card payload';
 
@@ -6,11 +6,22 @@ function hasSafeStudySessionCardId(value) {
   return hasRouteSafeCardId(value);
 }
 
+function hasMatchingExpectedDeckId(deckId, expectedDeckId) {
+  const normalizedDeckId = normalizeRouteSafeId(deckId);
+  const normalizedExpectedDeckId = normalizeRouteSafeId(expectedDeckId);
+
+  return normalizedDeckId !== null && normalizedDeckId === normalizedExpectedDeckId;
+}
+
 function isNonBlankCardContent(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
-function hasStudySessionDueCardRowPayload(card) {
+function hasStudySessionDueCardRowPayload(card, options = {}) {
+  const { expectedDeckId } = options;
+  // Only omitted/undefined preserves legacy unanchored callers; null or invalid values opt into validation and fail.
+  const hasExpectedDeckId = expectedDeckId !== undefined;
+
   return (
     card !== null
     && typeof card === 'object'
@@ -18,17 +29,18 @@ function hasStudySessionDueCardRowPayload(card) {
     && hasSafeStudySessionCardId(card.id)
     && isNonBlankCardContent(card.front_content)
     && isNonBlankCardContent(card.back_content)
+    && (!hasExpectedDeckId || hasMatchingExpectedDeckId(card.deck_id, expectedDeckId))
   );
 }
 
-function selectValidatedStudySessionDueCard(payload) {
+function selectValidatedStudySessionDueCard(payload, options = {}) {
   // This client requests due cards with limit=1; multiple rows mean the response contract is malformed.
   if (!Array.isArray(payload) || payload.length > 1) {
     throw new Error(MALFORMED_DUE_CARD_PAYLOAD_ERROR);
   }
 
   for (const card of payload) {
-    if (!hasStudySessionDueCardRowPayload(card)) {
+    if (!hasStudySessionDueCardRowPayload(card, options)) {
       throw new Error(MALFORMED_DUE_CARD_PAYLOAD_ERROR);
     }
   }

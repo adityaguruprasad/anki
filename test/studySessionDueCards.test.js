@@ -16,6 +16,7 @@ test('selectValidatedStudySessionDueCard keeps empty arrays on the no-due path',
 test('selectValidatedStudySessionDueCard selects a valid card and preserves extra fields', () => {
   const card = {
     id: '42',
+    deck_id: '7',
     front_content: 'Question',
     back_content: 'Answer',
     next_review: '2026-05-10T20:00:00.000Z',
@@ -24,6 +25,74 @@ test('selectValidatedStudySessionDueCard selects a valid card and preserves extr
   };
 
   assert.equal(selectValidatedStudySessionDueCard([card]), card);
+});
+
+test('selectValidatedStudySessionDueCard accepts cards anchored to the requested deck', () => {
+  const card = {
+    id: '42',
+    deck_id: '0007',
+    front_content: 'Question',
+    back_content: 'Answer',
+  };
+
+  assert.equal(
+    selectValidatedStudySessionDueCard([card], { expectedDeckId: ' 7 ' }),
+    card,
+  );
+  assert.equal(hasStudySessionDueCardRowPayload(card, { expectedDeckId: 7 }), true);
+});
+
+test('selectValidatedStudySessionDueCard rejects cards outside the requested deck', () => {
+  const baseCard = {
+    id: 42,
+    deck_id: 7,
+    front_content: 'Question',
+    back_content: 'Answer',
+  };
+  const malformedCards = [
+    { ...baseCard, deck_id: undefined },
+    { ...baseCard, deck_id: null },
+    { ...baseCard, deck_id: '' },
+    { ...baseCard, deck_id: '  ' },
+    { ...baseCard, deck_id: 'deck-7' },
+    { ...baseCard, deck_id: '0' },
+    { ...baseCard, deck_id: 0 },
+    { ...baseCard, deck_id: MAX_POSTGRES_SERIAL_ID + 1 },
+    { ...baseCard, deck_id: 8 },
+    { ...baseCard, deck_id: '0008' },
+  ];
+
+  malformedCards.forEach((card) => {
+    assert.throws(
+      () => selectValidatedStudySessionDueCard([card], { expectedDeckId: 7 }),
+      new RegExp(MALFORMED_DUE_CARD_PAYLOAD_ERROR),
+    );
+    assert.equal(hasStudySessionDueCardRowPayload(card, { expectedDeckId: 7 }), false);
+  });
+});
+
+test('selectValidatedStudySessionDueCard rejects unusable expected deck ids when a card is returned', () => {
+  const card = {
+    id: 42,
+    deck_id: 7,
+    front_content: 'Question',
+    back_content: 'Answer',
+  };
+
+  [
+    null,
+    '',
+    'deck-7',
+    '0',
+    0,
+    MAX_POSTGRES_SERIAL_ID + 1,
+  ].forEach((expectedDeckId) => {
+    assert.throws(
+      () => selectValidatedStudySessionDueCard([card], { expectedDeckId }),
+      new RegExp(MALFORMED_DUE_CARD_PAYLOAD_ERROR),
+    );
+    assert.equal(hasStudySessionDueCardRowPayload(card, { expectedDeckId }), false);
+  });
 });
 
 test('selectValidatedStudySessionDueCard rejects multiple cards for the limit-one study request', () => {
