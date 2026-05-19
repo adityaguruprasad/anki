@@ -130,6 +130,43 @@ function createCardReadRow(overrides = {}) {
   };
 }
 
+function createStudySessionCardReadRow(overrides = {}) {
+  return {
+    ...createCardReadRow(overrides),
+    __owned_user_id: Object.hasOwn(overrides, '__owned_user_id')
+      ? overrides.__owned_user_id
+      : 'user-1',
+  };
+}
+
+function createStudySessionUpdateRow(overrides = {}) {
+  return {
+    id: 7,
+    next_review: '2026-05-08T12:00:00.000Z',
+    interval: 3,
+    ease_factor: 2.6,
+    review_count: 3,
+    last_reviewed: '2026-05-08T12:05:00.000Z',
+    __owned_user_id: 'user-1',
+    __updated: true,
+    ...overrides,
+  };
+}
+
+function createStudySessionConflictRow(overrides = {}) {
+  return {
+    id: null,
+    next_review: null,
+    interval: null,
+    ease_factor: null,
+    review_count: null,
+    last_reviewed: null,
+    __owned_user_id: 'user-1',
+    __updated: false,
+    ...overrides,
+  };
+}
+
 function assertExplicitPublicCardReadSelect(sql) {
   const selectMatch = /\bSELECT\b/i.exec(sql);
   const fromMatch = /\bFROM\s+decks\s+d\b/i.exec(sql);
@@ -206,6 +243,7 @@ function assertStudySessionCardReadSql(sql) {
   }
 
   assert.match(sql, /AS "__is_due"/);
+  assert.match(sql, /d\.user_id\s+AS\s+"__owned_user_id"/i);
   assert.match(sql, /JOIN\s+decks\s+d\s+ON\s+d\.id\s+=\s+c\.deck_id/i);
   assert.match(sql, /WHERE\s+c\.id\s+=\s+\$1/i);
   assert.match(sql, /d\.user_id\s+=\s+\$2/i);
@@ -216,7 +254,7 @@ function assertStudySessionCardReadSql(sql) {
 
 function assertStudySessionUpdateSql(sql) {
   assert.match(sql, /WITH\s+target\s+AS\s*\(/i);
-  assert.match(sql, /SELECT\s+c\.id\s+FROM\s+cards\s+c/i);
+  assert.match(sql, /SELECT\s+c\.id\s*,\s*d\.user_id\s+AS\s+"__owned_user_id"\s+FROM\s+cards\s+c/i);
   assert.match(sql, /JOIN\s+decks\s+d\s+ON\s+d\.id\s+=\s+c\.deck_id/i);
   assert.match(sql, /WHERE\s+c\.id\s+=\s+\$5/i);
   assert.match(sql, /d\.user_id\s+=\s+\$6/i);
@@ -227,13 +265,14 @@ function assertStudySessionUpdateSql(sql) {
   assert.match(sql, /interval\s+=\s+\$3/i);
   assert.match(sql, /ease_factor\s+=\s+\$4/i);
   assert.match(sql, /review_count\s+=\s+COALESCE\s*\(\s*review_count\s*,\s*0\s*\)\s*\+\s*1/i);
-  assert.match(sql, /WHERE\s+id\s+=\s+\$5/i);
-  assert.match(sql, /EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+target/i);
+  assert.match(sql, /FROM\s+target/i);
+  assert.match(sql, /WHERE\s+cards\.id\s+=\s+\$5/i);
   assert.match(sql, /target\.id\s+=\s+cards\.id/i);
   assertDuePredicate(sql, 'cards');
+  assert.match(sql, /target\.__owned_user_id/i);
   assert.match(sql, /TRUE\s+AS\s+"__updated"/i);
   assert.match(sql, /UNION\s+ALL/i);
-  assert.match(sql, /UNION\s+ALL\s+SELECT\s+NULL\s+AS\s+id[\s\S]*?NULL\s+AS\s+last_reviewed[\s\S]*?FALSE\s+AS\s+"__updated"[\s\S]*?FROM\s+target/i);
+  assert.match(sql, /UNION\s+ALL\s+SELECT\s+NULL\s+AS\s+id[\s\S]*?NULL\s+AS\s+last_reviewed[\s\S]*?target\.__owned_user_id\s+AS\s+"__owned_user_id"[\s\S]*?FALSE\s+AS\s+"__updated"[\s\S]*?FROM\s+target/i);
   assert.match(sql, /FALSE\s+AS\s+"__updated"/i);
   assert.match(sql, /WHERE\s+NOT\s+EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+updated\s*\)/i);
 }
@@ -3851,7 +3890,7 @@ test('POST /api/study-session returns 409 and skips scheduling when an owned car
   const db = createDb([
     {
       rowCount: 1,
-      rows: [createCardReadRow({
+      rows: [createStudySessionCardReadRow({
         id: 7,
         deck_id: 1,
         next_review: '2026-05-20T12:00:00.000Z',
@@ -3880,7 +3919,7 @@ test('POST /api/study-session returns 409 and skips scheduling when an owned car
 });
 
 test('POST /api/study-session rolls back before scheduling when the locked card read contract is malformed', async (t) => {
-  const validSourceCard = createCardReadRow({
+  const validSourceCard = createStudySessionCardReadRow({
     id: 7,
     deck_id: 1,
     front_content: 'Front',
@@ -3895,6 +3934,8 @@ test('POST /api/study-session rolls back before scheduling when the locked card 
   });
   const rowMissingDueSentinel = { ...validSourceCard };
   delete rowMissingDueSentinel.__is_due;
+  const rowMissingOwnerProof = { ...validSourceCard };
+  delete rowMissingOwnerProof.__owned_user_id;
   const rowMissingFrontContent = { ...validSourceCard };
   delete rowMissingFrontContent.front_content;
   const rowMissingNextReview = { ...validSourceCard };
@@ -3903,6 +3944,8 @@ test('POST /api/study-session rolls back before scheduling when the locked card 
     { name: 'mismatched card id', row: { ...validSourceCard, id: 8 } },
     { name: 'invalid card id', row: { ...validSourceCard, id: 'not-a-card' } },
     { name: 'invalid deck id', row: { ...validSourceCard, deck_id: 'not-a-deck' } },
+    { name: 'missing owner proof', row: rowMissingOwnerProof },
+    { name: 'mismatched owner proof', row: { ...validSourceCard, __owned_user_id: 'other-user' } },
     { name: 'missing due sentinel', row: rowMissingDueSentinel },
     { name: 'non-boolean due sentinel', row: { ...validSourceCard, __is_due: 'true' } },
     { name: 'missing front content', row: rowMissingFrontContent },
@@ -3914,15 +3957,7 @@ test('POST /api/study-session rolls back before scheduling when the locked card 
     { name: 'invalid ease factor', row: { ...validSourceCard, ease_factor: Number.NaN } },
     { name: 'invalid review count', row: { ...validSourceCard, review_count: -1 } },
   ];
-  const validUpdateRow = {
-    id: 7,
-    next_review: '2026-05-08T12:00:00.000Z',
-    interval: 3,
-    ease_factor: 2.6,
-    review_count: 3,
-    last_reviewed: '2026-05-08T12:05:00.000Z',
-    __updated: true,
-  };
+  const validUpdateRow = createStudySessionUpdateRow();
   t.mock.method(console, 'error', () => {});
 
   for (const { row } of malformedRows) {
@@ -3957,7 +3992,7 @@ test('POST /api/study-session rolls back before scheduling when the locked card 
 });
 
 test('POST /api/study-session rolls back before scheduling when the locked card read cardinality is malformed', async (t) => {
-  const sourceCard = createCardReadRow({
+  const sourceCard = createStudySessionCardReadRow({
     id: 7,
     deck_id: 1,
     next_review: '2026-05-08T12:00:00.000Z',
@@ -4011,6 +4046,7 @@ test('POST /api/study-session locks an owned due card before scheduling and upda
     ease_factor: 2.5,
     interval: 2,
     review_count: 2,
+    __owned_user_id: 'user-1',
     __is_due: true,
   };
   const updatedCard = {
@@ -4023,7 +4059,15 @@ test('POST /api/study-session locks an owned due card before scheduling and upda
   };
   const db = createTransactionDb([
     { rowCount: 1, rows: [sourceCard] },
-    { rowCount: 1, rows: [{ ...updatedCard, __updated: true, private_note: 'do not expose' }] },
+    {
+      rowCount: 1,
+      rows: [{
+        ...updatedCard,
+        __owned_user_id: 'user-1',
+        __updated: true,
+        private_note: 'do not expose',
+      }],
+    },
   ]);
   const req = { body: { cardId: 7, quality: 4 }, user: { userId: 'user-1' } };
   const res = createRes();
@@ -4062,7 +4106,7 @@ test('POST /api/study-session locks an owned due card before scheduling and upda
 
 test('POST /api/study-session treats unscheduled owned cards as due for review', async () => {
   const nextReview = '2026-05-08T12:00:00.000Z';
-  const sourceCard = createCardReadRow({
+  const sourceCard = createStudySessionCardReadRow({
     id: 7,
     deck_id: 1,
     next_review: null,
@@ -4081,7 +4125,7 @@ test('POST /api/study-session treats unscheduled owned cards as due for review',
   };
   const db = createDb([
     { rowCount: 1, rows: [sourceCard] },
-    { rowCount: 1, rows: [{ ...updatedCard, __updated: true }] },
+    { rowCount: 1, rows: [{ ...updatedCard, __owned_user_id: 'user-1', __updated: true }] },
   ]);
   const req = { body: { cardId: 7, quality: 4 }, user: { userId: 'user-1' } };
   const res = createRes();
@@ -4122,7 +4166,7 @@ test('POST /api/study-session returns updated scheduling metadata for successful
   const db = createDb([
     {
       rowCount: 1,
-      rows: [createCardReadRow({
+      rows: [createStudySessionCardReadRow({
         id: 7,
         deck_id: 1,
         next_review: '2026-05-08T12:00:00.000Z',
@@ -4132,7 +4176,7 @@ test('POST /api/study-session returns updated scheduling metadata for successful
         __is_due: true,
       })],
     },
-    { rowCount: 1, rows: [{ ...updatedCard, __updated: true }] },
+    { rowCount: 1, rows: [{ ...updatedCard, __owned_user_id: 'user-1', __updated: true }] },
   ]);
   const req = { body: { cardId: 7, quality: 4 }, user: { userId: 'user-1' } };
   const res = createRes();
@@ -4155,9 +4199,17 @@ test('POST /api/study-session returns updated scheduling metadata for successful
   assertStudySessionCardReadSql(db.calls[0].sql);
   assertStudySessionUpdateSql(db.calls[1].sql);
   assert.doesNotMatch(db.calls[1].sql, /last_reviewed\s+=\s+NOW\(\)/i);
-  const returningClause = db.calls[1].sql.match(/\bRETURNING\b([\s\S]*?)\bSELECT\b/i)?.[1];
+  const returningClause = db.calls[1].sql.match(/\bRETURNING\b([\s\S]*?)\)\s*SELECT\s+id,/i)?.[1];
   assert.ok(returningClause, 'expected UPDATE to include a RETURNING clause');
-  for (const column of ['id', 'next_review', 'interval', 'ease_factor', 'review_count', 'last_reviewed']) {
+  for (const column of [
+    'id',
+    'next_review',
+    'interval',
+    'ease_factor',
+    'review_count',
+    'last_reviewed',
+    '__owned_user_id',
+  ]) {
     assert.match(returningClause, new RegExp(`\\b${column}\\b`, 'i'));
   }
   assert.match(returningClause, /"__updated"/i);
@@ -4170,7 +4222,7 @@ test('POST /api/study-session returns 404 when final user-scoped update finds no
   const db = createDb([
     {
       rowCount: 1,
-      rows: [createCardReadRow({
+      rows: [createStudySessionCardReadRow({
         id: 7,
         deck_id: 1,
         next_review: '2026-05-08T12:00:00.000Z',
@@ -4208,7 +4260,7 @@ test('POST /api/study-session returns 409 when final due-gated update loses a st
   const db = createDb([
     {
       rowCount: 1,
-      rows: [createCardReadRow({
+      rows: [createStudySessionCardReadRow({
         id: 7,
         deck_id: 1,
         next_review: '2026-05-08T12:00:00.000Z',
@@ -4218,7 +4270,7 @@ test('POST /api/study-session returns 409 when final due-gated update loses a st
         __is_due: true,
       })],
     },
-    { rowCount: 1, rows: [{ __updated: false }] },
+    { rowCount: 1, rows: [createStudySessionConflictRow()] },
   ]);
   const req = { body: { cardId: 7, quality: 4 }, user: { userId: 'user-1' } };
   const res = createRes();
@@ -4237,8 +4289,28 @@ test('POST /api/study-session returns 409 when final due-gated update loses a st
   assert.deepEqual(db.calls[1].params.slice(1), ['2026-05-08T12:00:00.000Z', 3, 2.6, 7, 'user-1']);
 });
 
+test('POST /api/study-session rolls back when the final not-due sentinel is malformed', async (t) => {
+  const rowMissingOwnerProof = createStudySessionConflictRow();
+  delete rowMissingOwnerProof.__owned_user_id;
+  const malformedRows = [
+    { name: 'missing owner proof', row: rowMissingOwnerProof },
+    { name: 'mismatched owner proof', row: createStudySessionConflictRow({ __owned_user_id: 'other-user' }) },
+    { name: 'non-null id', row: createStudySessionConflictRow({ id: 7 }) },
+    {
+      name: 'non-null scheduling field',
+      row: createStudySessionConflictRow({ next_review: '2026-05-08T12:00:00.000Z' }),
+    },
+  ];
+
+  for (const { name, row } of malformedRows) {
+    await t.test(name, async () => {
+      await assertMalformedStudySessionUpdateRowRollsBack(row);
+    });
+  }
+});
+
 test('POST /api/study-session rolls back when the final update cardinality is malformed', async (t) => {
-  const sourceCard = createCardReadRow({
+  const sourceCard = createStudySessionCardReadRow({
     id: 7,
     deck_id: 1,
     next_review: '2026-05-08T12:00:00.000Z',
@@ -4247,15 +4319,7 @@ test('POST /api/study-session rolls back when the final update cardinality is ma
     review_count: 2,
     __is_due: true,
   });
-  const updatedCard = {
-    id: 7,
-    next_review: '2026-05-08T12:00:00.000Z',
-    interval: 3,
-    ease_factor: 2.6,
-    review_count: 3,
-    last_reviewed: '2026-05-08T12:05:00.000Z',
-    __updated: true,
-  };
+  const updatedCard = createStudySessionUpdateRow();
   const malformedUpdateResults = [
     { rowCount: 0, rows: [updatedCard] },
     { rowCount: 1, rows: [] },
@@ -4294,7 +4358,7 @@ async function assertMalformedStudySessionUpdateRowRollsBack(updateRow) {
   const db = createTransactionDb([
     {
       rowCount: 1,
-      rows: [createCardReadRow({
+      rows: [createStudySessionCardReadRow({
         id: 7,
         deck_id: 1,
         next_review: '2026-05-08T12:00:00.000Z',
@@ -4337,45 +4401,29 @@ async function assertMalformedStudySessionUpdateRowRollsBack(updateRow) {
 }
 
 test('POST /api/study-session rolls back when the final update result has a malformed sentinel', async () => {
-  await assertMalformedStudySessionUpdateRowRollsBack({
-    id: 7,
-    next_review: '2026-05-08T12:00:00.000Z',
-    interval: 3,
-    ease_factor: 2.6,
-    review_count: 3,
-    last_reviewed: '2026-05-08T12:05:00.000Z',
+  await assertMalformedStudySessionUpdateRowRollsBack(createStudySessionUpdateRow({
     __updated: 'false',
-  });
+  }));
 });
 
 test('POST /api/study-session rolls back when a card-shaped final update result is missing the sentinel', async () => {
-  const updateRow = {
-    id: 7,
-    next_review: '2026-05-08T12:00:00.000Z',
-    interval: 3,
-    ease_factor: 2.6,
-    review_count: 3,
-    last_reviewed: '2026-05-08T12:05:00.000Z',
-  };
+  const updateRow = createStudySessionUpdateRow();
+  delete updateRow.__updated;
 
   assert.equal(Object.hasOwn(updateRow, '__updated'), false);
   await assertMalformedStudySessionUpdateRowRollsBack(updateRow);
 });
 
 test('POST /api/study-session rolls back when a successful final update result violates response invariants', async (t) => {
-  const validUpdateRow = {
-    id: 7,
-    next_review: '2026-05-08T12:00:00.000Z',
-    interval: 3,
-    ease_factor: 2.6,
-    review_count: 3,
-    last_reviewed: '2026-05-08T12:05:00.000Z',
-    __updated: true,
-  };
+  const validUpdateRow = createStudySessionUpdateRow();
   const rowMissingId = { ...validUpdateRow };
   delete rowMissingId.id;
+  const rowMissingOwnerProof = { ...validUpdateRow };
+  delete rowMissingOwnerProof.__owned_user_id;
   const malformedRows = [
     { name: 'missing id', row: rowMissingId },
+    { name: 'missing owner proof', row: rowMissingOwnerProof },
+    { name: 'mismatched owner proof', row: { ...validUpdateRow, __owned_user_id: 'other-user' } },
     { name: 'non-numeric id', row: { ...validUpdateRow, id: 'card-7' } },
     { name: 'mismatched id', row: { ...validUpdateRow, id: 8 } },
     { name: 'zero id', row: { ...validUpdateRow, id: 0 } },

@@ -77,6 +77,7 @@ function createStudySessionDb(sourceCard) {
             ease_factor: params[3],
             review_count: 1,
             last_reviewed: params[0],
+            __owned_user_id: 'user-1',
             __updated: true,
           }],
         };
@@ -262,6 +263,7 @@ test('study session update writes scheduler output within card scheduling constr
     interval: 1,
     ease_factor: 1.3,
     review_count: 0,
+    __owned_user_id: 'user-1',
     __is_due: true,
   });
   const req = { body: { cardId: 17, quality: 3 }, user: { userId: 'user-1' } };
@@ -306,6 +308,7 @@ test('study session rejects invalid scheduler output before updating card schedu
         interval: 1,
         ease_factor: 2.5,
         review_count: 0,
+        __owned_user_id: 'user-1',
         __is_due: true,
       });
       const req = { body: { cardId: 17, quality: 3 }, user: { userId: 'user-1' } };

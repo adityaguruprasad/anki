@@ -139,8 +139,9 @@ function assertValidSchedulingUpdate(schedule) {
   }
 }
 
-function assertStudySessionCardReadResult(row, expectedCardId) {
+function assertStudySessionCardReadResult(row, expectedCardId, expectedUserId) {
   assertCardReadResult(row, INVALID_STUDY_SESSION_CARD_READ_RESULT_ERROR);
+  assertExpectedCardOwner(row, expectedUserId, INVALID_STUDY_SESSION_CARD_READ_RESULT_ERROR);
 
   if (
     validatePositiveIntegerIdentifier(row.id, 'cardId').value !== expectedCardId
@@ -151,12 +152,42 @@ function assertStudySessionCardReadResult(row, expectedCardId) {
   }
 }
 
-function assertStudySessionUpdateSucceeded(row, expectedCardId) {
+function assertStudySessionUpdateControlResult(row, expectedUserId) {
+  assertObjectHasOwnFields(
+    row,
+    ['__updated'],
+    INVALID_STUDY_SESSION_UPDATE_RESULT_ERROR
+  );
+  assertExpectedCardOwner(row, expectedUserId, INVALID_STUDY_SESSION_UPDATE_RESULT_ERROR);
+
+  if (typeof row.__updated !== 'boolean') {
+    throw new TypeError(INVALID_STUDY_SESSION_UPDATE_RESULT_ERROR);
+  }
+}
+
+function assertStudySessionUpdateConflict(row, expectedUserId) {
   assertObjectHasOwnFields(
     row,
     [...STUDY_SESSION_RESPONSE_CARD_FIELDS, '__updated'],
     INVALID_STUDY_SESSION_UPDATE_RESULT_ERROR
   );
+  assertStudySessionUpdateControlResult(row, expectedUserId);
+
+  if (
+    row.__updated !== false
+    || STUDY_SESSION_RESPONSE_CARD_FIELDS.some((field) => row[field] !== null)
+  ) {
+    throw new TypeError(INVALID_STUDY_SESSION_UPDATE_RESULT_ERROR);
+  }
+}
+
+function assertStudySessionUpdateSucceeded(row, expectedCardId, expectedUserId) {
+  assertObjectHasOwnFields(
+    row,
+    [...STUDY_SESSION_RESPONSE_CARD_FIELDS, '__updated'],
+    INVALID_STUDY_SESSION_UPDATE_RESULT_ERROR
+  );
+  assertStudySessionUpdateControlResult(row, expectedUserId);
 
   const cardIdValidation = validatePositiveIntegerIdentifier(row.id, 'cardId');
   if (
@@ -1263,6 +1294,7 @@ async function submitStudySession(req, res, db, calculateNextReview) {
 
     const cardResult = await client.query(
       `SELECT ${CARD_READ_SELECT_LIST},
+              d.user_id AS "__owned_user_id",
               ${getDueCardPredicate('c')} AS "__is_due"
        FROM cards c
        JOIN decks d ON d.id = c.deck_id
@@ -1277,7 +1309,7 @@ async function submitStudySession(req, res, db, calculateNextReview) {
       return res.status(404).json({ error: 'Card not found' });
     }
 
-    assertStudySessionCardReadResult(card, validCardId);
+    assertStudySessionCardReadResult(card, validCardId, req.user.userId);
     if (card.__is_due === false) {
       await rollbackTransaction();
       return res.status(409).json({ error: 'Card is not due' });
@@ -1291,7 +1323,8 @@ async function submitStudySession(req, res, db, calculateNextReview) {
     // CTE contract: no row -> missing/unowned 404; updated row -> success; target-only sentinel -> owned but no longer due 409.
     const updateResult = await client.query(
       `WITH target AS (
-         SELECT c.id
+         SELECT c.id,
+                d.user_id AS "__owned_user_id"
          FROM cards c
          JOIN decks d ON d.id = c.deck_id
          WHERE c.id = $5
@@ -1305,19 +1338,17 @@ async function submitStudySession(req, res, db, calculateNextReview) {
              interval = $3,
              ease_factor = $4,
              review_count = COALESCE(review_count, 0) + 1
-         WHERE id = $5
-           AND EXISTS (
-             SELECT 1
-             FROM target
-             WHERE target.id = cards.id
-           )
+         FROM target
+         WHERE cards.id = $5
+           AND target.id = cards.id
            AND ${getDueCardPredicate('cards')}
-         RETURNING id,
-                   next_review,
-                   interval,
-                   ease_factor,
-                   review_count,
-                   last_reviewed,
+         RETURNING cards.id,
+                   cards.next_review,
+                   cards.interval,
+                   cards.ease_factor,
+                   cards.review_count,
+                   cards.last_reviewed,
+                   target.__owned_user_id,
                    TRUE AS "__updated"
        )
        SELECT id,
@@ -1326,6 +1357,7 @@ async function submitStudySession(req, res, db, calculateNextReview) {
               ease_factor,
               review_count,
               last_reviewed,
+              "__owned_user_id",
               "__updated"
        FROM updated
        UNION ALL
@@ -1335,6 +1367,7 @@ async function submitStudySession(req, res, db, calculateNextReview) {
               NULL AS ease_factor,
               NULL AS review_count,
               NULL AS last_reviewed,
+              target.__owned_user_id AS "__owned_user_id",
               FALSE AS "__updated"
        FROM target
        WHERE NOT EXISTS (SELECT 1 FROM updated)`,
@@ -1346,12 +1379,14 @@ async function submitStudySession(req, res, db, calculateNextReview) {
       return res.status(404).json({ error: 'Card not found' });
     }
 
+    assertStudySessionUpdateControlResult(updatedCard, req.user.userId);
     if (updatedCard?.__updated === false) {
+      assertStudySessionUpdateConflict(updatedCard, req.user.userId);
       await rollbackTransaction();
       return res.status(409).json({ error: 'Card is not due' });
     }
 
-    assertStudySessionUpdateSucceeded(updatedCard, validCardId);
+    assertStudySessionUpdateSucceeded(updatedCard, validCardId, req.user.userId);
     const responseCard = toStudySessionResponseCardPayload(updatedCard);
     if (transactionStarted) {
       await client.query('COMMIT');
