@@ -322,6 +322,56 @@ test('POST /api/decks creates normalized deck with one query', async () => {
   assertExplicitPublicDeckReturning(db.calls[0].sql);
 });
 
+test('POST /api/decks fails closed when the inserted deck owner mismatches the request user', async (t) => {
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [{
+        id: 12,
+        user_id: 'other-user',
+        name: 'Biology',
+        description: null,
+        created_at: '2026-05-08T00:00:00.000Z',
+      }],
+    },
+  ]);
+  const req = { body: { name: 'Biology' }, user: { userId: 'user-1' } };
+  const res = createRes();
+  t.mock.method(console, 'error', () => {});
+
+  await createDeck(req, res, db);
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Internal server error' });
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, ['user-1', 'Biology']);
+});
+
+test('POST /api/decks fails closed when the expected deck owner is unavailable', async (t) => {
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [{
+        id: 12,
+        user_id: 'user-1',
+        name: 'Biology',
+        description: null,
+        created_at: '2026-05-08T00:00:00.000Z',
+      }],
+    },
+  ]);
+  const req = { body: { name: 'Biology' }, user: {} };
+  const res = createRes();
+  t.mock.method(console, 'error', () => {});
+
+  await createDeck(req, res, db);
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Internal server error' });
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [undefined, 'Biology']);
+});
+
 test('POST /api/decks returns 500 when the inserted row is missing deck response fields', async (t) => {
   const db = createDb([
     {
@@ -533,6 +583,7 @@ test('PATCH /api/decks/:deckId fails closed when the rename control result is ma
     { rowCount: 1, rows: [{ deckExists: true, duplicateExists: true, deck }] },
     { rowCount: 1, rows: [{ deckExists: true, duplicateExists: false, deck: null }] },
     { rowCount: 1, rows: [{ deckExists: true, duplicateExists: false, deck: { ...deck, id: 43 } }] },
+    { rowCount: 1, rows: [{ deckExists: true, duplicateExists: false, deck: { ...deck, user_id: 'other-user' } }] },
   ];
   t.mock.method(console, 'error', () => {});
 
@@ -735,9 +786,32 @@ test('GET /api/decks fails closed when the deck-list query result shape is malfo
   }
 });
 
+test('GET /api/decks fails closed when the expected deck owner is unavailable', async (t) => {
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [
+        { id: 7, user_id: 'user-1', name: 'Biology', totalCards: '3', dueCards: '1' },
+      ],
+    },
+  ]);
+  const req = { user: {} };
+  const res = createRes();
+  t.mock.method(console, 'error', () => {});
+
+  await getDecks(req, res, db);
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Internal server error' });
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [undefined]);
+});
+
 test('GET /api/decks fails closed when a deck-list row is missing or cannot use required response fields', async (t) => {
   const malformedRows = [
     { id: 7, totalCards: '3', dueCards: '1' },
+    { id: 7, name: 'Biology', totalCards: '3', dueCards: '1' },
+    { id: 7, user_id: 'other-user', name: 'Biology', totalCards: '3', dueCards: '1' },
     { id: 7, name: 'Biology', dueCards: '1' },
     { id: 7, name: 'Biology', totalCards: '3' },
     { id: 'deck-7', name: 'Biology', totalCards: '3', dueCards: '1' },

@@ -366,6 +366,16 @@ function matchesExpectedIdentifier(validation, expectedValue, fieldName) {
   return expectedValidation.ok && validation.value === expectedValidation.value;
 }
 
+function assertExpectedDeckOwner(row, expectedUserId, errorMessage) {
+  if (
+    expectedUserId === undefined
+    || expectedUserId === null
+    || row.user_id !== expectedUserId
+  ) {
+    throw new TypeError(errorMessage);
+  }
+}
+
 function assertCardMutationResult(row, options = {}) {
   assertObjectHasOwnFields(row, CARD_MUTATION_RESPONSE_CARD_FIELDS, INVALID_CARD_MUTATION_RESULT_ERROR);
 
@@ -452,6 +462,8 @@ function assertDeckMutationResult(row, options = {}) {
   ) {
     throw new TypeError(INVALID_DECK_MUTATION_RESULT_ERROR);
   }
+
+  assertExpectedDeckOwner(row, options.expectedUserId, INVALID_DECK_MUTATION_RESULT_ERROR);
 }
 
 function assertDeckRemovalResult(row, options = {}) {
@@ -487,20 +499,29 @@ function assertDeckRenameControlResult(row, options = {}) {
     return;
   }
 
-  assertDeckMutationResult(row.deck, { expectedDeckId: options.expectedDeckId });
+  assertDeckMutationResult(row.deck, {
+    expectedDeckId: options.expectedDeckId,
+    expectedUserId: options.expectedUserId,
+  });
 }
 
-function assertDeckListResult(row) {
+function assertDeckListResult(row, options = {}) {
   assertObjectHasOwnFields(
     row,
-    ['id', 'name', 'totalCards', 'dueCards'],
+    ['id', 'user_id', 'name', 'totalCards', 'dueCards'],
     INVALID_DECK_LIST_RESULT_ERROR
   );
 
   const deckIdValidation = validatePositiveIntegerIdentifier(row.id, 'deckId');
-  if (!deckIdValidation.ok || typeof row.name !== 'string' || row.name.trim() === '') {
+  if (
+    !deckIdValidation.ok
+    || typeof row.name !== 'string'
+    || row.name.trim() === ''
+  ) {
     throw new TypeError(INVALID_DECK_LIST_RESULT_ERROR);
   }
+
+  assertExpectedDeckOwner(row, options.expectedUserId, INVALID_DECK_LIST_RESULT_ERROR);
 }
 
 function assertCardBrowseCursorResult(row) {
@@ -645,8 +666,8 @@ function toDeckReadPayload(row) {
   return deck;
 }
 
-function toDeckListPayload(row) {
-  assertDeckListResult(row);
+function toDeckListPayload(row, options = {}) {
+  assertDeckListResult(row, options);
 
   const totalCards = toDeckListAggregateCount(row.totalCards);
   const dueCards = toDeckListAggregateCount(row.dueCards);
@@ -1349,7 +1370,7 @@ async function createDeck(req, res, db) {
       return res.status(409).json({ error: 'Deck name already exists for this user' });
     }
 
-    assertDeckMutationResult(createdDeck);
+    assertDeckMutationResult(createdDeck, { expectedUserId: req.user.userId });
     return res.status(201).json(toDeckReadPayload(createdDeck));
   } catch (err) {
     console.error(err);
@@ -1405,7 +1426,10 @@ async function renameDeck(req, res, db) {
     );
 
     const result = getRequiredSingleQueryRow(queryResult, INVALID_DECK_RENAME_CONTROL_RESULT_ERROR);
-    assertDeckRenameControlResult(result, { expectedDeckId: deckId });
+    assertDeckRenameControlResult(result, {
+      expectedDeckId: deckId,
+      expectedUserId: req.user.userId,
+    });
     if (!result.deckExists) {
       return res.status(404).json({ error: 'Deck not found' });
     }
@@ -1440,7 +1464,9 @@ async function getDecks(req, res, db) {
     );
 
     assertListQueryResult(result, INVALID_DECK_LIST_RESULT_ERROR);
-    return res.json(result.rows.map(toDeckListPayload));
+    return res.json(result.rows.map((row) => toDeckListPayload(row, {
+      expectedUserId: req.user.userId,
+    })));
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Internal server error' });
