@@ -1078,6 +1078,45 @@ test('GET /api/decks/:deckId/cards returns 404 for missing or unowned deck', asy
   assert.deepEqual(db.calls[0].params, [42, 'user-1', 51]);
 });
 
+test('GET /api/decks/:deckId/cards fails closed when the list query result shape is malformed', async (t) => {
+  const validRow = {
+    ...createCardReadRow({
+      id: 3,
+      deck_id: 42,
+      front_content: 'Future card',
+      back_content: 'Answer',
+      created_at: '2026-05-08T13:00:00.000Z',
+      next_review: '2026-05-20T12:00:00.000Z',
+    }),
+    __cursor_created_at: '2026-05-08T13:00:00.000000Z',
+    __owned_deck_id: 42,
+  };
+  const malformedResults = [
+    null,
+    { rowCount: 0, rows: [validRow] },
+    { rowCount: 2, rows: [validRow] },
+    { rowCount: 1, rows: [validRow, { ...validRow, id: 4 }] },
+    { rowCount: '1', rows: [validRow] },
+    { rowCount: -1, rows: [] },
+    { rowCount: 1 },
+    { rowCount: 1, rows: { ...validRow } },
+  ];
+  t.mock.method(console, 'error', () => {});
+
+  for (const result of malformedResults) {
+    const db = createDb([result]);
+    const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+    const res = createRes();
+
+    await getCardsByDeck(req, res, db);
+
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.body, { error: 'Internal server error' });
+    assert.equal(db.calls.length, 1);
+    assert.deepEqual(db.calls[0].params, [42, 'user-1', 51]);
+  }
+});
+
 test('GET /api/decks/:deckId/cards returns empty page for owned empty deck', async () => {
   const db = createDb([
     {
@@ -1949,6 +1988,43 @@ test('GET /api/cards/:deckId returns 404 when deck is not owned by user', async 
   assert.match(db.calls[0].sql, /WHERE d\.id = \$1 AND d\.user_id = \$2/);
   assertDuePredicate(db.calls[0].sql);
   assert.match(db.calls[0].sql, /ORDER BY c\.next_review ASC NULLS FIRST,\s*c\.id ASC\s+LIMIT \$3/);
+});
+
+test('GET /api/cards/:deckId fails closed when the due-card query result shape is malformed', async (t) => {
+  const validRow = {
+    ...createCardReadRow({
+      id: 11,
+      deck_id: 42,
+      front_content: 'Due card',
+      back_content: 'Answer',
+      next_review: '2026-05-08T12:00:00.000Z',
+    }),
+    __owned_deck_id: 42,
+  };
+  const malformedResults = [
+    null,
+    { rowCount: 0, rows: [validRow] },
+    { rowCount: 2, rows: [validRow] },
+    { rowCount: 1, rows: [validRow, { ...validRow, id: 12 }] },
+    { rowCount: '1', rows: [validRow] },
+    { rowCount: -1, rows: [] },
+    { rowCount: 1 },
+    { rowCount: 1, rows: { ...validRow } },
+  ];
+  t.mock.method(console, 'error', () => {});
+
+  for (const result of malformedResults) {
+    const db = createDb([result]);
+    const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+    const res = createRes();
+
+    await getDueCardsByDeck(req, res, db);
+
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.body, { error: 'Internal server error' });
+    assert.equal(db.calls.length, 1);
+    assert.deepEqual(db.calls[0].params, [42, 'user-1', 100]);
+  }
 });
 
 test('GET /api/cards/:deckId returns unscheduled and past-due cards with a parameterized default limit when limit is omitted', async () => {

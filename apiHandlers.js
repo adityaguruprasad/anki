@@ -849,7 +849,7 @@ async function getDueCardsByDeck(req, res, db) {
     const deckId = deckIdValidation.value;
     const params = [deckId, req.user.userId, limitValidation.value];
 
-    const { rows } = await db.query(
+    const result = await db.query(
       `SELECT ${CARD_READ_SELECT_LIST},
               d.id AS "__owned_deck_id"
        FROM decks d
@@ -861,6 +861,8 @@ async function getDueCardsByDeck(req, res, db) {
        LIMIT $3`,
       params
     );
+    assertListQueryResult(result, INVALID_CARD_READ_RESULT_ERROR);
+    const { rows } = result;
 
     if (rows.length === 0) {
       return res.status(404).json({ error: 'Deck not found for user' });
@@ -931,7 +933,7 @@ async function getCardsByDeck(req, res, db) {
     params.push(limitValidation.value + 1);
     const limitPlaceholder = `$${params.length}`;
 
-    const { rows } = await db.query(
+    const result = await db.query(
       `SELECT ${CARD_READ_SELECT_LIST},
               to_char(c.created_at, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "__cursor_created_at",
               d.id AS "__owned_deck_id"
@@ -943,6 +945,8 @@ async function getCardsByDeck(req, res, db) {
        LIMIT ${limitPlaceholder}`,
       params
     );
+    assertListQueryResult(result, INVALID_CARD_READ_RESULT_ERROR);
+    const { rows } = result;
 
     if (rows.length === 0) {
       return res.status(404).json({ error: 'Deck not found for user' });
