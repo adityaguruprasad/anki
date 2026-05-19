@@ -2313,7 +2313,12 @@ test('POST /api/cards creates a card in an owned deck with one atomic insert-sel
     ease_factor: 2.5,
     review_count: 0,
   };
-  const db = createDb([{ rowCount: 1, rows: [{ ...createdCard, private_note: 'do not expose' }] }]);
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [{ ...createdCard, __owned_user_id: 'user-1', private_note: 'do not expose' }],
+    },
+  ]);
   const req = {
     body: {
       deckId: '42',
@@ -2328,6 +2333,7 @@ test('POST /api/cards creates a card in an owned deck with one atomic insert-sel
 
   assert.equal(res.statusCode, 201);
   assert.deepEqual(res.body, createdCard);
+  assert.equal(Object.hasOwn(res.body, '__owned_user_id'), false);
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, [42, 'user-1', 'Capital of France?', 'Paris']);
   assert.match(db.calls[0].sql, /INSERT\s+INTO\s+cards\s*\(/i);
@@ -2335,6 +2341,9 @@ test('POST /api/cards creates a card in an owned deck with one atomic insert-sel
   assert.match(db.calls[0].sql, /SELECT\s+d\.id,\s*\$3,\s*\$4,\s*NOW\(\),\s*1,\s*2\.5,\s*0/i);
   assert.match(db.calls[0].sql, /FROM\s+decks\s+d/i);
   assert.match(db.calls[0].sql, /WHERE\s+d\.id\s+=\s+\$1\s+AND\s+d\.user_id\s+=\s+\$2/i);
+  assert.match(db.calls[0].sql, /WITH\s+inserted\s+AS\s*\(/i);
+  assert.match(db.calls[0].sql, /JOIN\s+decks\s+d\s+ON\s+d\.id\s+=\s+i\.deck_id/i);
+  assert.match(db.calls[0].sql, /d\.user_id\s+AS\s+"__owned_user_id"/i);
   assert.match(
     db.calls[0].sql,
     /RETURNING\s+id,\s+deck_id,\s+front_content,\s+back_content,\s+next_review,\s+interval,\s+ease_factor,\s+review_count/i
@@ -2355,6 +2364,7 @@ test('POST /api/cards returns 500 when the inserted row is missing mutation resp
         next_review: '2026-05-08T12:00:00.000Z',
         interval: 1,
         review_count: 0,
+        __owned_user_id: 'user-1',
       }],
     },
   ]);
@@ -2392,6 +2402,7 @@ test('POST /api/cards fails closed when the inserted row violates card mutation 
     interval: 1,
     ease_factor: 2.5,
     review_count: 0,
+    __owned_user_id: 'user-1',
   };
   const malformedRows = [
     { ...validInsertedCard, id: 'card-77' },
@@ -2690,7 +2701,12 @@ test('PATCH /api/cards/:cardId updates an owned card with one user-scoped query'
     ease_factor: 2.5,
     review_count: 0,
   };
-  const db = createDb([{ rowCount: 1, rows: [{ ...updatedCard, private_note: 'do not expose' }] }]);
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [{ ...updatedCard, __owned_user_id: 'user-1', private_note: 'do not expose' }],
+    },
+  ]);
   const req = {
     params: { cardId: '77' },
     body: {
@@ -2705,17 +2721,19 @@ test('PATCH /api/cards/:cardId updates an owned card with one user-scoped query'
 
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, updatedCard);
+  assert.equal(Object.hasOwn(res.body, '__owned_user_id'), false);
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, [77, 'user-1', 'Updated front', 'Updated back']);
   assert.match(db.calls[0].sql, /UPDATE\s+cards/i);
   assert.match(db.calls[0].sql, /SET\s+front_content\s+=\s+\$3,\s+back_content\s+=\s+\$4/i);
-  assert.match(db.calls[0].sql, /WHERE\s+id\s+=\s+\$1/i);
-  assert.match(db.calls[0].sql, /EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+decks\s+d/i);
+  assert.match(db.calls[0].sql, /FROM\s+decks\s+d/i);
+  assert.match(db.calls[0].sql, /WHERE\s+cards\.id\s+=\s+\$1/i);
   assert.match(db.calls[0].sql, /d\.id\s+=\s+cards\.deck_id/i);
   assert.match(db.calls[0].sql, /d\.user_id\s+=\s+\$2/i);
+  assert.match(db.calls[0].sql, /d\.user_id\s+AS\s+"__owned_user_id"/i);
   assert.match(
     db.calls[0].sql,
-    /RETURNING\s+id,\s+deck_id,\s+front_content,\s+back_content,\s+next_review,\s+interval,\s+ease_factor,\s+review_count/i
+    /RETURNING\s+cards\.id,\s+cards\.deck_id,\s+cards\.front_content,\s+cards\.back_content,\s+cards\.next_review,\s+cards\.interval,\s+cards\.ease_factor,\s+cards\.review_count/i
   );
   assert.doesNotMatch(db.calls[0].sql, /RETURNING\s+\*/i);
   assert.doesNotMatch(db.calls[0].sql, /SELECT[\s\S]+FROM\s+cards/i);
@@ -2733,6 +2751,7 @@ test('PATCH /api/cards/:cardId returns 500 when the updated row is missing mutat
         next_review: '2026-05-08T12:00:00.000Z',
         interval: 1,
         ease_factor: 2.5,
+        __owned_user_id: 'user-1',
       }],
     },
   ]);
@@ -2770,6 +2789,7 @@ test('PATCH /api/cards/:cardId fails closed when the updated row violates card m
     interval: 1,
     ease_factor: 2.5,
     review_count: 0,
+    __owned_user_id: 'user-1',
   };
   const malformedRows = [
     { ...validUpdatedCard, id: 78 },
@@ -2817,7 +2837,8 @@ test('PATCH /api/cards/:cardId returns 404 for missing or unowned card with one 
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, [77, 'user-1', 'Front', 'Back']);
   assert.match(db.calls[0].sql, /UPDATE\s+cards/i);
-  assert.match(db.calls[0].sql, /EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+decks\s+d/i);
+  assert.match(db.calls[0].sql, /FROM\s+decks\s+d/i);
+  assert.match(db.calls[0].sql, /d\.id\s+=\s+cards\.deck_id/i);
   assert.match(db.calls[0].sql, /d\.user_id\s+=\s+\$2/i);
 });
 
@@ -2828,7 +2849,9 @@ test('DELETE /api/cards/:cardId deletes an owned card with one user-scoped query
     back_content: 'Back',
     next_review: '2026-05-08T12:00:00.000Z',
   };
-  const db = createDb([{ rowCount: 1, rows: [deletedCard] }]);
+  const db = createDb([
+    { rowCount: 1, rows: [{ ...deletedCard, __owned_user_id: 'user-1' }] },
+  ]);
   const req = { params: { cardId: '77' }, user: { userId: 'user-1' } };
   const res = createRes();
 
@@ -2836,16 +2859,18 @@ test('DELETE /api/cards/:cardId deletes an owned card with one user-scoped query
 
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, { success: true, card: deletedCard });
+  assert.equal(Object.hasOwn(res.body.card, '__owned_user_id'), false);
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, [77, 'user-1']);
   assert.match(db.calls[0].sql, /DELETE\s+FROM\s+cards/i);
-  assert.match(db.calls[0].sql, /WHERE\s+id\s+=\s+\$1/i);
-  assert.match(db.calls[0].sql, /EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+decks\s+d/i);
+  assert.match(db.calls[0].sql, /USING\s+decks\s+d/i);
+  assert.match(db.calls[0].sql, /WHERE\s+cards\.id\s+=\s+\$1/i);
   assert.match(db.calls[0].sql, /d\.id\s+=\s+cards\.deck_id/i);
   assert.match(db.calls[0].sql, /d\.user_id\s+=\s+\$2/i);
+  assert.match(db.calls[0].sql, /d\.user_id\s+AS\s+"__owned_user_id"/i);
   assert.match(
     db.calls[0].sql,
-    /RETURNING\s+id,\s+front_content,\s+back_content,\s+next_review/i
+    /RETURNING\s+cards\.id,\s+cards\.front_content,\s+cards\.back_content,\s+cards\.next_review/i
   );
   assert.doesNotMatch(db.calls[0].sql, /RETURNING\s+\*/i);
   assert.doesNotMatch(db.calls[0].sql, /SELECT[\s\S]+FROM\s+cards/i);
@@ -2859,6 +2884,7 @@ test('DELETE /api/cards/:cardId response omits unexpected returned card fields',
     next_review: '2026-05-08T12:00:00.000Z',
     deck_id: 12,
     user_id: 'user-1',
+    __owned_user_id: 'user-1',
     private_notes: 'do not expose',
   };
   const db = createDb([{ rowCount: 1, rows: [deletedRow] }]);
@@ -2879,6 +2905,7 @@ test('DELETE /api/cards/:cardId response omits unexpected returned card fields',
   });
   assert.equal(Object.hasOwn(res.body.card, 'deck_id'), false);
   assert.equal(Object.hasOwn(res.body.card, 'user_id'), false);
+  assert.equal(Object.hasOwn(res.body.card, '__owned_user_id'), false);
   assert.equal(Object.hasOwn(res.body.card, 'private_notes'), false);
 });
 
@@ -2890,6 +2917,7 @@ test('DELETE /api/cards/:cardId returns 500 when the deleted row is missing remo
         id: 77,
         front_content: 'Front',
         back_content: 'Back',
+        __owned_user_id: 'user-1',
       }],
     },
   ]);
@@ -2916,6 +2944,7 @@ test('DELETE /api/cards/:cardId fails closed when the deleted row violates remov
     front_content: 'Front',
     back_content: 'Back',
     next_review: '2026-05-08T12:00:00.000Z',
+    __owned_user_id: 'user-1',
   };
   const malformedRows = [
     { ...validDeletedCard, id: 'card-77' },
@@ -2940,6 +2969,105 @@ test('DELETE /api/cards/:cardId fails closed when the deleted row violates remov
   }
 });
 
+test('card mutation endpoints fail closed when returned ownership proof is missing or mismatched', async (t) => {
+  const mutationCard = {
+    id: 77,
+    deck_id: 42,
+    front_content: 'Front',
+    back_content: 'Back',
+    next_review: '2026-05-08T12:00:00.000Z',
+    interval: 1,
+    ease_factor: 2.5,
+    review_count: 0,
+    __owned_user_id: 'user-1',
+  };
+  const deletedCard = {
+    id: 77,
+    front_content: 'Front',
+    back_content: 'Back',
+    next_review: '2026-05-08T12:00:00.000Z',
+    __owned_user_id: 'user-1',
+  };
+  const withoutOwnerProof = (row) => {
+    const copy = { ...row };
+    delete copy.__owned_user_id;
+    return copy;
+  };
+  const cases = [
+    {
+      name: 'create card missing owner proof',
+      handler: createCard,
+      req: {
+        body: { deckId: '42', frontContent: 'Front', backContent: 'Back' },
+        user: { userId: 'user-1' },
+      },
+      row: withoutOwnerProof(mutationCard),
+      params: [42, 'user-1', 'Front', 'Back'],
+    },
+    {
+      name: 'create card mismatched owner proof',
+      handler: createCard,
+      req: {
+        body: { deckId: '42', frontContent: 'Front', backContent: 'Back' },
+        user: { userId: 'user-1' },
+      },
+      row: { ...mutationCard, __owned_user_id: 'other-user' },
+      params: [42, 'user-1', 'Front', 'Back'],
+    },
+    {
+      name: 'update card missing owner proof',
+      handler: updateCard,
+      req: {
+        params: { cardId: '77' },
+        body: { frontContent: 'Front', backContent: 'Back' },
+        user: { userId: 'user-1' },
+      },
+      row: withoutOwnerProof(mutationCard),
+      params: [77, 'user-1', 'Front', 'Back'],
+    },
+    {
+      name: 'update card mismatched owner proof',
+      handler: updateCard,
+      req: {
+        params: { cardId: '77' },
+        body: { frontContent: 'Front', backContent: 'Back' },
+        user: { userId: 'user-1' },
+      },
+      row: { ...mutationCard, __owned_user_id: 'other-user' },
+      params: [77, 'user-1', 'Front', 'Back'],
+    },
+    {
+      name: 'delete card missing owner proof',
+      handler: deleteCard,
+      req: { params: { cardId: '77' }, user: { userId: 'user-1' } },
+      row: withoutOwnerProof(deletedCard),
+      params: [77, 'user-1'],
+    },
+    {
+      name: 'delete card mismatched owner proof',
+      handler: deleteCard,
+      req: { params: { cardId: '77' }, user: { userId: 'user-1' } },
+      row: { ...deletedCard, __owned_user_id: 'other-user' },
+      params: [77, 'user-1'],
+    },
+  ];
+
+  for (const testCase of cases) {
+    await t.test(testCase.name, async (t) => {
+      const db = createDb([{ rowCount: 1, rows: [testCase.row] }]);
+      const res = createRes();
+      t.mock.method(console, 'error', () => {});
+
+      await testCase.handler(testCase.req, res, db);
+
+      assert.equal(res.statusCode, 500);
+      assert.deepEqual(res.body, { error: 'Internal server error' });
+      assert.equal(db.calls.length, 1);
+      assert.deepEqual(db.calls[0].params, testCase.params);
+    });
+  }
+});
+
 test('card mutation endpoints fail closed when returned-row cardinality is malformed', async (t) => {
   const mutationCard = {
     id: 77,
@@ -2950,12 +3078,14 @@ test('card mutation endpoints fail closed when returned-row cardinality is malfo
     interval: 1,
     ease_factor: 2.5,
     review_count: 0,
+    __owned_user_id: 'user-1',
   };
   const deletedCard = {
     id: 77,
     front_content: 'Front',
     back_content: 'Back',
     next_review: '2026-05-08T12:00:00.000Z',
+    __owned_user_id: 'user-1',
   };
   const cases = [
     {
@@ -3063,7 +3193,8 @@ test('DELETE /api/cards/:cardId returns 404 for missing or unowned card with one
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, [77, 'user-1']);
   assert.match(db.calls[0].sql, /DELETE\s+FROM\s+cards/i);
-  assert.match(db.calls[0].sql, /EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+decks\s+d/i);
+  assert.match(db.calls[0].sql, /USING\s+decks\s+d/i);
+  assert.match(db.calls[0].sql, /d\.id\s+=\s+cards\.deck_id/i);
   assert.match(db.calls[0].sql, /d\.user_id\s+=\s+\$2/i);
 });
 

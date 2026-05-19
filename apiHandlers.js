@@ -65,6 +65,7 @@ const DELETE_CARD_RESPONSE_CARD_FIELDS = Object.freeze([
   'back_content',
   'next_review',
 ]);
+const CARD_OWNERSHIP_PROOF_FIELD = '__owned_user_id';
 const STATS_RESPONSE_FIELDS = Object.freeze([
   'totalCards',
   'totalDecks',
@@ -376,8 +377,21 @@ function assertExpectedDeckOwner(row, expectedUserId, errorMessage) {
   }
 }
 
+function assertExpectedCardOwner(row, expectedUserId, errorMessage) {
+  assertObjectHasOwnFields(row, [CARD_OWNERSHIP_PROOF_FIELD], errorMessage);
+
+  if (
+    expectedUserId === undefined
+    || expectedUserId === null
+    || row[CARD_OWNERSHIP_PROOF_FIELD] !== expectedUserId
+  ) {
+    throw new TypeError(errorMessage);
+  }
+}
+
 function assertCardMutationResult(row, options = {}) {
   assertObjectHasOwnFields(row, CARD_MUTATION_RESPONSE_CARD_FIELDS, INVALID_CARD_MUTATION_RESULT_ERROR);
+  assertExpectedCardOwner(row, options.expectedUserId, INVALID_CARD_MUTATION_RESULT_ERROR);
 
   const cardIdValidation = validatePositiveIntegerIdentifier(row.id, 'cardId');
   const deckIdValidation = validatePositiveIntegerIdentifier(row.deck_id, 'deckId');
@@ -399,6 +413,7 @@ function assertCardMutationResult(row, options = {}) {
 
 function assertCardRemovalResult(row, options = {}) {
   assertObjectHasOwnFields(row, DELETE_CARD_RESPONSE_CARD_FIELDS, INVALID_CARD_REMOVAL_RESULT_ERROR);
+  assertExpectedCardOwner(row, options.expectedUserId, INVALID_CARD_REMOVAL_RESULT_ERROR);
 
   const cardIdValidation = validatePositiveIntegerIdentifier(row.id, 'cardId');
   if (
@@ -1058,26 +1073,39 @@ async function createCard(req, res, db) {
     }
 
     const result = await db.query(
-      `INSERT INTO cards (
-         deck_id,
-         front_content,
-         back_content,
-         next_review,
-         interval,
-         ease_factor,
-         review_count
+      `WITH inserted AS (
+         INSERT INTO cards (
+           deck_id,
+           front_content,
+           back_content,
+           next_review,
+           interval,
+           ease_factor,
+           review_count
+         )
+         SELECT d.id, $3, $4, NOW(), 1, 2.5, 0
+         FROM decks d
+         WHERE d.id = $1 AND d.user_id = $2
+         RETURNING id,
+                   deck_id,
+                   front_content,
+                   back_content,
+                   next_review,
+                   interval,
+                   ease_factor,
+                   review_count
        )
-       SELECT d.id, $3, $4, NOW(), 1, 2.5, 0
-       FROM decks d
-       WHERE d.id = $1 AND d.user_id = $2
-       RETURNING id,
-                 deck_id,
-                 front_content,
-                 back_content,
-                 next_review,
-                 interval,
-                 ease_factor,
-                 review_count`,
+       SELECT i.id,
+              i.deck_id,
+              i.front_content,
+              i.back_content,
+              i.next_review,
+              i.interval,
+              i.ease_factor,
+              i.review_count,
+              d.user_id AS "__owned_user_id"
+       FROM inserted i
+       JOIN decks d ON d.id = i.deck_id`,
       [
         deckIdValidation.value,
         req.user.userId,
@@ -1091,7 +1119,10 @@ async function createCard(req, res, db) {
       return res.status(404).json({ error: 'Deck not found' });
     }
 
-    assertCardMutationResult(createdCard, { expectedDeckId: deckIdValidation.value });
+    assertCardMutationResult(createdCard, {
+      expectedDeckId: deckIdValidation.value,
+      expectedUserId: req.user.userId,
+    });
     return res.status(201).json(toCardMutationPayload(createdCard));
   } catch (err) {
     console.error(err);
@@ -1120,21 +1151,19 @@ async function updateCard(req, res, db) {
       `UPDATE cards
        SET front_content = $3,
            back_content = $4
-       WHERE id = $1
-         AND EXISTS (
-           SELECT 1
-           FROM decks d
-           WHERE d.id = cards.deck_id
-             AND d.user_id = $2
-         )
-       RETURNING id,
-                 deck_id,
-                 front_content,
-                 back_content,
-                 next_review,
-                 interval,
-                 ease_factor,
-                 review_count`,
+       FROM decks d
+       WHERE cards.id = $1
+         AND d.id = cards.deck_id
+         AND d.user_id = $2
+       RETURNING cards.id,
+                 cards.deck_id,
+                 cards.front_content,
+                 cards.back_content,
+                 cards.next_review,
+                 cards.interval,
+                 cards.ease_factor,
+                 cards.review_count,
+                 d.user_id AS "__owned_user_id"`,
       [
         cardIdValidation.value,
         req.user.userId,
@@ -1148,7 +1177,10 @@ async function updateCard(req, res, db) {
       return res.status(404).json({ error: 'Card not found' });
     }
 
-    assertCardMutationResult(updatedCard, { expectedCardId: cardIdValidation.value });
+    assertCardMutationResult(updatedCard, {
+      expectedCardId: cardIdValidation.value,
+      expectedUserId: req.user.userId,
+    });
     return res.json(toCardMutationPayload(updatedCard));
   } catch (err) {
     console.error(err);
@@ -1165,17 +1197,15 @@ async function deleteCard(req, res, db) {
 
     const deleteResult = await db.query(
       `DELETE FROM cards
-       WHERE id = $1
-         AND EXISTS (
-           SELECT 1
-           FROM decks d
-           WHERE d.id = cards.deck_id
-             AND d.user_id = $2
-         )
-       RETURNING id,
-                 front_content,
-                 back_content,
-                 next_review`,
+       USING decks d
+       WHERE cards.id = $1
+         AND d.id = cards.deck_id
+         AND d.user_id = $2
+       RETURNING cards.id,
+                 cards.front_content,
+                 cards.back_content,
+                 cards.next_review,
+                 d.user_id AS "__owned_user_id"`,
       [cardIdValidation.value, req.user.userId]
     );
 
@@ -1184,7 +1214,10 @@ async function deleteCard(req, res, db) {
       return res.status(404).json({ error: 'Card not found' });
     }
 
-    assertCardRemovalResult(deletedCard, { expectedCardId: cardIdValidation.value });
+    assertCardRemovalResult(deletedCard, {
+      expectedCardId: cardIdValidation.value,
+      expectedUserId: req.user.userId,
+    });
     return res.json({
       success: true,
       card: toDeleteCardResponseCardPayload(deletedCard),
