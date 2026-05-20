@@ -1491,6 +1491,59 @@ test('GET /api/decks/:deckId/cards fails closed when the list query result shape
   }
 });
 
+test('GET /api/decks/:deckId/cards fails closed when the browse query exceeds the requested row bound', async (t) => {
+  const cards = [
+    createCardReadRow({
+      id: 5,
+      deck_id: 42,
+      front_content: 'Newest card',
+      back_content: 'Answer',
+      created_at: '2026-05-08T15:00:00.000Z',
+      next_review: '2026-05-20T12:00:00.000Z',
+    }),
+    createCardReadRow({
+      id: 4,
+      deck_id: 42,
+      front_content: 'Next card',
+      back_content: 'Answer',
+      created_at: '2026-05-08T14:00:00.000Z',
+      next_review: '2026-05-19T12:00:00.000Z',
+    }),
+    createCardReadRow({
+      id: 3,
+      deck_id: 42,
+      front_content: 'Impossible extra card',
+      back_content: 'Answer',
+      created_at: '2026-05-08T13:00:00.000Z',
+      next_review: '2026-05-18T12:00:00.000Z',
+    }),
+  ];
+  const db = createDb([
+    {
+      rowCount: 3,
+      rows: cards.map((card) => ({
+        ...card,
+        __cursor_created_at: card.created_at.replace('.000Z', '.000000Z'),
+        __owned_deck_id: 42,
+      })),
+    },
+  ]);
+  const req = {
+    params: { deckId: '42' },
+    query: { limit: '1' },
+    user: { userId: 'user-1' },
+  };
+  const res = createRes();
+  t.mock.method(console, 'error', () => {});
+
+  await getCardsByDeck(req, res, db);
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Internal server error' });
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [42, 'user-1', 2]);
+});
+
 test('GET /api/decks/:deckId/cards returns empty page for owned empty deck', async () => {
   const db = createDb([
     {
@@ -2399,6 +2452,48 @@ test('GET /api/cards/:deckId fails closed when the due-card query result shape i
     assert.equal(db.calls.length, 1);
     assert.deepEqual(db.calls[0].params, [42, 'user-1', 100]);
   }
+});
+
+test('GET /api/cards/:deckId fails closed when the due-card query exceeds the requested row bound', async (t) => {
+  const dueCards = [
+    createCardReadRow({
+      id: 12,
+      deck_id: 42,
+      front_content: 'Due card',
+      back_content: 'Answer',
+      next_review: '2026-05-08T12:00:00.000Z',
+    }),
+    createCardReadRow({
+      id: 11,
+      deck_id: 42,
+      front_content: 'Impossible extra due card',
+      back_content: 'Answer',
+      next_review: '2026-05-08T13:00:00.000Z',
+    }),
+  ];
+  const db = createDb([
+    {
+      rowCount: 2,
+      rows: dueCards.map((card) => ({
+        ...card,
+        __owned_deck_id: 42,
+      })),
+    },
+  ]);
+  const req = {
+    params: { deckId: '42' },
+    query: { limit: '1' },
+    user: { userId: 'user-1' },
+  };
+  const res = createRes();
+  t.mock.method(console, 'error', () => {});
+
+  await getDueCardsByDeck(req, res, db);
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Internal server error' });
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [42, 'user-1', 1]);
 });
 
 test('GET /api/cards/:deckId returns unscheduled and past-due cards with a parameterized default limit when limit is omitted', async () => {

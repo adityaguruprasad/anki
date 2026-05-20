@@ -663,6 +663,18 @@ function assertListQueryResult(result, errorMessage) {
   }
 }
 
+function assertBoundedListQueryResult(result, errorMessage, maxRows) {
+  assertListQueryResult(result, errorMessage);
+
+  if (
+    !Number.isSafeInteger(maxRows)
+    || maxRows < 0
+    || result.rows.length > maxRows
+  ) {
+    throw new TypeError(errorMessage);
+  }
+}
+
 function getOptionalSingleQueryRow(result, errorMessage) {
   if (
     result === null
@@ -984,7 +996,11 @@ async function getDueCardsByDeck(req, res, db) {
        LIMIT $3`,
       params
     );
-    assertListQueryResult(result, INVALID_CARD_READ_RESULT_ERROR);
+    assertBoundedListQueryResult(
+      result,
+      INVALID_CARD_READ_RESULT_ERROR,
+      limitValidation.value
+    );
     const { rows } = result;
 
     if (rows.length === 0) {
@@ -1054,7 +1070,8 @@ async function getCardsByDeck(req, res, db) {
         )`;
     }
 
-    params.push(limitValidation.value + 1);
+    const requestedRowLimit = limitValidation.value + 1;
+    params.push(requestedRowLimit);
     const limitPlaceholder = `$${params.length}`;
 
     const result = await db.query(
@@ -1069,7 +1086,11 @@ async function getCardsByDeck(req, res, db) {
        LIMIT ${limitPlaceholder}`,
       params
     );
-    assertListQueryResult(result, INVALID_CARD_READ_RESULT_ERROR);
+    assertBoundedListQueryResult(
+      result,
+      INVALID_CARD_READ_RESULT_ERROR,
+      requestedRowLimit
+    );
     const { rows } = result;
 
     if (rows.length === 0) {
