@@ -54,7 +54,7 @@ CREATE TABLE cards (
   deck_id INTEGER NOT NULL CONSTRAINT cards_deck_id_fkey REFERENCES decks(id) ON DELETE CASCADE,
   front_content TEXT NOT NULL,
   back_content TEXT NOT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   last_reviewed TIMESTAMP,
   next_review TIMESTAMP,
   interval INTEGER NOT NULL DEFAULT 1,

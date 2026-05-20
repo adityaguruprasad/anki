@@ -1712,11 +1712,15 @@ test('GET /api/decks/:deckId/cards fails closed when a card row violates read re
   });
   const rowWithoutFrontContent = { ...validCard };
   delete rowWithoutFrontContent.front_content;
+  const rowWithoutCreatedAt = { ...validCard };
+  delete rowWithoutCreatedAt.created_at;
   const malformedRows = [
     { ...validCard, id: 'card-3' },
     { ...validCard, deck_id: 'deck-42' },
     rowWithoutFrontContent,
     { ...validCard, back_content: '   ' },
+    rowWithoutCreatedAt,
+    { ...validCard, created_at: null },
     { ...validCard, created_at: 'not-a-date' },
     { ...validCard, next_review: 'not-a-date' },
     { ...validCard, interval: 0 },
@@ -2752,11 +2756,15 @@ test('GET /api/cards/:deckId fails closed when a due-card row violates read resp
   });
   const rowWithoutBackContent = { ...validDueCard };
   delete rowWithoutBackContent.back_content;
+  const rowWithoutCreatedAt = { ...validDueCard };
+  delete rowWithoutCreatedAt.created_at;
   const malformedRows = [
     { ...validDueCard, id: 'card-11' },
     { ...validDueCard, deck_id: 0 },
     { ...validDueCard, front_content: '' },
     rowWithoutBackContent,
+    rowWithoutCreatedAt,
+    { ...validDueCard, created_at: null },
     { ...validDueCard, last_reviewed: 'not-a-date' },
     { ...validDueCard, interval: 36501 },
     { ...validDueCard, ease_factor: Number.NaN },
@@ -4591,6 +4599,8 @@ test('POST /api/study-session rolls back before scheduling when the locked card 
   delete rowMissingOwnerProof.__owned_user_id;
   const rowMissingFrontContent = { ...validSourceCard };
   delete rowMissingFrontContent.front_content;
+  const rowMissingCreatedAt = { ...validSourceCard };
+  delete rowMissingCreatedAt.created_at;
   const rowMissingNextReview = { ...validSourceCard };
   delete rowMissingNextReview.next_review;
   const malformedRows = [
@@ -4603,6 +4613,8 @@ test('POST /api/study-session rolls back before scheduling when the locked card 
     { name: 'non-boolean due sentinel', row: { ...validSourceCard, __is_due: 'true' } },
     { name: 'missing front content', row: rowMissingFrontContent },
     { name: 'blank back content', row: { ...validSourceCard, back_content: '   ' } },
+    { name: 'missing created timestamp field', row: rowMissingCreatedAt },
+    { name: 'missing created timestamp value', row: { ...validSourceCard, created_at: null } },
     { name: 'invalid created timestamp', row: { ...validSourceCard, created_at: 'not-a-date' } },
     { name: 'missing next review field', row: rowMissingNextReview },
     { name: 'invalid next review timestamp', row: { ...validSourceCard, next_review: 'not-a-date' } },

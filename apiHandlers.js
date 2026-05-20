@@ -577,8 +577,12 @@ function assertCardReadResult(row, errorMessage = INVALID_CARD_READ_RESULT_ERROR
     throw new TypeError(errorMessage);
   }
 
-  const timestampFields = ['created_at', 'last_reviewed', 'next_review'];
-  for (const fieldName of timestampFields) {
+  if (!isValidRequiredDatabaseTimestamp(row.created_at)) {
+    throw new TypeError(errorMessage);
+  }
+
+  const nullableTimestampFields = ['last_reviewed', 'next_review'];
+  for (const fieldName of nullableTimestampFields) {
     if (!isValidDatabaseTimestamp(row[fieldName])) {
       throw new TypeError(errorMessage);
     }
