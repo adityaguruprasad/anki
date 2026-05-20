@@ -3795,9 +3795,9 @@ test('GET /api/stats preserves exact large PostgreSQL count strings', async () =
         {
           totalCards: '900719925474099312345',
           totalDecks: '000900719925474099300001',
-          todayReviews: '9007199254740993',
-          weekReviews: ' 00042 ',
-          monthReviews: '000',
+          todayReviews: ' 00042 ',
+          weekReviews: '9007199254740993',
+          monthReviews: '000900719925474099300001',
         },
       ],
     },
@@ -3811,9 +3811,9 @@ test('GET /api/stats preserves exact large PostgreSQL count strings', async () =
   assert.deepEqual(res.body, {
     totalCards: '900719925474099312345',
     totalDecks: '900719925474099300001',
-    todayReviews: '9007199254740993',
-    weekReviews: 42,
-    monthReviews: 0,
+    todayReviews: 42,
+    weekReviews: '9007199254740993',
+    monthReviews: '900719925474099300001',
   });
 });
 
@@ -3825,11 +3825,11 @@ test('GET /api/stats handles aggregate count safe integer boundaries', async () 
       rowCount: 1,
       rows: [
         {
-          totalCards: maxSafeAggregate,
+          totalCards: oneAboveMaxSafeAggregate,
           totalDecks: oneAboveMaxSafeAggregate,
-          todayReviews: BigInt(oneAboveMaxSafeAggregate),
+          todayReviews: BigInt(maxSafeAggregate),
           weekReviews: BigInt(maxSafeAggregate),
-          monthReviews: '0',
+          monthReviews: BigInt(oneAboveMaxSafeAggregate),
         },
       ],
     },
@@ -3841,11 +3841,41 @@ test('GET /api/stats handles aggregate count safe integer boundaries', async () 
 
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, {
-    totalCards: Number.MAX_SAFE_INTEGER,
+    totalCards: oneAboveMaxSafeAggregate,
     totalDecks: oneAboveMaxSafeAggregate,
-    todayReviews: oneAboveMaxSafeAggregate,
+    todayReviews: Number.MAX_SAFE_INTEGER,
     weekReviews: Number.MAX_SAFE_INTEGER,
-    monthReviews: 0,
+    monthReviews: oneAboveMaxSafeAggregate,
+  });
+});
+
+test('GET /api/stats accepts equal current-card review bucket boundaries', async () => {
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [
+        {
+          totalCards: '12',
+          totalDecks: '3',
+          todayReviews: '12',
+          weekReviews: '12',
+          monthReviews: '12',
+        },
+      ],
+    },
+  ]);
+  const req = { user: { userId: 'user-1' } };
+  const res = createRes();
+
+  await getStats(req, res, db);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, {
+    totalCards: 12,
+    totalDecks: 3,
+    todayReviews: 12,
+    weekReviews: 12,
+    monthReviews: 12,
   });
 });
 
@@ -3874,6 +3904,18 @@ test('GET /api/stats fails closed for malformed successful aggregate results', a
     ],
     ['decimal aggregate value', { rowCount: 1, rows: [{ ...validStats, weekReviews: 1.5 }] }],
     ['array aggregate value', { rowCount: 1, rows: [{ ...validStats, monthReviews: [] }] }],
+    [
+      'today reviews exceed week reviews',
+      { rowCount: 1, rows: [{ ...validStats, todayReviews: '8' }] },
+    ],
+    [
+      'week reviews exceed month reviews',
+      { rowCount: 1, rows: [{ ...validStats, weekReviews: '11' }] },
+    ],
+    [
+      'month reviews exceed total cards',
+      { rowCount: 1, rows: [{ ...validStats, monthReviews: '13' }] },
+    ],
   ];
   t.mock.method(console, 'error', () => {});
 

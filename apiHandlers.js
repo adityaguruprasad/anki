@@ -654,6 +654,34 @@ function assertStatsResult(row) {
   assertObjectHasOwnFields(row, STATS_RESPONSE_FIELDS, INVALID_STATS_RESULT_ERROR);
 }
 
+function toAggregateCountBigInt(value, errorMessage) {
+  if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) {
+    return BigInt(value);
+  }
+
+  if (typeof value === 'string' && /^\d+$/.test(value)) {
+    return BigInt(value);
+  }
+
+  throw new TypeError(errorMessage);
+}
+
+function assertStatsCountInvariants(stats) {
+  const totalCards = toAggregateCountBigInt(stats.totalCards, INVALID_STATS_RESULT_ERROR);
+  const todayReviews = toAggregateCountBigInt(stats.todayReviews, INVALID_STATS_RESULT_ERROR);
+  const weekReviews = toAggregateCountBigInt(stats.weekReviews, INVALID_STATS_RESULT_ERROR);
+  const monthReviews = toAggregateCountBigInt(stats.monthReviews, INVALID_STATS_RESULT_ERROR);
+
+  // These buckets count current cards by last_reviewed, not review events.
+  if (
+    todayReviews > weekReviews
+    || weekReviews > monthReviews
+    || monthReviews > totalCards
+  ) {
+    throw new TypeError(INVALID_STATS_RESULT_ERROR);
+  }
+}
+
 function assertSchedulingInsightsResult(row) {
   assertObjectHasOwnFields(
     row,
@@ -824,6 +852,7 @@ function toStatsResponsePayload(row) {
   for (const field of STATS_RESPONSE_FIELDS) {
     payload[field] = toStatsAggregateCount(row[field]);
   }
+  assertStatsCountInvariants(payload);
 
   return payload;
 }
