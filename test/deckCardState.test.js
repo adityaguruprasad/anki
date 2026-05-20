@@ -30,6 +30,10 @@ test('isCardCurrentlyDue treats missing or invalid next_review metadata as unkno
     { next_review: '' },
     { next_review: '  ' },
     { next_review: 'not-a-date' },
+    { next_review: '2026-05-09' },
+    { next_review: '2026-05-09T12:00:00' },
+    { next_review: '2026-05-09T12:00:00.000Z ' },
+    { next_review: new Date('2026-05-09T11:59:59.999Z') },
     { next_review: 0 },
     { next_review: false },
   ].forEach((card) => {

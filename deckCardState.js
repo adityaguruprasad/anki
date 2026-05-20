@@ -1,3 +1,5 @@
+const { isValidIsoTimestamp } = require('./isoTimestampValidation');
+
 function hasSameId(leftId, rightId) {
   return String(leftId) === String(rightId);
 }
@@ -27,7 +29,7 @@ function isCardCurrentlyDue(card, now = new Date()) {
     return true;
   }
 
-  if (typeof nextReview !== 'string' || nextReview.trim() === '') {
+  if (!isValidIsoTimestamp(nextReview)) {
     return false;
   }
 
