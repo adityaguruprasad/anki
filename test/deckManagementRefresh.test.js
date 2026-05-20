@@ -536,8 +536,8 @@ test('deleteCard validates successful removal payloads before updating visible s
   const authExpiredIndex = body.indexOf('if (handleAuthExpiredResponse(response, onAuthExpired))');
   const jsonIndex = body.indexOf('const data = await response.json().catch(() => ({}));');
   const responseOkIndex = body.indexOf('if (!response.ok) {');
-  const validationIndex = body.indexOf(
-    'removalResult = parseDeckCardRemovalSuccessPayload(data, { expectedId: cardId });',
+  const validationIndex = body.search(
+    /removalResult\s*=\s*parseDeckCardRemovalSuccessPayload\(data,\s*\{\s*expectedDeckId:\s*deckId,\s*expectedId:\s*cardId,\s*\}\);/,
   );
   const removeCardIndex = body.indexOf('removeLoadedCard(deckId, cardId);');
   const decrementCountsIndex = body.indexOf('decrementDeckCardCounts(currentDecks, deckId, removalResult.card)');

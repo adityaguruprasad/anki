@@ -3483,12 +3483,14 @@ test('DELETE /api/cards/:cardId deletes an owned card with one user-scoped query
     success: true,
     card: {
       id: 77,
+      deck_id: 42,
       front_content: 'Front',
       back_content: 'Back',
       next_review: '2026-05-08T12:00:00.000Z',
     },
   });
-  assert.equal(Object.hasOwn(res.body.card, 'deck_id'), false);
+  assert.equal(Object.hasOwn(res.body.card, 'deck_id'), true);
+  assert.equal(res.body.card.deck_id, deletedCard.deck_id);
   assert.equal(Object.hasOwn(res.body.card, '__owned_user_id'), false);
   assert.equal(Object.hasOwn(res.body.card, '__owned_deck_id'), false);
   assert.equal(db.calls.length, 1);
@@ -3531,12 +3533,14 @@ test('DELETE /api/cards/:cardId response omits unexpected returned card fields',
     success: true,
     card: {
       id: 77,
+      deck_id: 12,
       front_content: 'Front',
       back_content: 'Back',
       next_review: '2026-05-08T12:00:00.000Z',
     },
   });
-  assert.equal(Object.hasOwn(res.body.card, 'deck_id'), false);
+  assert.equal(Object.hasOwn(res.body.card, 'deck_id'), true);
+  assert.equal(res.body.card.deck_id, deletedRow.__owned_deck_id);
   assert.equal(Object.hasOwn(res.body.card, 'user_id'), false);
   assert.equal(Object.hasOwn(res.body.card, '__owned_user_id'), false);
   assert.equal(Object.hasOwn(res.body.card, '__owned_deck_id'), false);

@@ -1278,7 +1278,10 @@ const DeckManagement = ({ env, onAuthExpired }) => {
 
       let removalResult;
       try {
-        removalResult = parseDeckCardRemovalSuccessPayload(data, { expectedId: cardId });
+        removalResult = parseDeckCardRemovalSuccessPayload(data, {
+          expectedDeckId: deckId,
+          expectedId: cardId,
+        });
       } catch {
         if (!isCurrentMutation()) {
           return;

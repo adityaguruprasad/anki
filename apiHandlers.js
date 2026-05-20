@@ -72,6 +72,7 @@ const CARD_MUTATION_RESPONSE_CARD_FIELDS = Object.freeze([
 ]);
 const DELETE_CARD_RESPONSE_CARD_FIELDS = Object.freeze([
   'id',
+  'deck_id',
   'front_content',
   'back_content',
   'next_review',

@@ -14,6 +14,7 @@ function createValidRemovalPayload(cardOverrides = {}) {
     success: true,
     card: {
       id: 7,
+      deck_id: 42,
       front_content: 'Front',
       back_content: 'Back',
       next_review: VALID_NEXT_REVIEW,
@@ -87,6 +88,14 @@ test('parseDeckCardRemovalSuccessPayload accepts matching expected card ids', ()
   assert.equal(hasDeckCardRemovalSuccessPayload(payload, { expectedId: '7' }), true);
 });
 
+test('parseDeckCardRemovalSuccessPayload accepts matching expected deck ids', () => {
+  const payload = createValidRemovalPayload({ deck_id: '00042' });
+
+  assert.equal(parseDeckCardRemovalSuccessPayload(payload, { expectedDeckId: 42 }), payload);
+  assert.equal(parseDeckCardRemovalSuccessPayload(payload, { expectedDeckId: '42' }), payload);
+  assert.equal(hasDeckCardRemovalSuccessPayload(payload, { expectedDeckId: '42' }), true);
+});
+
 test('parseDeckCardRemovalSuccessPayload rejects malformed top-level payloads', () => {
   [
     undefined,
@@ -142,4 +151,16 @@ test('parseDeckCardRemovalSuccessPayload rejects a deleted card with the wrong e
   assertMalformed(payload, { expectedId: '7' });
   assert.equal(hasDeckCardRemovalSuccessPayload(payload, { expectedId: 7 }), false);
   assert.equal(hasDeckCardRemovalSuccessPayload(payload, { expectedId: '7' }), false);
+});
+
+test('parseDeckCardRemovalSuccessPayload rejects missing or mismatched expected deck ids', () => {
+  [
+    createValidRemovalPayload({ deck_id: undefined }),
+    createValidRemovalPayload({ deck_id: 41 }),
+    createValidRemovalPayload({ deck_id: 'deck-42' }),
+    createValidRemovalPayload({ deck_id: 0 }),
+  ].forEach((payload) => {
+    assertMalformed(payload, { expectedDeckId: 42 });
+    assert.equal(hasDeckCardRemovalSuccessPayload(payload, { expectedDeckId: 42 }), false);
+  });
 });
