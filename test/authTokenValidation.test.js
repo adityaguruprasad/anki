@@ -32,6 +32,16 @@ test('normalizeAuthToken accepts benign extra JWT header fields', () => {
   assert.equal(normalizeAuthToken(token), token);
 });
 
+test('normalizeAuthToken rejects compact JWTs with unsupported payload fields', () => {
+  for (const token of [
+    createCompactJwt({ payload: { role: 'admin' } }),
+    createCompactJwt({ payload: { email: 'ada@example.com' } }),
+    createCompactJwt({ payload: { password_hash: 'stored-hash' } }),
+  ]) {
+    assert.equal(normalizeAuthToken(token), null, token);
+  }
+});
+
 test('normalizeAuthToken accepts a max-length compact JWT envelope', () => {
   const token = createMaxLengthCompactJwt();
 

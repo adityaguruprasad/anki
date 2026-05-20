@@ -1642,6 +1642,26 @@ test('signToken omits unsupported caller payload fields from issued tokens', () 
   });
 });
 
+test('verifyToken rejects signed tokens with unsupported payload fields', () => {
+  const token = signRawJwt(
+    { alg: 'HS256', typ: 'JWT' },
+    {
+      userId: 107,
+      iat: 1000,
+      exp: 2000,
+      role: 'admin',
+      email: 'ada@example.com',
+      password_hash: 'stored-hash',
+    },
+    'unsupported-payload-secret'
+  );
+
+  assert.throws(
+    () => verifyToken(token, 'unsupported-payload-secret', { now: 1000 }),
+    /Unsupported token payload/
+  );
+});
+
 test('signToken ignores caller-supplied iat and exp claims in favor of computed values', () => {
   const token = signToken(
     {
@@ -2146,8 +2166,6 @@ test('authenticateToken exposes only the authorized request principal shape', ()
     { alg: 'HS256', typ: 'JWT' },
     {
       userId: 303,
-      role: 'admin',
-      email: 'ada@example.com',
       iat: 1000,
       exp: Math.floor(Date.now() / 1000) + 60,
     },
@@ -2163,6 +2181,35 @@ test('authenticateToken exposes only the authorized request principal shape', ()
 
   assert.equal(nextCalled, true);
   assert.deepEqual(req.user, { userId: 303 });
+});
+
+test('authenticateToken rejects signed tokens with unsupported payload claims', () => {
+  const { authenticateToken } = createAuthHandlers(createDb([]), {
+    jwtSecret: 'unsupported-auth-payload-secret',
+    passwordHasher: createPasswordHasher(),
+  });
+  const token = signRawJwt(
+    { alg: 'HS256', typ: 'JWT' },
+    {
+      userId: 304,
+      iat: 1000,
+      exp: Math.floor(Date.now() / 1000) + 60,
+      role: 'admin',
+      email: 'ada@example.com',
+    },
+    'unsupported-auth-payload-secret'
+  );
+  const req = { headers: { authorization: `Bearer ${token}` } };
+  const res = createRes();
+  let nextCalled = false;
+
+  authenticateToken(req, res, () => {
+    nextCalled = true;
+  });
+
+  assert.equal(res.statusCode, 403);
+  assert.equal(nextCalled, false);
+  assert.equal(req.user, undefined);
 });
 
 test('authenticateToken rejects malformed authorization headers before token verification', () => {

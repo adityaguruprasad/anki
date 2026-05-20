@@ -4,6 +4,7 @@ const AUTH_TOKEN_MAX_LENGTH = 4096;
 const AUTH_TOKEN_ALGORITHM = 'HS256';
 const AUTH_TOKEN_TYPE = 'JWT';
 const AUTH_TOKEN_COMPACT_PART_PATTERN = /^[A-Za-z0-9_-]+$/;
+const AUTH_TOKEN_PAYLOAD_FIELDS = Object.freeze(['userId', 'iat', 'exp']);
 
 function decodeBase64UrlToUtf8(value) {
   if (value.length % 4 === 1) {
@@ -79,6 +80,10 @@ function hasUnsupportedCriticalHeader(header) {
   return Object.prototype.hasOwnProperty.call(header, 'crit');
 }
 
+function hasOnlyAuthTokenPayloadFields(payload) {
+  return Object.keys(payload).every((field) => AUTH_TOKEN_PAYLOAD_FIELDS.includes(field));
+}
+
 function hasUsableJwtEnvelope(token) {
   const parts = token.split('.');
   if (
@@ -102,6 +107,7 @@ function hasUsableJwtEnvelope(token) {
   const payload = parseBase64UrlJsonObject(encodedPayload);
   return (
     payload !== null
+    && hasOnlyAuthTokenPayloadFields(payload)
     && isJwtUserIdClaim(payload.userId)
     && isNonNegativeSafeInteger(payload.iat)
     && isPositiveSafeInteger(payload.exp)

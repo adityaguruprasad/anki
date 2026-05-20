@@ -12,6 +12,7 @@ const DEFAULT_DEV_JWT_SECRET = 'your_secret_key';
 const DEFAULT_JWT_EXPIRES_IN_SECONDS = 60 * 60 * 24;
 const JWT_TOKEN_ALGORITHM = 'HS256';
 const JWT_TOKEN_TYPE = 'JWT';
+const JWT_PAYLOAD_FIELDS = Object.freeze(['userId', 'iat', 'exp']);
 const JWT_SECRET_DEFAULT_PRODUCTION_ERROR =
   'JWT_SECRET must not use the default development secret in production';
 const JWT_SECRET_EMPTY_ERROR = 'JWT_SECRET must not be empty';
@@ -221,6 +222,12 @@ function validateJwtHeader(header) {
   }
 }
 
+function validateJwtPayloadFields(payload) {
+  if (Object.keys(payload).some((field) => !JWT_PAYLOAD_FIELDS.includes(field))) {
+    throw new Error('Unsupported token payload');
+  }
+}
+
 function signToken(payload, secret = resolveJwtSecret(), options = {}) {
   const now = validateJwtIssuedAtTimestamp(options.now ?? Math.floor(Date.now() / 1000));
   const expiresInSeconds =
@@ -257,6 +264,7 @@ function verifyToken(token, secret = resolveJwtSecret(), options = {}) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     throw new Error('Invalid token payload');
   }
+  validateJwtPayloadFields(payload);
 
   if (payload.exp == null) {
     throw new Error('Token expiration is required');
@@ -281,7 +289,7 @@ function verifyToken(token, secret = resolveJwtSecret(), options = {}) {
     throw new Error('Token expired');
   }
 
-  return { ...payload, userId: normalizedUserId };
+  return { userId: normalizedUserId, iat, exp };
 }
 
 function normalizeTokenUserId(userId) {
