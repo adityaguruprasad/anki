@@ -528,6 +528,15 @@ function assertCardRemovalResult(row, options = {}) {
   ) {
     throw new TypeError(INVALID_CARD_REMOVAL_RESULT_ERROR);
   }
+
+  if (options.requireDeckOwnershipProof) {
+    assertObjectHasOwnFields(row, ['deck_id'], INVALID_CARD_REMOVAL_RESULT_ERROR);
+    const deckIdValidation = validatePositiveIntegerIdentifier(row.deck_id, 'deckId');
+    if (!deckIdValidation.ok) {
+      throw new TypeError(INVALID_CARD_REMOVAL_RESULT_ERROR);
+    }
+    assertCardDeckOwnershipProof(row, deckIdValidation, INVALID_CARD_REMOVAL_RESULT_ERROR);
+  }
 }
 
 function assertCardReadResult(row, errorMessage = INVALID_CARD_READ_RESULT_ERROR) {
@@ -1413,10 +1422,12 @@ async function deleteCard(req, res, db) {
          AND d.id = cards.deck_id
          AND d.user_id = $2
        RETURNING cards.id,
+                 cards.deck_id,
                  cards.front_content,
                  cards.back_content,
                  cards.next_review,
-                 d.user_id AS "__owned_user_id"`,
+                 d.user_id AS "__owned_user_id",
+                 d.id AS "__owned_deck_id"`,
       [cardIdValidation.value, userId]
     );
 
@@ -1428,6 +1439,7 @@ async function deleteCard(req, res, db) {
     assertCardRemovalResult(deletedCard, {
       expectedCardId: cardIdValidation.value,
       expectedUserId: userId,
+      requireDeckOwnershipProof: true,
     });
     return res.json({
       success: true,

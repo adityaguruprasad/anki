@@ -3380,12 +3380,16 @@ test('PATCH /api/cards/:cardId returns 404 for missing or unowned card with one 
 test('DELETE /api/cards/:cardId deletes an owned card with one user-scoped query', async () => {
   const deletedCard = {
     id: 77,
+    deck_id: 42,
     front_content: 'Front',
     back_content: 'Back',
     next_review: '2026-05-08T12:00:00.000Z',
   };
   const db = createDb([
-    { rowCount: 1, rows: [{ ...deletedCard, __owned_user_id: 'user-1' }] },
+    {
+      rowCount: 1,
+      rows: [{ ...deletedCard, __owned_user_id: 'user-1', __owned_deck_id: 42 }],
+    },
   ]);
   const req = { params: { cardId: '77' }, user: { userId: 'user-1' } };
   const res = createRes();
@@ -3393,8 +3397,18 @@ test('DELETE /api/cards/:cardId deletes an owned card with one user-scoped query
   await deleteCard(req, res, db);
 
   assert.equal(res.statusCode, 200);
-  assert.deepEqual(res.body, { success: true, card: deletedCard });
+  assert.deepEqual(res.body, {
+    success: true,
+    card: {
+      id: 77,
+      front_content: 'Front',
+      back_content: 'Back',
+      next_review: '2026-05-08T12:00:00.000Z',
+    },
+  });
+  assert.equal(Object.hasOwn(res.body.card, 'deck_id'), false);
   assert.equal(Object.hasOwn(res.body.card, '__owned_user_id'), false);
+  assert.equal(Object.hasOwn(res.body.card, '__owned_deck_id'), false);
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, [77, 'user-1']);
   assert.match(db.calls[0].sql, /DELETE\s+FROM\s+cards/i);
@@ -3403,9 +3417,10 @@ test('DELETE /api/cards/:cardId deletes an owned card with one user-scoped query
   assert.match(db.calls[0].sql, /d\.id\s+=\s+cards\.deck_id/i);
   assert.match(db.calls[0].sql, /d\.user_id\s+=\s+\$2/i);
   assert.match(db.calls[0].sql, /d\.user_id\s+AS\s+"__owned_user_id"/i);
+  assert.match(db.calls[0].sql, /d\.id\s+AS\s+"__owned_deck_id"/i);
   assert.match(
     db.calls[0].sql,
-    /RETURNING\s+cards\.id,\s+cards\.front_content,\s+cards\.back_content,\s+cards\.next_review/i
+    /RETURNING\s+cards\.id,\s+cards\.deck_id,\s+cards\.front_content,\s+cards\.back_content,\s+cards\.next_review/i
   );
   assert.doesNotMatch(db.calls[0].sql, /RETURNING\s+\*/i);
   assert.doesNotMatch(db.calls[0].sql, /SELECT[\s\S]+FROM\s+cards/i);
@@ -3420,6 +3435,7 @@ test('DELETE /api/cards/:cardId response omits unexpected returned card fields',
     deck_id: 12,
     user_id: 'user-1',
     __owned_user_id: 'user-1',
+    __owned_deck_id: 12,
     private_notes: 'do not expose',
   };
   const db = createDb([{ rowCount: 1, rows: [deletedRow] }]);
@@ -3441,6 +3457,7 @@ test('DELETE /api/cards/:cardId response omits unexpected returned card fields',
   assert.equal(Object.hasOwn(res.body.card, 'deck_id'), false);
   assert.equal(Object.hasOwn(res.body.card, 'user_id'), false);
   assert.equal(Object.hasOwn(res.body.card, '__owned_user_id'), false);
+  assert.equal(Object.hasOwn(res.body.card, '__owned_deck_id'), false);
   assert.equal(Object.hasOwn(res.body.card, 'private_notes'), false);
 });
 
@@ -3476,10 +3493,12 @@ test('DELETE /api/cards/:cardId returns 500 when the deleted row is missing remo
 test('DELETE /api/cards/:cardId fails closed when the deleted row violates removal response invariants', async (t) => {
   const validDeletedCard = {
     id: 77,
+    deck_id: 42,
     front_content: 'Front',
     back_content: 'Back',
     next_review: '2026-05-08T12:00:00.000Z',
     __owned_user_id: 'user-1',
+    __owned_deck_id: 42,
   };
   const malformedRows = [
     { ...validDeletedCard, id: 'card-77' },
@@ -3487,6 +3506,45 @@ test('DELETE /api/cards/:cardId fails closed when the deleted row violates remov
     { ...validDeletedCard, front_content: '   ' },
     { ...validDeletedCard, back_content: '' },
     { ...validDeletedCard, next_review: 'not-a-date' },
+  ];
+  t.mock.method(console, 'error', () => {});
+
+  for (const row of malformedRows) {
+    const db = createDb([{ rowCount: 1, rows: [row] }]);
+    const req = { params: { cardId: '77' }, user: { userId: 'user-1' } };
+    const res = createRes();
+
+    await deleteCard(req, res, db);
+
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.body, { error: 'Internal server error' });
+    assert.equal(db.calls.length, 1);
+    assert.deepEqual(db.calls[0].params, [77, 'user-1']);
+  }
+});
+
+test('DELETE /api/cards/:cardId fails closed when the deleted row deck anchor is missing or mismatched', async (t) => {
+  const validDeletedCard = {
+    id: 77,
+    deck_id: 42,
+    front_content: 'Front',
+    back_content: 'Back',
+    next_review: '2026-05-08T12:00:00.000Z',
+    __owned_user_id: 'user-1',
+    __owned_deck_id: 42,
+  };
+  const rowWithoutDeckId = { ...validDeletedCard };
+  delete rowWithoutDeckId.deck_id;
+  const rowWithoutDeckAnchor = { ...validDeletedCard };
+  delete rowWithoutDeckAnchor.__owned_deck_id;
+  const malformedRows = [
+    rowWithoutDeckId,
+    rowWithoutDeckAnchor,
+    { ...validDeletedCard, deck_id: null },
+    { ...validDeletedCard, deck_id: 'deck-42' },
+    { ...validDeletedCard, __owned_deck_id: null },
+    { ...validDeletedCard, __owned_deck_id: 'deck-42' },
+    { ...validDeletedCard, deck_id: 41, __owned_deck_id: 42 },
   ];
   t.mock.method(console, 'error', () => {});
 
@@ -3518,10 +3576,12 @@ test('card mutation endpoints fail closed when returned ownership proof is missi
   };
   const deletedCard = {
     id: 77,
+    deck_id: 42,
     front_content: 'Front',
     back_content: 'Back',
     next_review: '2026-05-08T12:00:00.000Z',
     __owned_user_id: 'user-1',
+    __owned_deck_id: 42,
   };
   const withoutOwnerProof = (row) => {
     const copy = { ...row };
@@ -3617,10 +3677,12 @@ test('card mutation endpoints fail closed when returned-row cardinality is malfo
   };
   const deletedCard = {
     id: 77,
+    deck_id: 42,
     front_content: 'Front',
     back_content: 'Back',
     next_review: '2026-05-08T12:00:00.000Z',
     __owned_user_id: 'user-1',
+    __owned_deck_id: 42,
   };
   const cases = [
     {
