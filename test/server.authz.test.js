@@ -130,6 +130,23 @@ function createCardReadRow(overrides = {}) {
   };
 }
 
+function createEmptyCardReadSentinel(overrides = {}) {
+  return {
+    id: null,
+    deck_id: null,
+    front_content: null,
+    back_content: null,
+    created_at: null,
+    last_reviewed: null,
+    next_review: null,
+    interval: null,
+    review_count: null,
+    ease_factor: null,
+    __owned_deck_id: 42,
+    ...overrides,
+  };
+}
+
 function createStudySessionCardReadRow(overrides = {}) {
   return {
     ...createCardReadRow(overrides),
@@ -1548,7 +1565,7 @@ test('GET /api/decks/:deckId/cards returns empty page for owned empty deck', asy
   const db = createDb([
     {
       rowCount: 1,
-      rows: [{ id: null, __owned_deck_id: 42 }],
+      rows: [createEmptyCardReadSentinel({ __cursor_created_at: null })],
     },
   ]);
   const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
@@ -1558,6 +1575,53 @@ test('GET /api/decks/:deckId/cards returns empty page for owned empty deck', asy
 
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, { cards: [], nextCursor: null });
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [42, 'user-1', 51]);
+});
+
+test('GET /api/decks/:deckId/cards fails closed when empty-card sentinels are malformed', async (t) => {
+  const rowWithoutFrontContent = createEmptyCardReadSentinel();
+  delete rowWithoutFrontContent.front_content;
+  const malformedRows = [
+    { ...createEmptyCardReadSentinel(), deck_id: 42 },
+    { ...createEmptyCardReadSentinel(), front_content: 'Partial card front' },
+    { ...createEmptyCardReadSentinel(), __cursor_created_at: '2026-05-08T13:00:00.000000Z' },
+    rowWithoutFrontContent,
+  ];
+  t.mock.method(console, 'error', () => {});
+
+  for (const row of malformedRows) {
+    const db = createDb([{ rowCount: 1, rows: [row] }]);
+    const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+    const res = createRes();
+
+    await getCardsByDeck(req, res, db);
+
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.body, { error: 'Internal server error' });
+    assert.equal(db.calls.length, 1);
+    assert.deepEqual(db.calls[0].params, [42, 'user-1', 51]);
+  }
+});
+
+test('GET /api/decks/:deckId/cards fails closed when empty-card sentinels include unexpected sidecars', async (t) => {
+  const db = createDb([{
+    rowCount: 1,
+    rows: [
+      createEmptyCardReadSentinel({
+        __cursor_created_at: null,
+        __owned_user_id: 'user-1',
+      }),
+    ],
+  }]);
+  const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+  const res = createRes();
+  t.mock.method(console, 'error', () => {});
+
+  await getCardsByDeck(req, res, db);
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Internal server error' });
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, [42, 'user-1', 51]);
 });
@@ -1681,7 +1745,7 @@ test('GET /api/decks/:deckId/cards fails closed when a card row violates read re
 });
 
 test('GET /api/decks/:deckId/cards uses one user-scoped ordered browse query with default limit', async () => {
-  const db = createDb([{ rowCount: 1, rows: [{ id: null, __owned_deck_id: 42 }] }]);
+  const db = createDb([{ rowCount: 1, rows: [createEmptyCardReadSentinel()] }]);
   const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
   const res = createRes();
 
@@ -1909,7 +1973,7 @@ test('GET /api/decks/:deckId/cards returns 400 for q with null bytes and skips d
 });
 
 test('GET /api/decks/:deckId/cards treats whitespace q like an omitted q', async () => {
-  const db = createDb([{ rowCount: 1, rows: [{ id: null, __owned_deck_id: 42 }] }]);
+  const db = createDb([{ rowCount: 1, rows: [createEmptyCardReadSentinel()] }]);
   const req = {
     params: { deckId: '42' },
     query: { q: '   ' },
@@ -1983,7 +2047,7 @@ test('GET /api/decks/:deckId/cards returns empty page for owned deck with no q m
   const db = createDb([
     {
       rowCount: 1,
-      rows: [{ id: null, __owned_deck_id: 42 }],
+      rows: [createEmptyCardReadSentinel()],
     },
   ]);
   const req = {
@@ -2609,7 +2673,7 @@ test('GET /api/cards/:deckId returns empty array for owned deck with no due card
   const db = createDb([
     {
       rowCount: 1,
-      rows: [{ id: null, __owned_deck_id: 42 }],
+      rows: [createEmptyCardReadSentinel()],
     },
   ]);
   const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
@@ -2622,6 +2686,30 @@ test('GET /api/cards/:deckId returns empty array for owned deck with no due card
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, [42, 'user-1', 100]);
   assert.match(db.calls[0].sql, /ORDER BY c\.next_review ASC NULLS FIRST,\s*c\.id ASC\s+LIMIT \$3/);
+});
+
+test('GET /api/cards/:deckId fails closed when empty-card sentinels are malformed', async (t) => {
+  const rowWithoutBackContent = createEmptyCardReadSentinel();
+  delete rowWithoutBackContent.back_content;
+  const malformedRows = [
+    { ...createEmptyCardReadSentinel(), deck_id: 42 },
+    { ...createEmptyCardReadSentinel(), back_content: 'Partial answer' },
+    rowWithoutBackContent,
+  ];
+  t.mock.method(console, 'error', () => {});
+
+  for (const row of malformedRows) {
+    const db = createDb([{ rowCount: 1, rows: [row] }]);
+    const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+    const res = createRes();
+
+    await getDueCardsByDeck(req, res, db);
+
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.body, { error: 'Internal server error' });
+    assert.equal(db.calls.length, 1);
+    assert.deepEqual(db.calls[0].params, [42, 'user-1', 100]);
+  }
 });
 
 test('GET /api/cards/:deckId fails closed when rows are not anchored to the requested deck', async (t) => {

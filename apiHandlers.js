@@ -28,6 +28,11 @@ const CARD_READ_FIELDS = Object.freeze([
   'review_count',
   'ease_factor',
 ]);
+const EMPTY_CARD_LIST_ROW_ALLOWED_FIELDS = Object.freeze([
+  ...CARD_READ_FIELDS,
+  '__owned_deck_id',
+  '__cursor_created_at',
+]);
 const CARD_READ_SELECT_LIST = CARD_READ_FIELDS
   .map((field) => `c.${field}`)
   .join(',\n              ');
@@ -611,12 +616,36 @@ function assertCardListRowAnchoredToDeck(row, deckId) {
   }
 
   if (row.id === null) {
+    assertEmptyCardListRow(row);
     return;
   }
 
   assertObjectHasOwnFields(row, ['deck_id'], INVALID_CARD_READ_RESULT_ERROR);
   const cardDeckIdValidation = validatePositiveIntegerIdentifier(row.deck_id, 'deckId');
   if (!cardDeckIdValidation.ok || cardDeckIdValidation.value !== deckId) {
+    throw new TypeError(INVALID_CARD_READ_RESULT_ERROR);
+  }
+}
+
+function assertEmptyCardListRow(row) {
+  assertObjectHasOwnFields(row, CARD_READ_FIELDS, INVALID_CARD_READ_RESULT_ERROR);
+
+  if (
+    Reflect.ownKeys(row).some(
+      (field) => !EMPTY_CARD_LIST_ROW_ALLOWED_FIELDS.includes(field)
+    )
+  ) {
+    throw new TypeError(INVALID_CARD_READ_RESULT_ERROR);
+  }
+
+  if (CARD_READ_FIELDS.some((field) => row[field] !== null)) {
+    throw new TypeError(INVALID_CARD_READ_RESULT_ERROR);
+  }
+
+  if (
+    Object.hasOwn(row, '__cursor_created_at')
+    && row.__cursor_created_at !== null
+  ) {
     throw new TypeError(INVALID_CARD_READ_RESULT_ERROR);
   }
 }
