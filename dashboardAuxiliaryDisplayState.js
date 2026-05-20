@@ -44,6 +44,28 @@ function isNonNegativeSafeInteger(value) {
   return Number.isSafeInteger(value) && value >= 0;
 }
 
+function hasSchedulingInsightsEndpointCountInvariants(schedulingInsights) {
+  const {
+    totalCards,
+    overdue,
+    dueToday,
+    dueTomorrow,
+    dueNext7Days,
+    leechCandidates,
+  } = schedulingInsights;
+
+  // Overdue and next-7-days are disjoint; today and tomorrow sit inside next-7-days.
+  return (
+    overdue <= totalCards
+    && dueToday <= totalCards
+    && dueTomorrow <= totalCards
+    && dueNext7Days <= totalCards
+    && leechCandidates <= totalCards
+    && dueToday + dueTomorrow <= dueNext7Days
+    && overdue + dueNext7Days <= totalCards
+  );
+}
+
 function buildDeckAvailabilityDisplayState({
   studyDeckTarget = null,
   isLoadingDecks = false,
@@ -87,7 +109,8 @@ function hasSchedulingInsightsPayload(schedulingInsights) {
     && SCHEDULING_INSIGHTS_ENDPOINT_COUNT_KEYS.every((key) => (
       hasOwn(schedulingInsights, key)
       && isNonNegativeSafeInteger(schedulingInsights[key])
-    ));
+    ))
+    && hasSchedulingInsightsEndpointCountInvariants(schedulingInsights);
 }
 
 function buildSchedulingInsightsDisplayState({

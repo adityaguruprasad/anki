@@ -77,6 +77,14 @@ test('hasSchedulingInsightsSummaryPayload validates every field required by the 
     hasSchedulingInsightsSummaryPayload(createSchedulingInsightsPayload({ averageEaseFactor: null })),
     true,
   );
+  assert.equal(
+    hasSchedulingInsightsSummaryPayload(createSchedulingInsightsPayload({
+      dueToday: 2,
+      dueTomorrow: 4,
+      dueNext7Days: 6,
+    })),
+    true,
+  );
 
   [
     null,
@@ -87,6 +95,8 @@ test('hasSchedulingInsightsSummaryPayload validates every field required by the 
     createSchedulingInsightsPayload({ overdue: 3.5 }),
     createSchedulingInsightsPayload({ dueTomorrow: '4' }),
     createSchedulingInsightsPayload({ dueNext7Days: Number.MAX_SAFE_INTEGER + 1 }),
+    createSchedulingInsightsPayload({ dueToday: 9, dueTomorrow: 4, dueNext7Days: 12 }),
+    createSchedulingInsightsPayload({ dueTomorrow: 13, dueNext7Days: 12 }),
     createSchedulingInsightsPayload({ recommendedDailyReviewTarget: Number.NaN }),
     createSchedulingInsightsPayload({ averageEaseFactor: undefined }),
     createSchedulingInsightsPayload({ averageEaseFactor: '2.35' }),
@@ -97,6 +107,19 @@ test('hasSchedulingInsightsSummaryPayload validates every field required by the 
       hasSchedulingInsightsSummaryPayload(payload),
       false,
       `Expected ${JSON.stringify(payload)} to be rejected`,
+    );
+  });
+});
+
+test('buildSchedulingInsightsSummary rejects impossible upcoming bucket relationships', () => {
+  [
+    { dueToday: 9, dueTomorrow: 4, dueNext7Days: 12 },
+    { dueToday: 13, dueTomorrow: 0, dueNext7Days: 12 },
+    { dueToday: 0, dueTomorrow: 13, dueNext7Days: 12 },
+  ].forEach((override) => {
+    assert.throws(
+      () => buildSchedulingInsightsSummary(createSchedulingInsightsPayload(override)),
+      MALFORMED_PAYLOAD_ERROR,
     );
   });
 });

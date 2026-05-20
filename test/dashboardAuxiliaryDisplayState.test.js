@@ -111,12 +111,33 @@ test('hasSchedulingInsightsPayload requires the successful endpoint contract', (
     hasSchedulingInsightsPayload(createSchedulingInsightsPayload({ averageEaseFactor: null })),
     true,
   );
+  assert.equal(
+    hasSchedulingInsightsPayload(createSchedulingInsightsPayload({
+      totalCards: 12,
+      overdue: 6,
+      dueToday: 2,
+      dueTomorrow: 4,
+      dueNext7Days: 6,
+      leechCandidates: 12,
+    })),
+    true,
+  );
 
   [
     { dueToday: 1 },
     createSchedulingInsightsPayload({ totalCards: '30' }),
     createSchedulingInsightsPayload({ leechCandidates: Number.MAX_SAFE_INTEGER + 1 }),
     createSchedulingInsightsPayload({ suggestedNewCards: Number.NaN }),
+    createSchedulingInsightsPayload({ totalCards: 2 }),
+    createSchedulingInsightsPayload({
+      totalCards: 12,
+      overdue: 1,
+      dueToday: 2,
+      dueTomorrow: 4,
+      dueNext7Days: 12,
+    }),
+    createSchedulingInsightsPayload({ leechCandidates: 31 }),
+    createSchedulingInsightsPayload({ dueToday: 9, dueTomorrow: 4, dueNext7Days: 12 }),
   ].forEach((payload) => {
     assert.equal(
       hasSchedulingInsightsPayload(payload),
@@ -130,6 +151,29 @@ test('hasSchedulingInsightsPayload requires the successful endpoint contract', (
   assert.equal(hasSchedulingInsightsPayload([]), false);
   assert.equal(hasSchedulingInsightsPayload(''), false);
   assert.equal(hasSchedulingInsightsPayload(0), false);
+});
+
+test('hasSchedulingInsightsPayload rejects impossible upcoming buckets with valid endpoint totals', () => {
+  const validEndpointTotals = {
+    totalCards: 20,
+    overdue: 5,
+    dueToday: 9,
+    dueTomorrow: 3,
+    dueNext7Days: 12,
+    leechCandidates: 20,
+  };
+
+  assert.equal(
+    hasSchedulingInsightsPayload(createSchedulingInsightsPayload(validEndpointTotals)),
+    true,
+  );
+  assert.equal(
+    hasSchedulingInsightsPayload(createSchedulingInsightsPayload({
+      ...validEndpointTotals,
+      dueTomorrow: 4,
+    })),
+    false,
+  );
 });
 
 test('buildSchedulingInsightsDisplayState shows loading copy while insights are unavailable', () => {
@@ -173,6 +217,13 @@ test('buildSchedulingInsightsDisplayState does not show summary without a valid 
     0,
     { dueToday: 2 },
     createSchedulingInsightsPayload({ overdue: '3' }),
+    createSchedulingInsightsPayload({
+      totalCards: 12,
+      overdue: 1,
+      dueToday: 2,
+      dueTomorrow: 4,
+      dueNext7Days: 12,
+    }),
   ].forEach((schedulingInsights) => {
     const state = buildSchedulingInsightsDisplayState({
       schedulingInsights,
@@ -197,6 +248,7 @@ test('buildSchedulingInsightsDisplayState hides payloads rejected by the summary
     createSchedulingInsightsPayload({ overdue: -1 }),
     createSchedulingInsightsPayload({ dueTomorrow: 1.5 }),
     createSchedulingInsightsPayload({ dueNext7Days: Number.MAX_SAFE_INTEGER + 1 }),
+    createSchedulingInsightsPayload({ dueToday: 9, dueTomorrow: 4, dueNext7Days: 12 }),
     createSchedulingInsightsPayload({ recommendedDailyReviewTarget: Number.NaN }),
     createSchedulingInsightsPayload({ recommendedDailyReviewTarget: '10' }),
     createSchedulingInsightsPayload({ averageEaseFactor: '2.35' }),

@@ -20,6 +20,17 @@ function hasSchedulingInsightsAverageEaseFactor(value) {
   return value === null || (typeof value === 'number' && Number.isFinite(value) && value > 0);
 }
 
+function hasSchedulingInsightsSummaryCountInvariants(insights) {
+  const { dueToday, dueTomorrow, dueNext7Days } = insights;
+
+  // Today and tomorrow are disjoint subsets of the next-7-days bucket.
+  return (
+    dueToday <= dueNext7Days
+    && dueTomorrow <= dueNext7Days
+    && dueToday + dueTomorrow <= dueNext7Days
+  );
+}
+
 function toCount(value) {
   if (!isNonNegativeSafeInteger(value)) {
     throw new Error(MALFORMED_SCHEDULING_INSIGHTS_PAYLOAD);
@@ -47,6 +58,7 @@ function hasSchedulingInsightsSummaryPayload(insights) {
     && SCHEDULING_INSIGHTS_SUMMARY_COUNT_KEYS.every((key) => (
       hasOwn(insights, key) && isNonNegativeSafeInteger(insights[key])
     ))
+    && hasSchedulingInsightsSummaryCountInvariants(insights)
     && hasOwn(insights, 'averageEaseFactor')
     && hasSchedulingInsightsAverageEaseFactor(insights.averageEaseFactor);
 }
