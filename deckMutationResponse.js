@@ -1,5 +1,8 @@
 const MALFORMED_DECK_MUTATION_PAYLOAD_ERROR = 'Malformed deck mutation payload';
-const MAX_POSTGRES_SERIAL_ID = 2147483647;
+const {
+  MAX_POSTGRES_SERIAL_ID,
+  normalizeRouteSafeId,
+} = require('./cardIdentifier');
 const MAX_POSTGRES_SERIAL_ID_STRING = String(MAX_POSTGRES_SERIAL_ID);
 
 function isObjectRecord(value) {
@@ -10,13 +13,15 @@ function isNonBlankString(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
-function hasUsableDeckId(value) {
+function normalizeDeckResponseId(value) {
   if (typeof value === 'number') {
-    return Number.isInteger(value) && value >= 1 && value <= MAX_POSTGRES_SERIAL_ID;
+    return Number.isSafeInteger(value) && value >= 1 && value <= MAX_POSTGRES_SERIAL_ID
+      ? String(value)
+      : null;
   }
 
   if (typeof value === 'string') {
-    return (
+    const isCanonicalResponseId = (
       /^[1-9]\d*$/.test(value)
       && (
         value.length < MAX_POSTGRES_SERIAL_ID_STRING.length
@@ -27,15 +32,26 @@ function hasUsableDeckId(value) {
         )
       )
     );
+
+    return isCanonicalResponseId ? value : null;
   }
 
-  return false;
+  return null;
 }
 
-function hasSameDeckId(leftId, rightId) {
-  return hasUsableDeckId(leftId)
-    && hasUsableDeckId(rightId)
-    && String(leftId) === String(rightId);
+function hasUsableDeckId(value) {
+  return normalizeDeckResponseId(value) !== null;
+}
+
+function hasSameDeckId(responseId, expectedId) {
+  const normalizedResponseId = normalizeDeckResponseId(responseId);
+  const normalizedExpectedId = normalizeRouteSafeId(expectedId);
+
+  return (
+    normalizedResponseId !== null
+    && normalizedExpectedId !== null
+    && normalizedResponseId === normalizedExpectedId
+  );
 }
 
 function hasDeckMutationResponsePayload(payload, options = {}) {
@@ -45,7 +61,7 @@ function hasDeckMutationResponsePayload(payload, options = {}) {
     isObjectRecord(payload)
     && hasUsableDeckId(payload.id)
     && isNonBlankString(payload.name)
-    && (!hasExpectedId || (hasUsableDeckId(expectedId) && hasSameDeckId(payload.id, expectedId)))
+    && (!hasExpectedId || hasSameDeckId(payload.id, expectedId))
   );
 }
 

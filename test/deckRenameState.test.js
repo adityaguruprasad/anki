@@ -223,6 +223,46 @@ test('rename-deck response completion validates successful deck rows against the
   assert.deepEqual(receivedOptions, { expectedId: '7' });
 });
 
+test('rename-deck response completion accepts route-normalized requested deck ids', () => {
+  const renamedDeck = {
+    id: 7,
+    name: 'Organic Chemistry',
+  };
+
+  assert.deepEqual(
+    getRenameDeckResponseCompletion({
+      deckId: '0007',
+      isCurrent: true,
+      responseOk: true,
+      payload: renamedDeck,
+    }),
+    {
+      type: RENAME_DECK_COMPLETION_TYPES.SUCCESS,
+      ignored: false,
+      renamedDeck,
+    },
+  );
+});
+
+test('rename-deck response completion rejects route-normalized stale successful deck rows', () => {
+  const completion = getRenameDeckResponseCompletion({
+    deckId: '0008',
+    isCurrent: true,
+    responseOk: true,
+    payload: {
+      id: 7,
+      name: 'Organic Chemistry',
+    },
+  });
+
+  assert.deepEqual(completion, {
+    type: RENAME_DECK_COMPLETION_TYPES.INVALID_RESPONSE,
+    ignored: false,
+    error: RENAME_DECK_MESSAGES.renameFailed,
+  });
+  assert.equal(Object.prototype.hasOwnProperty.call(completion, 'renamedDeck'), false);
+});
+
 test('rename-deck response completion rejects malformed 2xx payloads before local mutation data exists', () => {
   const completion = getRenameDeckResponseCompletion({
     deckId: 7,

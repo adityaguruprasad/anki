@@ -44,6 +44,23 @@ test('parseDeckMutationResponsePayload accepts numeric ids', () => {
   assert.equal(hasDeckMutationResponsePayload(payload, { expectedId: '7' }), true);
 });
 
+test('parseDeckMutationResponsePayload compares expected ids with route-safe normalization', () => {
+  [7, '7'].forEach((id) => {
+    const payload = {
+      id,
+      name: 'Biology',
+    };
+
+    ['7', ' 7 ', '0007', '\t0007\n', 7].forEach((expectedId) => {
+      assert.equal(parseDeckMutationResponsePayload(payload, { expectedId }), payload);
+      assert.equal(hasDeckMutationResponsePayload(payload, { expectedId }), true);
+    });
+
+    assertMalformed(payload, { expectedId: '0008' });
+    assert.equal(hasDeckMutationResponsePayload(payload, { expectedId: '0008' }), false);
+  });
+});
+
 test('parseDeckMutationResponsePayload accepts positive numeric id boundaries', () => {
   [1, 2147483647].forEach((id) => {
     const payload = {
@@ -114,6 +131,21 @@ test('parseDeckMutationResponsePayload rejects missing or unusable ids', () => {
   });
 });
 
+test('parseDeckMutationResponsePayload rejects unsafe numeric response ids', () => {
+  [
+    Number.MAX_SAFE_INTEGER + 1,
+    Number.MAX_VALUE,
+  ].forEach((id) => {
+    const payload = {
+      id,
+      name: 'Math',
+    };
+
+    assertMalformed(payload);
+    assert.equal(hasDeckMutationResponsePayload(payload), false);
+  });
+});
+
 test('parseDeckMutationResponsePayload rejects missing or unusable names', () => {
   [
     { id: 1 },
@@ -137,7 +169,7 @@ test('parseDeckMutationResponsePayload rejects rows for a different expected dec
   assertMalformed(payload, { expectedId: 7 });
   assert.equal(hasDeckMutationResponsePayload(payload, { expectedId: 7 }), false);
   assert.equal(hasDeckMutationResponsePayload({ id: 'null', name: 'History' }, { expectedId: null }), false);
-  assert.equal(hasDeckMutationResponsePayload({ id: 7, name: 'History' }, { expectedId: '007' }), false);
+  assert.equal(hasDeckMutationResponsePayload({ id: '007', name: 'History' }, { expectedId: 7 }), false);
 });
 
 test('parseDeckMutationResponsePayload rejects equal but unusable expected deck ids', () => {
