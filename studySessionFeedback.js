@@ -15,6 +15,9 @@ const STUDY_SESSION_SUBMISSION_RECOVERY_ACTIONS = Object.freeze({
 });
 
 const STALE_CARD_CONFLICT_MESSAGE = 'This card was already rescheduled and is no longer due. Moving to the next due card.';
+// Mirrors the backend scheduler/response contract; keep aligned with spacedRepetition/apiHandlers.
+const MIN_STUDY_SESSION_EASE_FACTOR = 1.3;
+const MAX_STUDY_SESSION_INTERVAL_DAYS = 36500;
 
 function isObjectRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -55,6 +58,32 @@ function getValidNextReviewDate(nextReview) {
   return nextReviewDate;
 }
 
+function hasValidStudySessionSchedulingFields(card) {
+  const nextReviewDate = getValidNextReviewDate(card.next_review);
+  if (nextReviewDate === null || !isValidIsoTimestamp(card.last_reviewed)) {
+    return false;
+  }
+
+  const lastReviewedDate = new Date(card.last_reviewed);
+  if (
+    Number.isNaN(lastReviewedDate.getTime())
+    || lastReviewedDate.getTime() > nextReviewDate.getTime()
+  ) {
+    return false;
+  }
+
+  return (
+    Number.isSafeInteger(card.interval)
+    && card.interval >= 1
+    && card.interval <= MAX_STUDY_SESSION_INTERVAL_DAYS
+    && typeof card.ease_factor === 'number'
+    && Number.isFinite(card.ease_factor)
+    && card.ease_factor >= MIN_STUDY_SESSION_EASE_FACTOR
+    && Number.isSafeInteger(card.review_count)
+    && card.review_count >= 0
+  );
+}
+
 function getValidatedStudySessionSubmissionResponse(response, options = {}) {
   if (!isObjectRecord(response)) {
     return null;
@@ -85,7 +114,7 @@ function getValidatedStudySessionSubmissionResponse(response, options = {}) {
     return null;
   }
 
-  if (!getValidNextReviewDate(card.next_review)) {
+  if (!hasValidStudySessionSchedulingFields(card)) {
     return null;
   }
 

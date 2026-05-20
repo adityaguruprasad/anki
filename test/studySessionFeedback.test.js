@@ -131,7 +131,10 @@ test('getValidatedStudySessionSubmissionResponse preserves valid submission payl
     card: {
       id: 7,
       next_review: '2026-05-09T14:30:00.000Z',
+      last_reviewed: '2026-05-08T14:30:00.000Z',
       interval: 3,
+      ease_factor: 2.6,
+      review_count: 4,
     },
     message: 'Answer submitted',
   };
@@ -148,15 +151,36 @@ test('getValidatedStudySessionSubmissionResponse preserves valid submission payl
     card: {
       id: MAX_POSTGRES_SERIAL_ID,
       next_review: '2026-05-09T14:30:00.000Z',
+      last_reviewed: '2026-05-08T14:30:00.000Z',
+      interval: 36500,
+      ease_factor: 1.3,
+      review_count: 0,
     },
   };
   assert.equal(getValidatedStudySessionSubmissionResponse(boundaryResponse), boundaryResponse);
+
+  const sameInstantResponse = {
+    success: true,
+    card: {
+      id: 2,
+      next_review: '2026-05-09T14:30:00.000Z',
+      last_reviewed: '2026-05-09T14:30:00.000Z',
+      interval: 1,
+      ease_factor: 1.3,
+      review_count: 0,
+    },
+  };
+  assert.equal(getValidatedStudySessionSubmissionResponse(sameInstantResponse), sameInstantResponse);
 });
 
 test('getValidatedStudySessionSubmissionResponse rejects malformed submission payloads', () => {
   const validCard = {
     id: 1,
     next_review: '2026-05-09T14:30:00.000Z',
+    last_reviewed: '2026-05-08T14:30:00.000Z',
+    interval: 3,
+    ease_factor: 2.6,
+    review_count: 4,
   };
 
   [
@@ -182,6 +206,26 @@ test('getValidatedStudySessionSubmissionResponse rejects malformed submission pa
     { success: true, card: { ...validCard, next_review: '2026-05-09T14:30:00' } },
     { success: true, card: { ...validCard, next_review: '2026-05-09T14:30:00.000Z ' } },
     { success: true, card: { ...validCard, next_review: new Date('2026-05-09T14:30:00.000Z') } },
+    { success: true, card: { ...validCard, last_reviewed: undefined } },
+    { success: true, card: { ...validCard, last_reviewed: null } },
+    { success: true, card: { ...validCard, last_reviewed: 'not-a-date' } },
+    { success: true, card: { ...validCard, last_reviewed: '2026-05-08' } },
+    { success: true, card: { ...validCard, last_reviewed: '2026-05-08T14:30:00' } },
+    { success: true, card: { ...validCard, last_reviewed: '2026-05-09T14:30:00.001Z' } },
+    { success: true, card: { ...validCard, interval: undefined } },
+    { success: true, card: { ...validCard, interval: 0 } },
+    { success: true, card: { ...validCard, interval: 36501 } },
+    { success: true, card: { ...validCard, interval: 1.5 } },
+    { success: true, card: { ...validCard, interval: '3' } },
+    { success: true, card: { ...validCard, ease_factor: undefined } },
+    { success: true, card: { ...validCard, ease_factor: 1.29 } },
+    { success: true, card: { ...validCard, ease_factor: Number.NaN } },
+    { success: true, card: { ...validCard, ease_factor: Number.POSITIVE_INFINITY } },
+    { success: true, card: { ...validCard, ease_factor: '2.6' } },
+    { success: true, card: { ...validCard, review_count: undefined } },
+    { success: true, card: { ...validCard, review_count: -1 } },
+    { success: true, card: { ...validCard, review_count: 1.5 } },
+    { success: true, card: { ...validCard, review_count: '4' } },
   ].forEach((response) => {
     assert.equal(getValidatedStudySessionSubmissionResponse(response), null);
   });
@@ -193,6 +237,10 @@ test('getValidatedStudySessionSubmissionResponse rejects malformed card ids even
     card: {
       id: '../7',
       next_review: '2026-05-09T14:30:00.000Z',
+      last_reviewed: '2026-05-08T14:30:00.000Z',
+      interval: 3,
+      ease_factor: 2.6,
+      review_count: 4,
     },
   };
 
@@ -205,6 +253,10 @@ test('getValidatedStudySessionSubmissionResponse rejects stale card ids when exp
     card: {
       id: 8,
       next_review: '2026-05-09T14:30:00.000Z',
+      last_reviewed: '2026-05-08T14:30:00.000Z',
+      interval: 3,
+      ease_factor: 2.6,
+      review_count: 4,
     },
   };
 
