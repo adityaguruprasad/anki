@@ -232,12 +232,9 @@ function signToken(payload, secret = resolveJwtSecret(), options = {}) {
   const exp = validateJwtExpirationTimestamp(now + expiresInSeconds);
   const userId = validateJwtPayloadUserId(payload);
   const header = { alg: JWT_TOKEN_ALGORITHM, typ: JWT_TOKEN_TYPE };
-  const tokenPayload = {
-    ...payload,
-    userId,
-    iat: now,
-    exp,
-  };
+  // Issued-token contract: register/login mint public auth tokens with only
+  // userId plus computed iat/exp; authenticateToken exposes only userId.
+  const tokenPayload = { userId, iat: now, exp };
   const body = `${base64UrlJson(header)}.${base64UrlJson(tokenPayload)}`;
   const signature = crypto.createHmac('sha256', secret).update(body).digest('base64url');
   return `${body}.${signature}`;

@@ -121,6 +121,11 @@ function signRawJwtSegments(encodedHeader, encodedPayload, secret) {
   return `${body}.${signature}`;
 }
 
+function decodeJwtPayload(token) {
+  const [, encodedPayload] = token.split('.');
+  return JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8'));
+}
+
 test('register uses injected db and returns a signed token with inserted user id', async () => {
   const db = createDb([{ rowCount: 1, rows: [createRegistrationRow(42)] }]);
   const passwordHasher = createPasswordHasher();
@@ -1597,20 +1602,68 @@ test('signToken requires a usable userId claim before issuing a token', () => {
 });
 
 test('signToken canonicalizes signed userId claims to positive integers', () => {
-  const token = signToken({ userId: ' 00042 ', role: 'learner' }, 'canonical-user-secret', {
+  const token = signToken({ userId: ' 00042 ' }, 'canonical-user-secret', {
     now: 1000,
     expiresInSeconds: 60,
   });
-  const [, encodedPayload] = token.split('.');
-  const payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8'));
+  const payload = decodeJwtPayload(token);
 
   assert.deepEqual(payload, {
     userId: 42,
-    role: 'learner',
     iat: 1000,
     exp: 1060,
   });
   assert.deepEqual(verifyToken(token, 'canonical-user-secret', { now: 1000 }), payload);
+});
+
+test('signToken omits unsupported caller payload fields from issued tokens', () => {
+  const token = signToken(
+    {
+      userId: 42,
+      role: 'learner',
+      email: 'ada@example.com',
+      password_hash: 'stored-hash',
+    },
+    'unsupported-fields-secret',
+    {
+      now: 1000,
+      expiresInSeconds: 60,
+    }
+  );
+  const payload = decodeJwtPayload(token);
+
+  assert.equal(Object.hasOwn(payload, 'role'), false);
+  assert.equal(Object.hasOwn(payload, 'email'), false);
+  assert.equal(Object.hasOwn(payload, 'password_hash'), false);
+  assert.deepEqual(payload, {
+    userId: 42,
+    iat: 1000,
+    exp: 1060,
+  });
+});
+
+test('signToken ignores caller-supplied iat and exp claims in favor of computed values', () => {
+  const token = signToken(
+    {
+      userId: 42,
+      iat: 1,
+      exp: 2,
+    },
+    'computed-time-secret',
+    {
+      now: 1000,
+      expiresInSeconds: 60,
+    }
+  );
+  const payload = decodeJwtPayload(token);
+
+  assert.equal(payload.iat, 1000);
+  assert.equal(payload.exp, 1060);
+  assert.deepEqual(payload, {
+    userId: 42,
+    iat: 1000,
+    exp: 1060,
+  });
 });
 
 test('verifyToken rejects non-integer, string, and unsafe exp claims before expiry checks', () => {
