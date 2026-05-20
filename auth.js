@@ -279,7 +279,7 @@ function verifyToken(token, secret = resolveJwtSecret(), options = {}) {
     throw new Error('Token issued-at must be before expiration');
   }
 
-  const normalizedUserId = normalizeTokenUserId(payload.userId);
+  const normalizedUserId = normalizeVerifiedTokenUserId(payload.userId);
   if (normalizedUserId == null) {
     throw new Error('Token userId is required');
   }
@@ -314,6 +314,14 @@ function normalizeTokenUserId(userId) {
   }
 
   return null;
+}
+
+function normalizeVerifiedTokenUserId(userId) {
+  // Verified tokens must already carry the API-issued canonical numeric claim;
+  // signToken and DB row normalization stay lenient before minting.
+  return Number.isSafeInteger(userId) && userId > 0 && userId <= MAX_POSTGRES_SERIAL_ID
+    ? userId
+    : null;
 }
 
 function extractBearerToken(authHeader) {

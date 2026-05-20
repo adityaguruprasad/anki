@@ -1774,27 +1774,52 @@ test('signToken rejects malformed issued-at options before issuing a token', () 
   }
 });
 
-test('verifyToken accepts PostgreSQL SERIAL userId claims as normalized numbers', () => {
+test('verifyToken accepts PostgreSQL SERIAL userId claims as canonical numbers', () => {
   const validClaims = [
-    { userId: 42, expected: 42 },
-    { userId: '42', expected: 42 },
-    { userId: ' 43 ', expected: 43 },
-    { userId: MAX_POSTGRES_SERIAL_ID, expected: MAX_POSTGRES_SERIAL_ID },
-    { userId: String(MAX_POSTGRES_SERIAL_ID), expected: MAX_POSTGRES_SERIAL_ID },
+    1,
+    42,
+    MAX_POSTGRES_SERIAL_ID,
   ];
 
-  for (const { userId, expected } of validClaims) {
+  for (const userId of validClaims) {
     const token = signRawJwt(
       { alg: 'HS256', typ: 'JWT' },
       { userId, iat: 1000, exp: 2000 },
       'numeric-user-secret'
     );
 
-    assert.deepEqual(verifyToken(token, 'numeric-user-secret', { now: 1000 }), {
-      userId: expected,
-      iat: 1000,
-      exp: 2000,
-    });
+    assert.deepEqual(
+      verifyToken(token, 'numeric-user-secret', { now: 1000 }),
+      {
+        userId,
+        iat: 1000,
+        exp: 2000,
+      },
+      `canonical numeric userId ${userId}`
+    );
+  }
+});
+
+test('verifyToken rejects signed noncanonical string userId claims', () => {
+  const invalidUserIdClaims = [
+    { label: 'numeric string', userId: '42' },
+    { label: 'whitespace string', userId: ' 43 ' },
+    { label: 'zero-padded string', userId: '00044' },
+    { label: 'upper-boundary string', userId: String(MAX_POSTGRES_SERIAL_ID) },
+  ];
+
+  for (const { label, userId } of invalidUserIdClaims) {
+    const token = signRawJwt(
+      { alg: 'HS256', typ: 'JWT' },
+      { userId, iat: 1000, exp: 2000 },
+      'string-user-secret'
+    );
+
+    assert.throws(
+      () => verifyToken(token, 'string-user-secret', { now: 1000 }),
+      /Token userId is required/,
+      label
+    );
   }
 });
 
@@ -1986,32 +2011,54 @@ test('verifyToken rejects compact segments with impossible base64url lengths bef
 
 test('verifyToken rejects signed tokens without a usable userId claim', () => {
   const invalidPayloads = [
-    { iat: 1000, exp: 2000 },
-    { userId: null, iat: 1000, exp: 2000 },
-    { userId: '', iat: 1000, exp: 2000 },
-    { userId: '   ', iat: 1000, exp: 2000 },
-    { userId: 'not-a-number', iat: 1000, exp: 2000 },
-    { userId: '1.5', iat: 1000, exp: 2000 },
-    { userId: '0', iat: 1000, exp: 2000 },
-    { userId: 0, iat: 1000, exp: 2000 },
-    { userId: -1, iat: 1000, exp: 2000 },
-    { userId: 1.5, iat: 1000, exp: 2000 },
-    { userId: String(MAX_POSTGRES_SERIAL_ID + 1), iat: 1000, exp: 2000 },
-    { userId: MAX_POSTGRES_SERIAL_ID + 1, iat: 1000, exp: 2000 },
-    { userId: String(Number.MAX_SAFE_INTEGER), iat: 1000, exp: 2000 },
-    { userId: Number.MAX_SAFE_INTEGER, iat: 1000, exp: 2000 },
-    { userId: String(Number.MAX_SAFE_INTEGER + 1), iat: 1000, exp: 2000 },
-    { userId: Number.MAX_SAFE_INTEGER + 1, iat: 1000, exp: 2000 },
-    { userId: [], iat: 1000, exp: 2000 },
-    { userId: {}, iat: 1000, exp: 2000 },
+    { label: 'missing userId', payload: { iat: 1000, exp: 2000 } },
+    { label: 'null userId', payload: { userId: null, iat: 1000, exp: 2000 } },
+    { label: 'empty string userId', payload: { userId: '', iat: 1000, exp: 2000 } },
+    { label: 'blank string userId', payload: { userId: '   ', iat: 1000, exp: 2000 } },
+    {
+      label: 'nonnumeric string userId',
+      payload: { userId: 'not-a-number', iat: 1000, exp: 2000 },
+    },
+    { label: 'fractional string userId', payload: { userId: '1.5', iat: 1000, exp: 2000 } },
+    { label: 'zero string userId', payload: { userId: '0', iat: 1000, exp: 2000 } },
+    { label: 'zero numeric userId', payload: { userId: 0, iat: 1000, exp: 2000 } },
+    { label: 'negative numeric userId', payload: { userId: -1, iat: 1000, exp: 2000 } },
+    { label: 'fractional numeric userId', payload: { userId: 1.5, iat: 1000, exp: 2000 } },
+    {
+      label: 'over-boundary string userId',
+      payload: { userId: String(MAX_POSTGRES_SERIAL_ID + 1), iat: 1000, exp: 2000 },
+    },
+    {
+      label: 'over-boundary numeric userId',
+      payload: { userId: MAX_POSTGRES_SERIAL_ID + 1, iat: 1000, exp: 2000 },
+    },
+    {
+      label: 'unsafe string userId',
+      payload: { userId: String(Number.MAX_SAFE_INTEGER), iat: 1000, exp: 2000 },
+    },
+    {
+      label: 'unsafe numeric userId',
+      payload: { userId: Number.MAX_SAFE_INTEGER, iat: 1000, exp: 2000 },
+    },
+    {
+      label: 'beyond safe string userId',
+      payload: { userId: String(Number.MAX_SAFE_INTEGER + 1), iat: 1000, exp: 2000 },
+    },
+    {
+      label: 'beyond safe numeric userId',
+      payload: { userId: Number.MAX_SAFE_INTEGER + 1, iat: 1000, exp: 2000 },
+    },
+    { label: 'array userId', payload: { userId: [], iat: 1000, exp: 2000 } },
+    { label: 'object userId', payload: { userId: {}, iat: 1000, exp: 2000 } },
   ];
 
-  for (const payload of invalidPayloads) {
+  for (const { label, payload } of invalidPayloads) {
     const token = signRawJwt({ alg: 'HS256', typ: 'JWT' }, payload, 'user-claim-secret');
 
     assert.throws(
       () => verifyToken(token, 'user-claim-secret', { now: 1000 }),
-      /Token userId is required/
+      /Token userId is required/,
+      label
     );
   }
 });
@@ -2137,7 +2184,7 @@ test('createAuthHandlers lets undefined jwtSecret fall back to env JWT_SECRET', 
   assert.equal(req.user.userId, 204);
 });
 
-test('authenticateToken normalizes numeric string userId claims to numbers', () => {
+test('authenticateToken accepts API-issued numeric userId claims as numbers', () => {
   const { authenticateToken } = createAuthHandlers(createDb([]), {
     jwtSecret: 'numeric-auth-secret',
     passwordHasher: createPasswordHasher(),
@@ -2155,6 +2202,33 @@ test('authenticateToken normalizes numeric string userId claims to numbers', () 
   assert.equal(nextCalled, true);
   assert.equal(req.user.userId, 302);
   assert.equal(typeof req.user.userId, 'number');
+});
+
+test('authenticateToken rejects signed noncanonical string userId claims', () => {
+  const { authenticateToken } = createAuthHandlers(createDb([]), {
+    jwtSecret: 'string-auth-secret',
+    passwordHasher: createPasswordHasher(),
+  });
+  const token = signRawJwt(
+    { alg: 'HS256', typ: 'JWT' },
+    {
+      userId: '302',
+      iat: 1000,
+      exp: Math.floor(Date.now() / 1000) + 60,
+    },
+    'string-auth-secret'
+  );
+  const req = { headers: { authorization: `Bearer ${token}` } };
+  const res = createRes();
+  let nextCalled = false;
+
+  authenticateToken(req, res, () => {
+    nextCalled = true;
+  });
+
+  assert.equal(res.statusCode, 403);
+  assert.equal(nextCalled, false);
+  assert.equal(req.user, undefined);
 });
 
 test('authenticateToken exposes only the authorized request principal shape', () => {
