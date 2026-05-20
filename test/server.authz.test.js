@@ -4871,6 +4871,81 @@ test('POST /api/study-session returns updated scheduling metadata for successful
   assert.deepEqual(db.calls[1].params.slice(1), [nextReview, 3, 2.6, 7, 'user-1']);
 });
 
+test('POST /api/study-session rolls back when persisted scheduling metadata differs from scheduler output', async (t) => {
+  const expectedSchedule = {
+    next_review: '2026-05-11T12:05:00.000Z',
+    interval: 3,
+    ease_factor: 2.6,
+  };
+  const validUpdateRow = {
+    id: 7,
+    next_review: expectedSchedule.next_review,
+    interval: expectedSchedule.interval,
+    ease_factor: expectedSchedule.ease_factor,
+    review_count: 3,
+    last_reviewed: '2026-05-08T12:05:00.000Z',
+    __owned_user_id: 'user-1',
+    __updated: true,
+  };
+  const mismatchedRows = [
+    {
+      name: 'next review changed',
+      row: { ...validUpdateRow, next_review: '2026-05-12T12:05:00.000Z' },
+    },
+    {
+      name: 'interval changed',
+      row: { ...validUpdateRow, interval: 4 },
+    },
+    {
+      name: 'ease factor changed',
+      row: { ...validUpdateRow, ease_factor: 2.7 },
+    },
+  ];
+
+  for (const { name, row } of mismatchedRows) {
+    await t.test(name, async (t) => {
+      const db = createTransactionDb([
+        {
+          rowCount: 1,
+          rows: [createStudySessionCardReadRow({
+            id: 7,
+            deck_id: 1,
+            next_review: '2026-05-08T12:00:00.000Z',
+            ease_factor: 2.5,
+            interval: 2,
+            review_count: 2,
+            __is_due: true,
+          })],
+        },
+        { rowCount: 1, rows: [row] },
+      ]);
+      const req = { body: { cardId: 7, quality: 4 }, user: { userId: 'user-1' } };
+      const res = createRes();
+      t.mock.method(console, 'error', () => {});
+
+      await submitStudySession(req, res, db, () => expectedSchedule);
+
+      assert.equal(res.statusCode, 500);
+      assert.deepEqual(res.body, { error: 'Internal server error' });
+      assert.equal(db.connectCalls, 1);
+      assert.equal(db.client.released, true);
+      assert.equal(db.calls.length, 4);
+      assert.match(db.calls[0].sql, /^\s*BEGIN\s*$/i);
+      assertStudySessionCardReadSql(db.calls[1].sql);
+      assertStudySessionUpdateSql(db.calls[2].sql);
+      assert.deepEqual(db.calls[2].params.slice(1), [
+        expectedSchedule.next_review,
+        expectedSchedule.interval,
+        expectedSchedule.ease_factor,
+        7,
+        'user-1',
+      ]);
+      assert.match(db.calls[3].sql, /^\s*ROLLBACK\s*$/i);
+      assert.doesNotMatch(db.calls.map(({ sql }) => sql).join('\n'), /^\s*COMMIT\s*$/im);
+    });
+  }
+});
+
 test('POST /api/study-session returns 404 when final user-scoped update finds no card', async () => {
   const db = createDb([
     {

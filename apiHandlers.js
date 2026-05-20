@@ -204,7 +204,7 @@ function assertStudySessionUpdateConflict(row, expectedUserId) {
   }
 }
 
-function assertStudySessionUpdateSucceeded(row, expectedCardId, expectedUserId) {
+function assertStudySessionUpdateSucceeded(row, expectedCardId, expectedUserId, expectedSchedule) {
   assertObjectHasOwnFields(
     row,
     [...STUDY_SESSION_RESPONSE_CARD_FIELDS, '__updated'],
@@ -213,10 +213,19 @@ function assertStudySessionUpdateSucceeded(row, expectedCardId, expectedUserId) 
   assertStudySessionUpdateControlResult(row, expectedUserId);
 
   const cardIdValidation = validatePositiveIntegerIdentifier(row.id, 'cardId');
+  const hasExpectedSchedule = (
+    expectedSchedule !== null
+    && typeof expectedSchedule === 'object'
+    && !Array.isArray(expectedSchedule)
+  );
   if (
     row.__updated !== true
     || !cardIdValidation.ok
     || cardIdValidation.value !== expectedCardId
+    || !hasExpectedSchedule
+    || row.interval !== expectedSchedule.interval
+    || row.ease_factor !== expectedSchedule.ease_factor
+    || !isSameDatabaseTimestamp(row.next_review, expectedSchedule.next_review)
     || !isValidRequiredDatabaseTimestamp(row.next_review)
     || !isValidPersistedCardInterval(row.interval)
     || !isValidPersistedEaseFactor(row.ease_factor)
@@ -419,6 +428,17 @@ function isLaterDatabaseTimestamp(value, earlierValue) {
     timestamp !== null
     && earlierTimestamp !== null
     && timestamp > earlierTimestamp
+  );
+}
+
+function isSameDatabaseTimestamp(value, expectedValue) {
+  const timestamp = toDatabaseTimestampMilliseconds(value);
+  const expectedTimestamp = toDatabaseTimestampMilliseconds(expectedValue);
+
+  return (
+    timestamp !== null
+    && expectedTimestamp !== null
+    && timestamp === expectedTimestamp
   );
 }
 
@@ -1577,7 +1597,7 @@ async function submitStudySession(req, res, db, calculateNextReview) {
       return res.status(409).json({ error: 'Card is not due' });
     }
 
-    assertStudySessionUpdateSucceeded(updatedCard, validCardId, userId);
+    assertStudySessionUpdateSucceeded(updatedCard, validCardId, userId, schedule);
     const responseCard = toStudySessionResponseCardPayload(updatedCard);
     if (transactionStarted) {
       await client.query('COMMIT');
