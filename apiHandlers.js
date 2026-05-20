@@ -71,6 +71,7 @@ const DELETE_CARD_RESPONSE_CARD_FIELDS = Object.freeze([
   'next_review',
 ]);
 const CARD_OWNERSHIP_PROOF_FIELD = '__owned_user_id';
+const CARD_DECK_OWNERSHIP_PROOF_FIELD = '__owned_deck_id';
 const STATS_RESPONSE_FIELDS = Object.freeze([
   'totalCards',
   'totalDecks',
@@ -472,6 +473,21 @@ function assertExpectedCardOwner(row, expectedUserId, errorMessage) {
   }
 }
 
+function assertCardDeckOwnershipProof(row, deckIdValidation, errorMessage) {
+  assertObjectHasOwnFields(row, [CARD_DECK_OWNERSHIP_PROOF_FIELD], errorMessage);
+
+  const ownedDeckIdValidation = validatePositiveIntegerIdentifier(
+    row[CARD_DECK_OWNERSHIP_PROOF_FIELD],
+    'deckId'
+  );
+  if (
+    !ownedDeckIdValidation.ok
+    || ownedDeckIdValidation.value !== deckIdValidation.value
+  ) {
+    throw new TypeError(errorMessage);
+  }
+}
+
 function assertCardMutationResult(row, options = {}) {
   assertObjectHasOwnFields(row, CARD_MUTATION_RESPONSE_CARD_FIELDS, INVALID_CARD_MUTATION_RESULT_ERROR);
   assertExpectedCardOwner(row, options.expectedUserId, INVALID_CARD_MUTATION_RESULT_ERROR);
@@ -491,6 +507,10 @@ function assertCardMutationResult(row, options = {}) {
     || !isValidPersistedReviewCount(row.review_count)
   ) {
     throw new TypeError(INVALID_CARD_MUTATION_RESULT_ERROR);
+  }
+
+  if (options.requireDeckOwnershipProof) {
+    assertCardDeckOwnershipProof(row, deckIdValidation, INVALID_CARD_MUTATION_RESULT_ERROR);
   }
 }
 
@@ -1351,7 +1371,8 @@ async function updateCard(req, res, db) {
                  cards.interval,
                  cards.ease_factor,
                  cards.review_count,
-                 d.user_id AS "__owned_user_id"`,
+                 d.user_id AS "__owned_user_id",
+                 d.id AS "__owned_deck_id"`,
       [
         cardIdValidation.value,
         userId,
@@ -1368,6 +1389,7 @@ async function updateCard(req, res, db) {
     assertCardMutationResult(updatedCard, {
       expectedCardId: cardIdValidation.value,
       expectedUserId: userId,
+      requireDeckOwnershipProof: true,
     });
     return res.json(toCardMutationPayload(updatedCard));
   } catch (err) {

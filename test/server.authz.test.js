@@ -3185,7 +3185,14 @@ test('PATCH /api/cards/:cardId updates an owned card with one user-scoped query'
   const db = createDb([
     {
       rowCount: 1,
-      rows: [{ ...updatedCard, __owned_user_id: 'user-1', private_note: 'do not expose' }],
+      rows: [
+        {
+          ...updatedCard,
+          __owned_user_id: 'user-1',
+          __owned_deck_id: 42,
+          private_note: 'do not expose',
+        },
+      ],
     },
   ]);
   const req = {
@@ -3203,6 +3210,7 @@ test('PATCH /api/cards/:cardId updates an owned card with one user-scoped query'
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, updatedCard);
   assert.equal(Object.hasOwn(res.body, '__owned_user_id'), false);
+  assert.equal(Object.hasOwn(res.body, '__owned_deck_id'), false);
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, [77, 'user-1', 'Updated front', 'Updated back']);
   assert.match(db.calls[0].sql, /UPDATE\s+cards/i);
@@ -3212,6 +3220,7 @@ test('PATCH /api/cards/:cardId updates an owned card with one user-scoped query'
   assert.match(db.calls[0].sql, /d\.id\s+=\s+cards\.deck_id/i);
   assert.match(db.calls[0].sql, /d\.user_id\s+=\s+\$2/i);
   assert.match(db.calls[0].sql, /d\.user_id\s+AS\s+"__owned_user_id"/i);
+  assert.match(db.calls[0].sql, /d\.id\s+AS\s+"__owned_deck_id"/i);
   assert.match(
     db.calls[0].sql,
     /RETURNING\s+cards\.id,\s+cards\.deck_id,\s+cards\.front_content,\s+cards\.back_content,\s+cards\.next_review,\s+cards\.interval,\s+cards\.ease_factor,\s+cards\.review_count/i
@@ -3271,10 +3280,55 @@ test('PATCH /api/cards/:cardId fails closed when the updated row violates card m
     ease_factor: 2.5,
     review_count: 0,
     __owned_user_id: 'user-1',
+    __owned_deck_id: 42,
   };
   const malformedRows = [
     { ...validUpdatedCard, id: 78 },
     { ...validUpdatedCard, deck_id: 'not-a-deck' },
+  ];
+  t.mock.method(console, 'error', () => {});
+
+  for (const row of malformedRows) {
+    const db = createDb([{ rowCount: 1, rows: [row] }]);
+    const req = {
+      params: { cardId: '77' },
+      body: {
+        frontContent: 'Updated front',
+        backContent: 'Updated back',
+      },
+      user: { userId: 'user-1' },
+    };
+    const res = createRes();
+
+    await updateCard(req, res, db);
+
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.body, { error: 'Internal server error' });
+    assert.equal(db.calls.length, 1);
+    assert.deepEqual(db.calls[0].params, [77, 'user-1', 'Updated front', 'Updated back']);
+  }
+});
+
+test('PATCH /api/cards/:cardId fails closed when the updated row deck anchor is missing or mismatched', async (t) => {
+  const validUpdatedCard = {
+    id: 77,
+    deck_id: 42,
+    front_content: 'Updated front',
+    back_content: 'Updated back',
+    next_review: '2026-05-08T12:00:00.000Z',
+    interval: 1,
+    ease_factor: 2.5,
+    review_count: 0,
+    __owned_user_id: 'user-1',
+    __owned_deck_id: 42,
+  };
+  const rowWithoutDeckAnchor = { ...validUpdatedCard };
+  delete rowWithoutDeckAnchor.__owned_deck_id;
+  const malformedRows = [
+    rowWithoutDeckAnchor,
+    { ...validUpdatedCard, __owned_deck_id: null },
+    { ...validUpdatedCard, __owned_deck_id: 'deck-42' },
+    { ...validUpdatedCard, __owned_deck_id: 43 },
   ];
   t.mock.method(console, 'error', () => {});
 
