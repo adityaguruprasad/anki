@@ -633,6 +633,35 @@ function assertSchedulingInsightsResult(row) {
   );
 }
 
+function assertSchedulingInsightsCountInvariants(counts) {
+  for (const field of SCHEDULING_INSIGHTS_COUNT_FIELDS) {
+    if (!Number.isSafeInteger(counts[field]) || counts[field] < 0) {
+      throw new TypeError(INVALID_SCHEDULING_INSIGHTS_RESULT_ERROR);
+    }
+  }
+
+  const {
+    totalCards,
+    overdue,
+    dueToday,
+    dueTomorrow,
+    dueNext7Days,
+    leechCandidates,
+  } = counts;
+
+  if (
+    overdue > totalCards
+    || dueToday > totalCards
+    || dueTomorrow > totalCards
+    || dueNext7Days > totalCards
+    || leechCandidates > totalCards
+    || dueToday + dueTomorrow > dueNext7Days
+    || overdue + dueNext7Days > totalCards
+  ) {
+    throw new TypeError(INVALID_SCHEDULING_INSIGHTS_RESULT_ERROR);
+  }
+}
+
 function assertSingleAggregateQueryResult(result, errorMessage) {
   if (
     result === null
@@ -1748,6 +1777,7 @@ async function getSchedulingInsights(req, res, db, now = new Date()) {
         INVALID_SCHEDULING_INSIGHTS_RESULT_ERROR
       );
     }
+    assertSchedulingInsightsCountInvariants(counts);
 
     const overdue = counts.overdue;
     const dueToday = counts.dueToday;

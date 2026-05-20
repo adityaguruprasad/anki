@@ -3866,6 +3866,43 @@ test('GET /api/scheduling-insights returns expected shape from one aggregate que
   assert.doesNotMatch(db.calls[0].sql, /\bc\.next_review,\s*c\.ease_factor,\s*c\.review_count\b/i);
 });
 
+test('GET /api/scheduling-insights accepts aggregate equality boundaries', async () => {
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [
+        {
+          totalCards: '9',
+          overdue: '3',
+          dueToday: '2',
+          dueTomorrow: '4',
+          dueNext7Days: '6',
+          leechCandidates: '1',
+          averageEaseFactor: '2.35',
+        },
+      ],
+    },
+  ]);
+  const req = { user: { userId: 'user-1' } };
+  const res = createRes();
+
+  await getSchedulingInsights(req, res, db, new Date(2026, 4, 8, 15, 45, 12, 345));
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, {
+    totalCards: 9,
+    overdue: 3,
+    dueToday: 2,
+    dueTomorrow: 4,
+    dueNext7Days: 6,
+    leechCandidates: 1,
+    averageEaseFactor: 2.35,
+    recommendedDailyReviewTarget: 10,
+    suggestedNewCards: 15,
+  });
+  assert.equal(db.calls.length, 1);
+});
+
 test('GET /api/scheduling-insights fails closed for missing or malformed aggregate counts', async (t) => {
   const validInsights = {
     totalCards: '30',
@@ -3893,6 +3930,40 @@ test('GET /api/scheduling-insights fails closed for missing or malformed aggrega
 
   for (const result of malformedResults) {
     const db = createDb([result]);
+    const req = { user: { userId: 'user-1' } };
+    const res = createRes();
+
+    await getSchedulingInsights(req, res, db, new Date(2026, 4, 8, 15, 45, 12, 345));
+
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.body, { error: 'Internal server error' });
+    assert.equal(db.calls.length, 1);
+  }
+});
+
+test('GET /api/scheduling-insights fails closed for impossible aggregate relationships', async (t) => {
+  const validInsights = {
+    totalCards: '30',
+    overdue: '3',
+    dueToday: '2',
+    dueTomorrow: '4',
+    dueNext7Days: '12',
+    leechCandidates: '5',
+    averageEaseFactor: '2.35',
+  };
+  const impossibleRows = [
+    { ...validInsights, totalCards: '2' },
+    { ...validInsights, dueToday: '13' },
+    { ...validInsights, dueTomorrow: '13' },
+    { ...validInsights, dueToday: '7', dueTomorrow: '6' },
+    { ...validInsights, dueNext7Days: '31' },
+    { ...validInsights, overdue: '19' },
+    { ...validInsights, leechCandidates: '31' },
+  ];
+  t.mock.method(console, 'error', () => {});
+
+  for (const row of impossibleRows) {
+    const db = createDb([{ rowCount: 1, rows: [row] }]);
     const req = { user: { userId: 'user-1' } };
     const res = createRes();
 
@@ -3953,7 +4024,7 @@ test('GET /api/scheduling-insights keeps null averageEaseFactor when no positive
       rowCount: 1,
       rows: [
         {
-          totalCards: '4',
+          totalCards: '12',
           overdue: '9',
           dueToday: '2',
           dueTomorrow: '0',
@@ -3973,7 +4044,7 @@ test('GET /api/scheduling-insights keeps null averageEaseFactor when no positive
 
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, {
-    totalCards: 4,
+    totalCards: 12,
     overdue: 9,
     dueToday: 2,
     dueTomorrow: 0,
