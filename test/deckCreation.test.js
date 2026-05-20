@@ -144,7 +144,7 @@ test('validateDeckName stays aligned with the decks.name column length', () => {
 
 test('POST /api/decks returns 409 when a case-insensitive duplicate exists', async () => {
   const db = createDb([{ rowCount: 0, rows: [] }]);
-  const req = { body: { name: ' spanish ' }, user: { userId: 'user-1' } };
+  const req = { body: { name: ' spanish ' }, user: { userId: 1 } };
   const res = createRes();
 
   await createDeck(req, res, db);
@@ -152,7 +152,7 @@ test('POST /api/decks returns 409 when a case-insensitive duplicate exists', asy
   assert.equal(res.statusCode, 409);
   assert.deepEqual(res.body, { error: 'Deck name already exists for this user' });
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, ['user-1', 'spanish']);
+  assert.deepEqual(db.calls[0].params, [1, 'spanish']);
 });
 
 test('POST /api/decks returns 400 when validation fails', async () => {
@@ -167,7 +167,7 @@ test('POST /api/decks returns 400 when validation fails', async () => {
   ];
 
   for (const [name, error] of invalidCases) {
-    const req = { body: { name }, user: { userId: 'user-1' } };
+    const req = { body: { name }, user: { userId: 1 } };
     const res = createRes();
 
     await createDeck(req, res, db);
@@ -181,13 +181,13 @@ test('POST /api/decks returns 400 when validation fails', async () => {
 test('POST /api/decks inserts trimmed name and returns 201', async () => {
   const createdRow = {
     id: 22,
-    user_id: 'user-1',
+    user_id: 1,
     name: 'Spanish',
     description: null,
     created_at: '2026-05-08T00:00:00.000Z',
   };
   const db = createDb([{ rowCount: 1, rows: [createdRow] }]);
-  const req = { body: { name: '  Spanish  ' }, user: { userId: 'user-1' } };
+  const req = { body: { name: '  Spanish  ' }, user: { userId: 1 } };
   const res = createRes();
 
   await createDeck(req, res, db);
@@ -195,5 +195,5 @@ test('POST /api/decks inserts trimmed name and returns 201', async () => {
   assert.equal(res.statusCode, 201);
   assert.deepEqual(res.body, createdRow);
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, ['user-1', 'Spanish']);
+  assert.deepEqual(db.calls[0].params, [1, 'Spanish']);
 });

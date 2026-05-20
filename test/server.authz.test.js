@@ -154,7 +154,7 @@ function createStudySessionCardReadRow(overrides = {}) {
     ...createCardReadRow(overrides),
     __owned_user_id: Object.hasOwn(overrides, '__owned_user_id')
       ? overrides.__owned_user_id
-      : 'user-1',
+      : 1,
   };
 }
 
@@ -166,7 +166,7 @@ function createStudySessionUpdateRow(overrides = {}) {
     ease_factor: 2.6,
     review_count: 3,
     last_reviewed: '2026-05-08T12:05:00.000Z',
-    __owned_user_id: 'user-1',
+    __owned_user_id: 1,
     __updated: true,
     ...overrides,
   };
@@ -180,7 +180,7 @@ function createStudySessionConflictRow(overrides = {}) {
     ease_factor: null,
     review_count: null,
     last_reviewed: null,
-    __owned_user_id: 'user-1',
+    __owned_user_id: 1,
     __updated: false,
     ...overrides,
   };
@@ -334,7 +334,7 @@ test('POST /api/decks returns 400 for invalid deck name and skips db query', asy
 
   for (const [name, error] of invalidCases) {
     const db = createDb([]);
-    const req = { body: { name }, user: { userId: 'user-1' } };
+    const req = { body: { name }, user: { userId: 1 } };
     const res = createRes();
 
     await createDeck(req, res, db);
@@ -347,7 +347,7 @@ test('POST /api/decks returns 400 for invalid deck name and skips db query', asy
 
 test('POST /api/decks returns 409 for duplicate user deck name with one query', async () => {
   const db = createDb([{ rowCount: 0, rows: [] }]);
-  const req = { body: { name: ' Biology ' }, user: { userId: 'user-1' } };
+  const req = { body: { name: ' Biology ' }, user: { userId: '1' } };
   const res = createRes();
 
   await createDeck(req, res, db);
@@ -355,19 +355,19 @@ test('POST /api/decks returns 409 for duplicate user deck name with one query', 
   assert.equal(res.statusCode, 409);
   assert.deepEqual(res.body, { error: 'Deck name already exists for this user' });
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, ['user-1', 'Biology']);
+  assert.deepEqual(db.calls[0].params, [1, 'Biology']);
 });
 
 test('POST /api/decks creates normalized deck with one query', async () => {
   const deck = {
     id: 12,
-    user_id: 'user-1',
+    user_id: 1,
     name: 'Biology',
     description: null,
     created_at: '2026-05-08T00:00:00.000Z',
   };
   const db = createDb([{ rowCount: 1, rows: [{ ...deck, private_note: 'do not expose' }] }]);
-  const req = { body: { name: ' Biology ' }, user: { userId: 'user-1' } };
+  const req = { body: { name: ' Biology ' }, user: { userId: 1 } };
   const res = createRes();
 
   await createDeck(req, res, db);
@@ -376,7 +376,7 @@ test('POST /api/decks creates normalized deck with one query', async () => {
   assert.deepEqual(res.body, deck);
   assert.equal(Object.hasOwn(res.body, 'private_note'), false);
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, ['user-1', 'Biology']);
+  assert.deepEqual(db.calls[0].params, [1, 'Biology']);
   assertExplicitPublicDeckReturning(db.calls[0].sql);
 });
 
@@ -384,13 +384,13 @@ test('POST /api/decks accepts Date created_at returned from pg', async () => {
   const createdAt = new Date('2026-05-08T00:00:00.000Z');
   const deck = {
     id: 12,
-    user_id: 'user-1',
+    user_id: 1,
     name: 'Biology',
     description: null,
     created_at: createdAt,
   };
   const db = createDb([{ rowCount: 1, rows: [deck] }]);
-  const req = { body: { name: 'Biology' }, user: { userId: 'user-1' } };
+  const req = { body: { name: 'Biology' }, user: { userId: 1 } };
   const res = createRes();
 
   await createDeck(req, res, db);
@@ -406,14 +406,14 @@ test('POST /api/decks fails closed when the inserted deck owner mismatches the r
       rowCount: 1,
       rows: [{
         id: 12,
-        user_id: 'other-user',
+        user_id: 2,
         name: 'Biology',
         description: null,
         created_at: '2026-05-08T00:00:00.000Z',
       }],
     },
   ]);
-  const req = { body: { name: 'Biology' }, user: { userId: 'user-1' } };
+  const req = { body: { name: 'Biology' }, user: { userId: 1 } };
   const res = createRes();
   t.mock.method(console, 'error', () => {});
 
@@ -422,7 +422,7 @@ test('POST /api/decks fails closed when the inserted deck owner mismatches the r
   assert.equal(res.statusCode, 500);
   assert.deepEqual(res.body, { error: 'Internal server error' });
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, ['user-1', 'Biology']);
+  assert.deepEqual(db.calls[0].params, [1, 'Biology']);
 });
 
 test('POST /api/decks fails closed before db access when the auth principal is malformed', async (t) => {
@@ -433,6 +433,29 @@ test('POST /api/decks fails closed before db access when the auth principal is m
     { body: { name: 'Biology' }, user: {} },
     { body: { name: 'Biology' }, user: { userId: null } },
     { body: { name: 'Biology' }, user: { userId: undefined } },
+    { body: { name: 'Biology' }, user: { userId: '' } },
+    { body: { name: 'Biology' }, user: { userId: '   ' } },
+    { body: { name: 'Biology' }, user: { userId: ' 1 ' } },
+    { body: { name: 'Biology' }, user: { userId: 0 } },
+    { body: { name: 'Biology' }, user: { userId: '0' } },
+    { body: { name: 'Biology' }, user: { userId: -1 } },
+    { body: { name: 'Biology' }, user: { userId: '-1' } },
+    { body: { name: 'Biology' }, user: { userId: 1.5 } },
+    { body: { name: 'Biology' }, user: { userId: '1.5' } },
+    { body: { name: 'Biology' }, user: { userId: '0000' } },
+    { body: { name: 'Biology' }, user: { userId: '01' } },
+    { body: { name: 'Biology' }, user: { userId: 2147483648 } },
+    { body: { name: 'Biology' }, user: { userId: '2147483648' } },
+    { body: { name: 'Biology' }, user: { userId: Number.NaN } },
+    { body: { name: 'Biology' }, user: { userId: Number.POSITIVE_INFINITY } },
+    { body: { name: 'Biology' }, user: { userId: Number.NEGATIVE_INFINITY } },
+    { body: { name: 'Biology' }, user: { userId: 'user-1' } },
+    { body: { name: 'Biology' }, user: { userId: false } },
+    { body: { name: 'Biology' }, user: { userId: true } },
+    { body: { name: 'Biology' }, user: { userId: [] } },
+    { body: { name: 'Biology' }, user: { userId: {} } },
+    { body: { name: 'Biology' }, user: { userId: 1n } },
+    { body: { name: 'Biology' }, user: { userId: Symbol('userId') } },
   ];
   t.mock.method(console, 'error', () => {});
 
@@ -453,10 +476,10 @@ test('POST /api/decks returns 500 when the inserted row is missing deck response
   const db = createDb([
     {
       rowCount: 1,
-      rows: [{ id: 12, user_id: 'user-1', name: 'Biology', description: null }],
+      rows: [{ id: 12, user_id: 1, name: 'Biology', description: null }],
     },
   ]);
-  const req = { body: { name: 'Biology' }, user: { userId: 'user-1' } };
+  const req = { body: { name: 'Biology' }, user: { userId: 1 } };
   const res = createRes();
   t.mock.method(console, 'error', () => {});
 
@@ -465,13 +488,13 @@ test('POST /api/decks returns 500 when the inserted row is missing deck response
   assert.equal(res.statusCode, 500);
   assert.deepEqual(res.body, { error: 'Internal server error' });
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, ['user-1', 'Biology']);
+  assert.deepEqual(db.calls[0].params, [1, 'Biology']);
 });
 
 test('POST /api/decks fails closed when inserted deck read fields are malformed', async (t) => {
   const createdDeck = {
     id: 12,
-    user_id: 'user-1',
+    user_id: 1,
     name: 'Biology',
     description: null,
     created_at: '2026-05-08T00:00:00.000Z',
@@ -485,7 +508,7 @@ test('POST /api/decks fails closed when inserted deck read fields are malformed'
 
   for (const row of malformedRows) {
     const db = createDb([{ rowCount: 1, rows: [row] }]);
-    const req = { body: { name: 'Biology' }, user: { userId: 'user-1' } };
+    const req = { body: { name: 'Biology' }, user: { userId: 1 } };
     const res = createRes();
 
     await createDeck(req, res, db);
@@ -493,14 +516,14 @@ test('POST /api/decks fails closed when inserted deck read fields are malformed'
     assert.equal(res.statusCode, 500);
     assert.deepEqual(res.body, { error: 'Internal server error' });
     assert.equal(db.calls.length, 1);
-    assert.deepEqual(db.calls[0].params, ['user-1', 'Biology']);
+    assert.deepEqual(db.calls[0].params, [1, 'Biology']);
   }
 });
 
 test('POST /api/decks fails closed when the insert result cardinality is malformed', async (t) => {
   const createdDeck = {
     id: 12,
-    user_id: 'user-1',
+    user_id: 1,
     name: 'Biology',
     description: null,
     created_at: '2026-05-08T00:00:00.000Z',
@@ -516,7 +539,7 @@ test('POST /api/decks fails closed when the insert result cardinality is malform
 
   for (const result of malformedResults) {
     const db = createDb([result]);
-    const req = { body: { name: 'Biology' }, user: { userId: 'user-1' } };
+    const req = { body: { name: 'Biology' }, user: { userId: 1 } };
     const res = createRes();
 
     await createDeck(req, res, db);
@@ -524,7 +547,7 @@ test('POST /api/decks fails closed when the insert result cardinality is malform
     assert.equal(res.statusCode, 500);
     assert.deepEqual(res.body, { error: 'Internal server error' });
     assert.equal(db.calls.length, 1);
-    assert.deepEqual(db.calls[0].params, ['user-1', 'Biology']);
+    assert.deepEqual(db.calls[0].params, [1, 'Biology']);
   }
 });
 
@@ -532,10 +555,10 @@ test('POST /api/decks uses atomic conflict handling for duplicate deck names', a
   const db = createDb([
     {
       rowCount: 1,
-      rows: [{ id: 12, user_id: 'user-1', name: 'Biology', description: null, created_at: '2026-05-08T00:00:00.000Z' }],
+      rows: [{ id: 12, user_id: 1, name: 'Biology', description: null, created_at: '2026-05-08T00:00:00.000Z' }],
     },
   ]);
-  const req = { body: { name: 'Biology' }, user: { userId: 'user-1' } };
+  const req = { body: { name: 'Biology' }, user: { userId: 1 } };
   const res = createRes();
 
   await createDeck(req, res, db);
@@ -568,7 +591,7 @@ test('PATCH /api/decks/:deckId returns 400 for invalid deckId and skips db query
 
   for (const deckId of invalidDeckIds) {
     const db = createDb([]);
-    const req = { params: { deckId }, body: { name: 'Renamed' }, user: { userId: 'user-1' } };
+    const req = { params: { deckId }, body: { name: 'Renamed' }, user: { userId: 1 } };
     const res = createRes();
 
     await renameDeck(req, res, db);
@@ -602,7 +625,7 @@ test('PATCH /api/decks/:deckId returns 400 for invalid deck name and skips db qu
 
   for (const [name, error] of invalidCases) {
     const db = createDb([]);
-    const req = { params: { deckId: '42' }, body: { name }, user: { userId: 'user-1' } };
+    const req = { params: { deckId: '42' }, body: { name }, user: { userId: 1 } };
     const res = createRes();
 
     await renameDeck(req, res, db);
@@ -616,7 +639,7 @@ test('PATCH /api/decks/:deckId returns 400 for invalid deck name and skips db qu
 test('PATCH /api/decks/:deckId renames an owned deck with one atomic query', async () => {
   const deck = {
     id: 42,
-    user_id: 'user-1',
+    user_id: 1,
     name: 'Organic Chemistry',
     description: null,
     created_at: '2026-05-08T00:00:00.123456Z',
@@ -627,7 +650,7 @@ test('PATCH /api/decks/:deckId renames an owned deck with one atomic query', asy
       rows: [{ deckExists: true, duplicateExists: false, deck: { ...deck, private_note: 'do not expose' } }],
     },
   ]);
-  const req = { params: { deckId: '42' }, body: { name: ' Organic Chemistry ' }, user: { userId: 'user-1' } };
+  const req = { params: { deckId: '42' }, body: { name: ' Organic Chemistry ' }, user: { userId: 1 } };
   const res = createRes();
 
   await renameDeck(req, res, db);
@@ -636,7 +659,7 @@ test('PATCH /api/decks/:deckId renames an owned deck with one atomic query', asy
   assert.deepEqual(res.body, deck);
   assert.equal(Object.hasOwn(res.body, 'private_note'), false);
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [42, 'user-1', 'Organic Chemistry']);
+  assert.deepEqual(db.calls[0].params, [42, 1, 'Organic Chemistry']);
   assert.match(db.calls[0].sql, /WITH\s+target\s+AS/i);
   assert.match(db.calls[0].sql, /UPDATE\s+decks\s+d/i);
   assert.match(db.calls[0].sql, /SET\s+name\s+=\s+\$3/i);
@@ -653,7 +676,7 @@ test('PATCH /api/decks/:deckId renames an owned deck with one atomic query', asy
 test('PATCH /api/decks/:deckId accepts timezone-qualified nested deck created_at from rename control result', async () => {
   const deck = {
     id: 42,
-    user_id: 'user-1',
+    user_id: 1,
     name: 'Organic Chemistry',
     description: null,
     created_at: '2026-05-08T00:00:00.123456Z',
@@ -664,7 +687,7 @@ test('PATCH /api/decks/:deckId accepts timezone-qualified nested deck created_at
       rows: [{ deckExists: true, duplicateExists: false, deck }],
     },
   ]);
-  const req = { params: { deckId: '42' }, body: { name: 'Organic Chemistry' }, user: { userId: 'user-1' } };
+  const req = { params: { deckId: '42' }, body: { name: 'Organic Chemistry' }, user: { userId: 1 } };
   const res = createRes();
 
   await renameDeck(req, res, db);
@@ -680,11 +703,11 @@ test('PATCH /api/decks/:deckId returns 500 when the renamed row is missing deck 
       rows: [{
         deckExists: true,
         duplicateExists: false,
-        deck: { id: 42, user_id: 'user-1', name: 'Organic Chemistry', description: null },
+        deck: { id: 42, user_id: 1, name: 'Organic Chemistry', description: null },
       }],
     },
   ]);
-  const req = { params: { deckId: '42' }, body: { name: 'Organic Chemistry' }, user: { userId: 'user-1' } };
+  const req = { params: { deckId: '42' }, body: { name: 'Organic Chemistry' }, user: { userId: 1 } };
   const res = createRes();
   t.mock.method(console, 'error', () => {});
 
@@ -693,13 +716,13 @@ test('PATCH /api/decks/:deckId returns 500 when the renamed row is missing deck 
   assert.equal(res.statusCode, 500);
   assert.deepEqual(res.body, { error: 'Internal server error' });
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [42, 'user-1', 'Organic Chemistry']);
+  assert.deepEqual(db.calls[0].params, [42, 1, 'Organic Chemistry']);
 });
 
 test('PATCH /api/decks/:deckId rejects date-only or timezone-less nested deck created_at from rename control result', async (t) => {
   const deck = {
     id: 42,
-    user_id: 'user-1',
+    user_id: 1,
     name: 'Organic Chemistry',
     description: null,
     created_at: '2026-05-08T00:00:00.000Z',
@@ -722,7 +745,7 @@ test('PATCH /api/decks/:deckId rejects date-only or timezone-less nested deck cr
         }],
       },
     ]);
-    const req = { params: { deckId: '42' }, body: { name: 'Organic Chemistry' }, user: { userId: 'user-1' } };
+    const req = { params: { deckId: '42' }, body: { name: 'Organic Chemistry' }, user: { userId: 1 } };
     const res = createRes();
 
     await renameDeck(req, res, db);
@@ -730,14 +753,14 @@ test('PATCH /api/decks/:deckId rejects date-only or timezone-less nested deck cr
     assert.equal(res.statusCode, 500);
     assert.deepEqual(res.body, { error: 'Internal server error' });
     assert.equal(db.calls.length, 1);
-    assert.deepEqual(db.calls[0].params, [42, 'user-1', 'Organic Chemistry']);
+    assert.deepEqual(db.calls[0].params, [42, 1, 'Organic Chemistry']);
   }
 });
 
 test('PATCH /api/decks/:deckId fails closed when the rename control result is malformed', async (t) => {
   const deck = {
     id: 42,
-    user_id: 'user-1',
+    user_id: 1,
     name: 'Organic Chemistry',
     description: null,
     created_at: '2026-05-08T00:00:00.000Z',
@@ -753,7 +776,7 @@ test('PATCH /api/decks/:deckId fails closed when the rename control result is ma
     { rowCount: 1, rows: [{ deckExists: true, duplicateExists: true, deck }] },
     { rowCount: 1, rows: [{ deckExists: true, duplicateExists: false, deck: null }] },
     { rowCount: 1, rows: [{ deckExists: true, duplicateExists: false, deck: { ...deck, id: 43 } }] },
-    { rowCount: 1, rows: [{ deckExists: true, duplicateExists: false, deck: { ...deck, user_id: 'other-user' } }] },
+    { rowCount: 1, rows: [{ deckExists: true, duplicateExists: false, deck: { ...deck, user_id: 2 } }] },
     { rowCount: 1, rows: [{ deckExists: true, duplicateExists: false, deck: { ...deck, description: 123 } }] },
     { rowCount: 1, rows: [{ deckExists: true, duplicateExists: false, deck: { ...deck, created_at: null } }] },
     { rowCount: 1, rows: [{ deckExists: true, duplicateExists: false, deck: { ...deck, created_at: 'not-a-date' } }] },
@@ -762,7 +785,7 @@ test('PATCH /api/decks/:deckId fails closed when the rename control result is ma
 
   for (const result of malformedResults) {
     const db = createDb([result]);
-    const req = { params: { deckId: '42' }, body: { name: 'Organic Chemistry' }, user: { userId: 'user-1' } };
+    const req = { params: { deckId: '42' }, body: { name: 'Organic Chemistry' }, user: { userId: 1 } };
     const res = createRes();
 
     await renameDeck(req, res, db);
@@ -770,7 +793,7 @@ test('PATCH /api/decks/:deckId fails closed when the rename control result is ma
     assert.equal(res.statusCode, 500);
     assert.deepEqual(res.body, { error: 'Internal server error' });
     assert.equal(db.calls.length, 1);
-    assert.deepEqual(db.calls[0].params, [42, 'user-1', 'Organic Chemistry']);
+    assert.deepEqual(db.calls[0].params, [42, 1, 'Organic Chemistry']);
   }
 });
 
@@ -781,7 +804,7 @@ test('PATCH /api/decks/:deckId returns 404 for missing or unowned deck', async (
       rows: [{ deckExists: false, duplicateExists: true, deck: null }],
     },
   ]);
-  const req = { params: { deckId: '42' }, body: { name: 'Biology' }, user: { userId: 'user-1' } };
+  const req = { params: { deckId: '42' }, body: { name: 'Biology' }, user: { userId: 1 } };
   const res = createRes();
 
   await renameDeck(req, res, db);
@@ -789,7 +812,7 @@ test('PATCH /api/decks/:deckId returns 404 for missing or unowned deck', async (
   assert.equal(res.statusCode, 404);
   assert.deepEqual(res.body, { error: 'Deck not found' });
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [42, 'user-1', 'Biology']);
+  assert.deepEqual(db.calls[0].params, [42, 1, 'Biology']);
 });
 
 test('PATCH /api/decks/:deckId returns 409 for duplicate normalized deck name', async () => {
@@ -799,7 +822,7 @@ test('PATCH /api/decks/:deckId returns 409 for duplicate normalized deck name', 
       rows: [{ deckExists: true, duplicateExists: true, deck: null }],
     },
   ]);
-  const req = { params: { deckId: '42' }, body: { name: ' biology ' }, user: { userId: 'user-1' } };
+  const req = { params: { deckId: '42' }, body: { name: ' biology ' }, user: { userId: 1 } };
   const res = createRes();
 
   await renameDeck(req, res, db);
@@ -807,7 +830,7 @@ test('PATCH /api/decks/:deckId returns 409 for duplicate normalized deck name', 
   assert.equal(res.statusCode, 409);
   assert.deepEqual(res.body, { error: 'Deck name already exists for this user' });
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [42, 'user-1', 'biology']);
+  assert.deepEqual(db.calls[0].params, [42, 1, 'biology']);
   assert.match(db.calls[0].sql, /user_id\s+=\s+\$2/i);
   assert.match(db.calls[0].sql, /id\s+<>\s+\$1/i);
   assert.match(db.calls[0].sql, /LOWER\(TRIM\(name\)\)\s+=\s+LOWER\(TRIM\(\$3\)\)/i);
@@ -824,24 +847,24 @@ test('GET /api/decks returns decks with one user-scoped aggregate query', async 
     {
       rowCount: 2,
       rows: [
-        { id: 1, user_id: 'user-1', name: 'Biology', description: null, created_at: '2026-05-08T00:00:00.000Z', totalCards: '10', dueCards: '3', private_note: 'do not expose' },
-        { id: 2, user_id: 'user-1', name: 'Math', description: 'Algebra', created_at: '2026-05-08T00:00:00.000Z', totalCards: '4', dueCards: '0', private_note: 'do not expose' },
+        { id: 1, user_id: 1, name: 'Biology', description: null, created_at: '2026-05-08T00:00:00.000Z', totalCards: '10', dueCards: '3', private_note: 'do not expose' },
+        { id: 2, user_id: 1, name: 'Math', description: 'Algebra', created_at: '2026-05-08T00:00:00.000Z', totalCards: '4', dueCards: '0', private_note: 'do not expose' },
       ],
     },
   ]);
-  const req = { user: { userId: 'user-1' } };
+  const req = { user: { userId: 1 } };
   const res = createRes();
 
   await getDecks(req, res, db);
 
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, [
-    { id: 1, user_id: 'user-1', name: 'Biology', description: null, created_at: '2026-05-08T00:00:00.000Z', totalCards: 10, dueCards: 3 },
-    { id: 2, user_id: 'user-1', name: 'Math', description: 'Algebra', created_at: '2026-05-08T00:00:00.000Z', totalCards: 4, dueCards: 0 },
+    { id: 1, user_id: 1, name: 'Biology', description: null, created_at: '2026-05-08T00:00:00.000Z', totalCards: 10, dueCards: 3 },
+    { id: 2, user_id: 1, name: 'Math', description: 'Algebra', created_at: '2026-05-08T00:00:00.000Z', totalCards: 4, dueCards: 0 },
   ]);
   assert.equal(Object.hasOwn(res.body[0], 'private_note'), false);
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, ['user-1']);
+  assert.deepEqual(db.calls[0].params, [1]);
   assertExplicitPublicDeckReadSelect(db.calls[0].sql);
   assert.match(db.calls[0].sql, /FROM decks d/);
   assert.match(db.calls[0].sql, /LEFT JOIN cards c ON c\.deck_id = d\.id/);
@@ -859,18 +882,18 @@ test('GET /api/decks preserves empty decks with zero counts', async () => {
     {
       rowCount: 1,
       rows: [
-        { id: 3, user_id: 'user-1', name: 'Empty', description: null, created_at: '2026-05-08T00:00:00.000Z', totalCards: '0', dueCards: '0' },
+        { id: 3, user_id: 1, name: 'Empty', description: null, created_at: '2026-05-08T00:00:00.000Z', totalCards: '0', dueCards: '0' },
       ],
     },
   ]);
-  const req = { user: { userId: 'user-1' } };
+  const req = { user: { userId: 1 } };
   const res = createRes();
 
   await getDecks(req, res, db);
 
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, [
-    { id: 3, user_id: 'user-1', name: 'Empty', description: null, created_at: '2026-05-08T00:00:00.000Z', totalCards: 0, dueCards: 0 },
+    { id: 3, user_id: 1, name: 'Empty', description: null, created_at: '2026-05-08T00:00:00.000Z', totalCards: 0, dueCards: 0 },
   ]);
   assert.equal(db.calls.length, 1);
   assert.match(db.calls[0].sql, /LEFT JOIN cards c/);
@@ -879,7 +902,7 @@ test('GET /api/decks preserves empty decks with zero counts', async () => {
 test('GET /api/decks converts aggregate strings to numbers', async () => {
   const deck = {
     id: 4,
-    user_id: 'user-1',
+    user_id: 1,
     name: 'Chemistry',
     description: null,
     created_at: '2026-05-08T00:00:00.000Z',
@@ -892,7 +915,7 @@ test('GET /api/decks converts aggregate strings to numbers', async () => {
       ],
     },
   ]);
-  const req = { user: { userId: 'user-1' } };
+  const req = { user: { userId: 1 } };
   const res = createRes();
 
   await getDecks(req, res, db);
@@ -910,22 +933,22 @@ test('GET /api/decks normalizes safe aggregate count representations', async () 
     {
       rowCount: 3,
       rows: [
-        { id: 5, user_id: 'user-1', name: 'String Counts', description: null, created_at: '2026-05-08T00:00:00.000Z', totalCards: '12', dueCards: '2' },
-        { id: 6, user_id: 'user-1', name: 'BigInt Counts', description: null, created_at: '2026-05-08T00:00:00.000Z', totalCards: 12n, dueCards: 2n },
-        { id: 7, user_id: 'user-1', name: 'Number Counts', description: null, created_at: '2026-05-08T00:00:00.000Z', totalCards: 12, dueCards: 2 },
+        { id: 5, user_id: 1, name: 'String Counts', description: null, created_at: '2026-05-08T00:00:00.000Z', totalCards: '12', dueCards: '2' },
+        { id: 6, user_id: 1, name: 'BigInt Counts', description: null, created_at: '2026-05-08T00:00:00.000Z', totalCards: 12n, dueCards: 2n },
+        { id: 7, user_id: 1, name: 'Number Counts', description: null, created_at: '2026-05-08T00:00:00.000Z', totalCards: 12, dueCards: 2 },
       ],
     },
   ]);
-  const req = { user: { userId: 'user-1' } };
+  const req = { user: { userId: 1 } };
   const res = createRes();
 
   await getDecks(req, res, db);
 
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, [
-    { id: 5, user_id: 'user-1', name: 'String Counts', description: null, created_at: '2026-05-08T00:00:00.000Z', totalCards: 12, dueCards: 2 },
-    { id: 6, user_id: 'user-1', name: 'BigInt Counts', description: null, created_at: '2026-05-08T00:00:00.000Z', totalCards: 12, dueCards: 2 },
-    { id: 7, user_id: 'user-1', name: 'Number Counts', description: null, created_at: '2026-05-08T00:00:00.000Z', totalCards: 12, dueCards: 2 },
+    { id: 5, user_id: 1, name: 'String Counts', description: null, created_at: '2026-05-08T00:00:00.000Z', totalCards: 12, dueCards: 2 },
+    { id: 6, user_id: 1, name: 'BigInt Counts', description: null, created_at: '2026-05-08T00:00:00.000Z', totalCards: 12, dueCards: 2 },
+    { id: 7, user_id: 1, name: 'Number Counts', description: null, created_at: '2026-05-08T00:00:00.000Z', totalCards: 12, dueCards: 2 },
   ]);
   assert.equal(db.calls.length, 1);
 });
@@ -933,7 +956,7 @@ test('GET /api/decks normalizes safe aggregate count representations', async () 
 test('GET /api/decks fails closed when the deck-list query result shape is malformed', async (t) => {
   const validRow = {
     id: 7,
-    user_id: 'user-1',
+    user_id: 1,
     name: 'Biology',
     description: null,
     created_at: '2026-05-08T00:00:00.000Z',
@@ -954,7 +977,7 @@ test('GET /api/decks fails closed when the deck-list query result shape is malfo
 
   for (const result of malformedResults) {
     const db = createDb([result]);
-    const req = { user: { userId: 'user-1' } };
+    const req = { user: { userId: 1 } };
     const res = createRes();
 
     await getDecks(req, res, db);
@@ -962,7 +985,7 @@ test('GET /api/decks fails closed when the deck-list query result shape is malfo
     assert.equal(res.statusCode, 500);
     assert.deepEqual(res.body, { error: 'Internal server error' });
     assert.equal(db.calls.length, 1);
-    assert.deepEqual(db.calls[0].params, ['user-1']);
+    assert.deepEqual(db.calls[0].params, [1]);
   }
 });
 
@@ -974,6 +997,29 @@ test('GET /api/decks fails closed before db access when the auth principal is ma
     { user: {} },
     { user: { userId: null } },
     { user: { userId: undefined } },
+    { user: { userId: '' } },
+    { user: { userId: '   ' } },
+    { user: { userId: ' 1 ' } },
+    { user: { userId: 0 } },
+    { user: { userId: '0' } },
+    { user: { userId: -1 } },
+    { user: { userId: '-1' } },
+    { user: { userId: 1.5 } },
+    { user: { userId: '1.5' } },
+    { user: { userId: '0000' } },
+    { user: { userId: '01' } },
+    { user: { userId: 2147483648 } },
+    { user: { userId: '2147483648' } },
+    { user: { userId: Number.NaN } },
+    { user: { userId: Number.POSITIVE_INFINITY } },
+    { user: { userId: Number.NEGATIVE_INFINITY } },
+    { user: { userId: 'user-1' } },
+    { user: { userId: false } },
+    { user: { userId: true } },
+    { user: { userId: [] } },
+    { user: { userId: {} } },
+    { user: { userId: 1n } },
+    { user: { userId: Symbol('userId') } },
   ];
   t.mock.method(console, 'error', () => {});
 
@@ -1095,7 +1141,7 @@ test('protected API handlers reject missing auth principal before db, transactio
 test('GET /api/decks fails closed when a deck-list row is missing or cannot use required response fields', async (t) => {
   const validRow = {
     id: 7,
-    user_id: 'user-1',
+    user_id: 1,
     name: 'Biology',
     description: null,
     created_at: '2026-05-08T00:00:00.000Z',
@@ -1104,7 +1150,7 @@ test('GET /api/decks fails closed when a deck-list row is missing or cannot use 
   };
   const malformedRows = [
     { ...validRow, user_id: undefined },
-    { ...validRow, user_id: 'other-user' },
+    { ...validRow, user_id: 2 },
     { ...validRow, id: 'deck-7' },
     { ...validRow, name: '' },
     { ...validRow, name: '   ' },
@@ -1126,7 +1172,7 @@ test('GET /api/decks fails closed when a deck-list row is missing or cannot use 
 
   for (const row of malformedRows) {
     const db = createDb([{ rowCount: 1, rows: [row] }]);
-    const req = { user: { userId: 'user-1' } };
+    const req = { user: { userId: 1 } };
     const res = createRes();
 
     await getDecks(req, res, db);
@@ -1134,13 +1180,13 @@ test('GET /api/decks fails closed when a deck-list row is missing or cannot use 
     assert.equal(res.statusCode, 500);
     assert.deepEqual(res.body, { error: 'Internal server error' });
     assert.equal(db.calls.length, 1);
-    assert.deepEqual(db.calls[0].params, ['user-1']);
+    assert.deepEqual(db.calls[0].params, [1]);
   }
 });
 
 test('GET /api/decks returns 500 when the db query fails', async () => {
   const db = createDb([new Error('db unavailable')]);
-  const req = { user: { userId: 'user-1' } };
+  const req = { user: { userId: 1 } };
   const res = createRes();
   const originalError = console.error;
   console.error = () => {};
@@ -1154,7 +1200,7 @@ test('GET /api/decks returns 500 when the db query fails', async () => {
   assert.equal(res.statusCode, 500);
   assert.deepEqual(res.body, { error: 'Internal server error' });
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, ['user-1']);
+  assert.deepEqual(db.calls[0].params, [1]);
 });
 
 test('DELETE /api/decks/:deckId returns 400 for invalid deckId and skips db query', async () => {
@@ -1176,7 +1222,7 @@ test('DELETE /api/decks/:deckId returns 400 for invalid deckId and skips db quer
 
   for (const deckId of invalidDeckIds) {
     const db = addUnexpectedConnect(createDb([]));
-    const req = { params: { deckId }, user: { userId: 'user-1' } };
+    const req = { params: { deckId }, user: { userId: 1 } };
     const res = createRes();
 
     await deleteDeck(req, res, db);
@@ -1190,9 +1236,9 @@ test('DELETE /api/decks/:deckId returns 400 for invalid deckId and skips db quer
 
 test('DELETE /api/decks/:deckId deletes scoped cards and deck with one atomic query', async () => {
   const db = addUnexpectedConnect(createDb([
-    { rowCount: 1, rows: [{ id: 42, user_id: 'user-1' }] },
+    { rowCount: 1, rows: [{ id: 42, user_id: 1 }] },
   ]));
-  const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+  const req = { params: { deckId: '42' }, user: { userId: 1 } };
   const res = createRes();
 
   await deleteDeck(req, res, db);
@@ -1201,7 +1247,7 @@ test('DELETE /api/decks/:deckId deletes scoped cards and deck with one atomic qu
   assert.deepEqual(res.body, { success: true });
   assert.equal(db.calls.length, 1);
   assert.equal(db.connectCalls, 0);
-  assert.deepEqual(db.calls[0].params, [42, 'user-1']);
+  assert.deepEqual(db.calls[0].params, [42, 1]);
   assertDeleteDeckAtomicSql(db.calls[0].sql);
 });
 
@@ -1209,7 +1255,7 @@ test('DELETE /api/decks/:deckId returns 500 when the atomic delete result is mis
   const db = addUnexpectedConnect(createDb([
     { rowCount: 1, rows: [] },
   ]));
-  const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+  const req = { params: { deckId: '42' }, user: { userId: 1 } };
   const res = createRes();
   t.mock.method(console, 'error', () => {});
 
@@ -1219,7 +1265,7 @@ test('DELETE /api/decks/:deckId returns 500 when the atomic delete result is mis
   assert.deepEqual(res.body, { error: 'Internal server error' });
   assert.equal(db.calls.length, 1);
   assert.equal(db.connectCalls, 0);
-  assert.deepEqual(db.calls[0].params, [42, 'user-1']);
+  assert.deepEqual(db.calls[0].params, [42, 1]);
   assertDeleteDeckAtomicSql(db.calls[0].sql);
 });
 
@@ -1234,7 +1280,7 @@ test('DELETE /api/decks/:deckId fails closed when the atomic delete cardinality 
 
   for (const result of malformedResults) {
     const db = addUnexpectedConnect(createDb([result]));
-    const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+    const req = { params: { deckId: '42' }, user: { userId: 1 } };
     const res = createRes();
 
     await deleteDeck(req, res, db);
@@ -1243,19 +1289,19 @@ test('DELETE /api/decks/:deckId fails closed when the atomic delete cardinality 
     assert.deepEqual(res.body, { error: 'Internal server error' });
     assert.equal(db.calls.length, 1);
     assert.equal(db.connectCalls, 0);
-    assert.deepEqual(db.calls[0].params, [42, 'user-1']);
+    assert.deepEqual(db.calls[0].params, [42, 1]);
     assertDeleteDeckAtomicSql(db.calls[0].sql);
   }
 });
 
 test('DELETE /api/decks/:deckId fails closed when the atomic delete result has an impossible or mismatched deck id', async (t) => {
   const malformedRows = [
-    { id: null, user_id: 'user-1' },
-    { id: 'deck-42', user_id: 'user-1' },
-    { id: 0, user_id: 'user-1' },
-    { id: -1, user_id: 'user-1' },
-    { id: 2147483648, user_id: 'user-1' },
-    { id: 43, user_id: 'user-1' },
+    { id: null, user_id: 1 },
+    { id: 'deck-42', user_id: 1 },
+    { id: 0, user_id: 1 },
+    { id: -1, user_id: 1 },
+    { id: 2147483648, user_id: 1 },
+    { id: 43, user_id: 1 },
   ];
   t.mock.method(console, 'error', () => {});
 
@@ -1263,7 +1309,7 @@ test('DELETE /api/decks/:deckId fails closed when the atomic delete result has a
     const db = addUnexpectedConnect(createDb([
       { rowCount: 1, rows: [row] },
     ]));
-    const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+    const req = { params: { deckId: '42' }, user: { userId: 1 } };
     const res = createRes();
 
     await deleteDeck(req, res, db);
@@ -1272,16 +1318,16 @@ test('DELETE /api/decks/:deckId fails closed when the atomic delete result has a
     assert.deepEqual(res.body, { error: 'Internal server error' });
     assert.equal(db.calls.length, 1);
     assert.equal(db.connectCalls, 0);
-    assert.deepEqual(db.calls[0].params, [42, 'user-1']);
+    assert.deepEqual(db.calls[0].params, [42, 1]);
     assertDeleteDeckAtomicSql(db.calls[0].sql);
   }
 });
 
 test('DELETE /api/decks/:deckId fails closed when the atomic delete result owner mismatches the request user', async (t) => {
   const db = addUnexpectedConnect(createDb([
-    { rowCount: 1, rows: [{ id: 42, user_id: 'other-user' }] },
+    { rowCount: 1, rows: [{ id: 42, user_id: 2 }] },
   ]));
-  const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+  const req = { params: { deckId: '42' }, user: { userId: 1 } };
   const res = createRes();
   t.mock.method(console, 'error', () => {});
 
@@ -1291,7 +1337,7 @@ test('DELETE /api/decks/:deckId fails closed when the atomic delete result owner
   assert.deepEqual(res.body, { error: 'Internal server error' });
   assert.equal(db.calls.length, 1);
   assert.equal(db.connectCalls, 0);
-  assert.deepEqual(db.calls[0].params, [42, 'user-1']);
+  assert.deepEqual(db.calls[0].params, [42, 1]);
   assertDeleteDeckAtomicSql(db.calls[0].sql);
 });
 
@@ -1299,7 +1345,7 @@ test('DELETE /api/decks/:deckId returns 404 for missing or unowned deck', async 
   const db = addUnexpectedConnect(createDb([
     { rowCount: 0, rows: [] },
   ]));
-  const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+  const req = { params: { deckId: '42' }, user: { userId: 1 } };
   const res = createRes();
 
   await deleteDeck(req, res, db);
@@ -1308,7 +1354,7 @@ test('DELETE /api/decks/:deckId returns 404 for missing or unowned deck', async 
   assert.deepEqual(res.body, { error: 'Deck not found' });
   assert.equal(db.calls.length, 1);
   assert.equal(db.connectCalls, 0);
-  assert.deepEqual(db.calls[0].params, [42, 'user-1']);
+  assert.deepEqual(db.calls[0].params, [42, 1]);
   assertDeleteDeckAtomicSql(db.calls[0].sql);
 });
 
@@ -1316,7 +1362,7 @@ test('DELETE /api/decks/:deckId returns 500 when the atomic delete query fails',
   const db = addUnexpectedConnect(createDb([
     new Error('delete failed'),
   ]));
-  const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+  const req = { params: { deckId: '42' }, user: { userId: 1 } };
   const res = createRes();
   const originalError = console.error;
   console.error = () => {};
@@ -1331,7 +1377,7 @@ test('DELETE /api/decks/:deckId returns 500 when the atomic delete query fails',
   assert.deepEqual(res.body, { error: 'Internal server error' });
   assert.equal(db.calls.length, 1);
   assert.equal(db.connectCalls, 0);
-  assert.deepEqual(db.calls[0].params, [42, 'user-1']);
+  assert.deepEqual(db.calls[0].params, [42, 1]);
   assertDeleteDeckAtomicSql(db.calls[0].sql);
 });
 
@@ -1417,7 +1463,7 @@ test('GET /api/cards/:deckId returns 400 for invalid deckId and skips db query',
 
   for (const deckId of invalidDeckIds) {
     const db = createDb([]);
-    const req = { params: { deckId }, user: { userId: 'user-1' } };
+    const req = { params: { deckId }, user: { userId: 1 } };
     const res = createRes();
 
     await getDueCardsByDeck(req, res, db);
@@ -1447,7 +1493,7 @@ test('GET /api/decks/:deckId/cards returns 400 for invalid deckId and skips db q
 
   for (const deckId of invalidDeckIds) {
     const db = createDb([]);
-    const req = { params: { deckId }, user: { userId: 'user-1' } };
+    const req = { params: { deckId }, user: { userId: 1 } };
     const res = createRes();
 
     await getCardsByDeck(req, res, db);
@@ -1460,7 +1506,7 @@ test('GET /api/decks/:deckId/cards returns 400 for invalid deckId and skips db q
 
 test('GET /api/decks/:deckId/cards returns 404 for missing or unowned deck', async () => {
   const db = createDb([{ rowCount: 0, rows: [] }]);
-  const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+  const req = { params: { deckId: '42' }, user: { userId: 1 } };
   const res = createRes();
 
   await getCardsByDeck(req, res, db);
@@ -1468,7 +1514,7 @@ test('GET /api/decks/:deckId/cards returns 404 for missing or unowned deck', asy
   assert.equal(res.statusCode, 404);
   assert.deepEqual(res.body, { error: 'Deck not found for user' });
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [42, 'user-1', 51]);
+  assert.deepEqual(db.calls[0].params, [42, 1, 51]);
 });
 
 test('GET /api/decks/:deckId/cards fails closed when the list query result shape is malformed', async (t) => {
@@ -1498,7 +1544,7 @@ test('GET /api/decks/:deckId/cards fails closed when the list query result shape
 
   for (const result of malformedResults) {
     const db = createDb([result]);
-    const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+    const req = { params: { deckId: '42' }, user: { userId: 1 } };
     const res = createRes();
 
     await getCardsByDeck(req, res, db);
@@ -1506,7 +1552,7 @@ test('GET /api/decks/:deckId/cards fails closed when the list query result shape
     assert.equal(res.statusCode, 500);
     assert.deepEqual(res.body, { error: 'Internal server error' });
     assert.equal(db.calls.length, 1);
-    assert.deepEqual(db.calls[0].params, [42, 'user-1', 51]);
+    assert.deepEqual(db.calls[0].params, [42, 1, 51]);
   }
 });
 
@@ -1550,7 +1596,7 @@ test('GET /api/decks/:deckId/cards fails closed when the browse query exceeds th
   const req = {
     params: { deckId: '42' },
     query: { limit: '1' },
-    user: { userId: 'user-1' },
+    user: { userId: 1 },
   };
   const res = createRes();
   t.mock.method(console, 'error', () => {});
@@ -1560,7 +1606,7 @@ test('GET /api/decks/:deckId/cards fails closed when the browse query exceeds th
   assert.equal(res.statusCode, 500);
   assert.deepEqual(res.body, { error: 'Internal server error' });
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [42, 'user-1', 2]);
+  assert.deepEqual(db.calls[0].params, [42, 1, 2]);
 });
 
 test('GET /api/decks/:deckId/cards returns empty page for owned empty deck', async () => {
@@ -1570,7 +1616,7 @@ test('GET /api/decks/:deckId/cards returns empty page for owned empty deck', asy
       rows: [createEmptyCardReadSentinel({ __cursor_created_at: null })],
     },
   ]);
-  const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+  const req = { params: { deckId: '42' }, user: { userId: 1 } };
   const res = createRes();
 
   await getCardsByDeck(req, res, db);
@@ -1578,7 +1624,7 @@ test('GET /api/decks/:deckId/cards returns empty page for owned empty deck', asy
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, { cards: [], nextCursor: null });
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [42, 'user-1', 51]);
+  assert.deepEqual(db.calls[0].params, [42, 1, 51]);
 });
 
 test('GET /api/decks/:deckId/cards fails closed when empty-card sentinels are malformed', async (t) => {
@@ -1594,7 +1640,7 @@ test('GET /api/decks/:deckId/cards fails closed when empty-card sentinels are ma
 
   for (const row of malformedRows) {
     const db = createDb([{ rowCount: 1, rows: [row] }]);
-    const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+    const req = { params: { deckId: '42' }, user: { userId: 1 } };
     const res = createRes();
 
     await getCardsByDeck(req, res, db);
@@ -1602,7 +1648,7 @@ test('GET /api/decks/:deckId/cards fails closed when empty-card sentinels are ma
     assert.equal(res.statusCode, 500);
     assert.deepEqual(res.body, { error: 'Internal server error' });
     assert.equal(db.calls.length, 1);
-    assert.deepEqual(db.calls[0].params, [42, 'user-1', 51]);
+    assert.deepEqual(db.calls[0].params, [42, 1, 51]);
   }
 });
 
@@ -1612,11 +1658,11 @@ test('GET /api/decks/:deckId/cards fails closed when empty-card sentinels includ
     rows: [
       createEmptyCardReadSentinel({
         __cursor_created_at: null,
-        __owned_user_id: 'user-1',
+        __owned_user_id: 1,
       }),
     ],
   }]);
-  const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+  const req = { params: { deckId: '42' }, user: { userId: 1 } };
   const res = createRes();
   t.mock.method(console, 'error', () => {});
 
@@ -1625,7 +1671,7 @@ test('GET /api/decks/:deckId/cards fails closed when empty-card sentinels includ
   assert.equal(res.statusCode, 500);
   assert.deepEqual(res.body, { error: 'Internal server error' });
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [42, 'user-1', 51]);
+  assert.deepEqual(db.calls[0].params, [42, 1, 51]);
 });
 
 test('GET /api/decks/:deckId/cards fails closed when rows are not anchored to the requested deck', async (t) => {
@@ -1647,7 +1693,7 @@ test('GET /api/decks/:deckId/cards fails closed when rows are not anchored to th
 
   for (const row of malformedRows) {
     const db = createDb([{ rowCount: 1, rows: [row] }]);
-    const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+    const req = { params: { deckId: '42' }, user: { userId: 1 } };
     const res = createRes();
 
     await getCardsByDeck(req, res, db);
@@ -1655,7 +1701,7 @@ test('GET /api/decks/:deckId/cards fails closed when rows are not anchored to th
     assert.equal(res.statusCode, 500);
     assert.deepEqual(res.body, { error: 'Internal server error' });
     assert.equal(db.calls.length, 1);
-    assert.deepEqual(db.calls[0].params, [42, 'user-1', 51]);
+    assert.deepEqual(db.calls[0].params, [42, 1, 51]);
   }
 });
 
@@ -1689,7 +1735,7 @@ test('GET /api/decks/:deckId/cards returns default-limited owned deck cards newe
       })),
     },
   ]);
-  const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+  const req = { params: { deckId: '42' }, user: { userId: 1 } };
   const res = createRes();
 
   await getCardsByDeck(req, res, db);
@@ -1700,7 +1746,7 @@ test('GET /api/decks/:deckId/cards returns default-limited owned deck cards newe
   assert.equal(Object.hasOwn(res.body.cards[0], '__cursor_created_at'), false);
   assert.equal(Object.hasOwn(res.body.cards[0], 'private_note'), false);
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [42, 'user-1', 51]);
+  assert.deepEqual(db.calls[0].params, [42, 1, 51]);
 });
 
 test('GET /api/decks/:deckId/cards fails closed when a card row violates read response invariants', async (t) => {
@@ -1738,7 +1784,7 @@ test('GET /api/decks/:deckId/cards fails closed when a card row violates read re
         rows: [{ ...row, __cursor_created_at: '2026-05-08T13:00:00.000000Z', __owned_deck_id: 42 }],
       },
     ]);
-    const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+    const req = { params: { deckId: '42' }, user: { userId: 1 } };
     const res = createRes();
 
     await getCardsByDeck(req, res, db);
@@ -1746,19 +1792,19 @@ test('GET /api/decks/:deckId/cards fails closed when a card row violates read re
     assert.equal(res.statusCode, 500);
     assert.deepEqual(res.body, { error: 'Internal server error' });
     assert.equal(db.calls.length, 1);
-    assert.deepEqual(db.calls[0].params, [42, 'user-1', 51]);
+    assert.deepEqual(db.calls[0].params, [42, 1, 51]);
   }
 });
 
 test('GET /api/decks/:deckId/cards uses one user-scoped ordered browse query with default limit', async () => {
   const db = createDb([{ rowCount: 1, rows: [createEmptyCardReadSentinel()] }]);
-  const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+  const req = { params: { deckId: '42' }, user: { userId: 1 } };
   const res = createRes();
 
   await getCardsByDeck(req, res, db);
 
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [42, 'user-1', 51]);
+  assert.deepEqual(db.calls[0].params, [42, 1, 51]);
   assertExplicitPublicCardReadSelect(db.calls[0].sql);
   assert.match(db.calls[0].sql, /to_char\(c\.created_at,\s*'YYYY-MM-DD"T"HH24:MI:SS\.US"Z"'\)\s+AS\s+"__cursor_created_at"/);
   assert.match(db.calls[0].sql, /FROM decks d\s+LEFT JOIN cards c/i);
@@ -1800,7 +1846,7 @@ test('GET /api/decks/:deckId/cards returns next cursor only when limit plus one 
   const req = {
     params: { deckId: '42' },
     query: { limit: '1' },
-    user: { userId: 'user-1' },
+    user: { userId: 1 },
   };
   const res = createRes();
 
@@ -1818,7 +1864,7 @@ test('GET /api/decks/:deckId/cards returns next cursor only when limit plus one 
   });
   assert.equal(Object.hasOwn(res.body.cards[0], '__cursor_created_at'), false);
   assert.equal(Object.hasOwn(res.body.cards[0], '__owned_deck_id'), false);
-  assert.deepEqual(db.calls[0].params, [42, 'user-1', 2]);
+  assert.deepEqual(db.calls[0].params, [42, 1, 2]);
   assert.match(db.calls[0].sql, /\bLIMIT \$3/);
   assert.doesNotMatch(db.calls[0].sql, /LIMIT\s+1/);
 });
@@ -1859,7 +1905,7 @@ test('GET /api/decks/:deckId/cards fails closed when next cursor metadata is mal
     const req = {
       params: { deckId: '42' },
       query: { limit: '1' },
-      user: { userId: 'user-1' },
+      user: { userId: 1 },
     };
     const res = createRes();
 
@@ -1868,7 +1914,7 @@ test('GET /api/decks/:deckId/cards fails closed when next cursor metadata is mal
     assert.equal(res.statusCode, 500);
     assert.deepEqual(res.body, { error: 'Internal server error' });
     assert.equal(db.calls.length, 1);
-    assert.deepEqual(db.calls[0].params, [42, 'user-1', 2]);
+    assert.deepEqual(db.calls[0].params, [42, 1, 2]);
   }
 });
 
@@ -1890,7 +1936,7 @@ test('GET /api/decks/:deckId/cards omits next cursor when only limit rows are re
   const req = {
     params: { deckId: '42' },
     query: { limit: '1' },
-    user: { userId: 'user-1' },
+    user: { userId: 1 },
   };
   const res = createRes();
 
@@ -1898,7 +1944,7 @@ test('GET /api/decks/:deckId/cards omits next cursor when only limit rows are re
 
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, { cards: [card], nextCursor: null });
-  assert.deepEqual(db.calls[0].params, [42, 'user-1', 2]);
+  assert.deepEqual(db.calls[0].params, [42, 1, 2]);
   assert.match(db.calls[0].sql, /\bLIMIT \$3/);
   assert.doesNotMatch(db.calls[0].sql, /LIMIT\s+1/);
 });
@@ -1925,7 +1971,7 @@ test('GET /api/decks/:deckId/cards returns 400 for invalid limit and skips db qu
     const req = {
       params: { deckId: '42' },
       query: { limit },
-      user: { userId: 'user-1' },
+      user: { userId: 1 },
     };
     const res = createRes();
 
@@ -1950,7 +1996,7 @@ test('GET /api/decks/:deckId/cards returns 400 for non-string q and skips db que
     const req = {
       params: { deckId: '42' },
       query,
-      user: { userId: 'user-1' },
+      user: { userId: 1 },
     };
     const res = createRes();
 
@@ -1967,7 +2013,7 @@ test('GET /api/decks/:deckId/cards returns 400 for q with null bytes and skips d
   const req = {
     params: { deckId: '42' },
     query: { q: 'front\u0000back' },
-    user: { userId: 'user-1' },
+    user: { userId: 1 },
   };
   const res = createRes();
 
@@ -1983,7 +2029,7 @@ test('GET /api/decks/:deckId/cards treats whitespace q like an omitted q', async
   const req = {
     params: { deckId: '42' },
     query: { q: '   ' },
-    user: { userId: 'user-1' },
+    user: { userId: 1 },
   };
   const res = createRes();
 
@@ -1992,7 +2038,7 @@ test('GET /api/decks/:deckId/cards treats whitespace q like an omitted q', async
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, { cards: [], nextCursor: null });
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [42, 'user-1', 51]);
+  assert.deepEqual(db.calls[0].params, [42, 1, 51]);
   assert.doesNotMatch(db.calls[0].sql, /POSITION\(/i);
   assert.match(db.calls[0].sql, /\bLIMIT \$3/);
 });
@@ -2002,7 +2048,7 @@ test('GET /api/decks/:deckId/cards returns 400 for over-length q and skips db qu
   const req = {
     params: { deckId: '42' },
     query: { q: ` ${'a'.repeat(201)} ` },
-    user: { userId: 'user-1' },
+    user: { userId: 1 },
   };
   const res = createRes();
 
@@ -2031,7 +2077,7 @@ test('GET /api/decks/:deckId/cards filters q against front and back content with
   const req = {
     params: { deckId: '42' },
     query: { q: '  Mito  ' },
-    user: { userId: 'user-1' },
+    user: { userId: 1 },
   };
   const res = createRes();
 
@@ -2040,7 +2086,7 @@ test('GET /api/decks/:deckId/cards filters q against front and back content with
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, { cards: [card], nextCursor: null });
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [42, 'user-1', 'Mito', 51]);
+  assert.deepEqual(db.calls[0].params, [42, 1, 'Mito', 51]);
   assert.match(
     db.calls[0].sql,
     /POSITION\(LOWER\(\$3\) IN LOWER\(c\.front_content\)\) > 0\s+OR POSITION\(LOWER\(\$3\) IN LOWER\(c\.back_content\)\) > 0/i
@@ -2059,7 +2105,7 @@ test('GET /api/decks/:deckId/cards returns empty page for owned deck with no q m
   const req = {
     params: { deckId: '42' },
     query: { q: 'absent' },
-    user: { userId: 'user-1' },
+    user: { userId: 1 },
   };
   const res = createRes();
 
@@ -2068,7 +2114,7 @@ test('GET /api/decks/:deckId/cards returns empty page for owned deck with no q m
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, { cards: [], nextCursor: null });
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [42, 'user-1', 'absent', 51]);
+  assert.deepEqual(db.calls[0].params, [42, 1, 'absent', 51]);
 });
 
 test('GET /api/decks/:deckId/cards returns 400 for invalid cursor and skips db query', async () => {
@@ -2172,7 +2218,7 @@ test('GET /api/decks/:deckId/cards returns 400 for invalid cursor and skips db q
     const req = {
       params: { deckId: '42' },
       query,
-      user: { userId: 'user-1' },
+      user: { userId: 1 },
     };
     const res = createRes();
 
@@ -2195,7 +2241,7 @@ test('GET /api/decks/:deckId/cards rejects mixed cursor parameter families befor
     const req = {
       params: { deckId: '42' },
       query,
-      user: { userId: 'user-1' },
+      user: { userId: 1 },
     };
     const res = createRes();
 
@@ -2233,7 +2279,7 @@ test('GET /api/decks/:deckId/cards accepts nextCursor round-trip with both curso
   const req = {
     params: { deckId: '42' },
     query: { limit: '2', ...nextCursor },
-    user: { userId: 'user-1' },
+    user: { userId: 1 },
   };
   const res = createRes();
 
@@ -2267,7 +2313,7 @@ test('GET /api/decks/:deckId/cards rejects conflicting complete cursor families 
     const req = {
       params: { deckId: '42' },
       query,
-      user: { userId: 'user-1' },
+      user: { userId: 1 },
     };
     const res = createRes();
 
@@ -2303,7 +2349,7 @@ test('GET /api/decks/:deckId/cards applies keyset cursor with parameterized SQL'
       beforeCreatedAt: '2026-05-08T13:00:00.000Z',
       beforeId: '3',
     },
-    user: { userId: 'user-1' },
+    user: { userId: 1 },
   };
   const res = createRes();
 
@@ -2313,7 +2359,7 @@ test('GET /api/decks/:deckId/cards applies keyset cursor with parameterized SQL'
   assert.deepEqual(res.body, { cards: [card], nextCursor: null });
   assert.equal(db.calls.length, 1);
   assert.equal(db.calls[0].params[0], 42);
-  assert.equal(db.calls[0].params[1], 'user-1');
+  assert.equal(db.calls[0].params[1], 1);
   assert.equal(db.calls[0].params[2], '2026-05-08T13:00:00.000Z');
   assert.equal(db.calls[0].params[3], 3);
   assert.equal(db.calls[0].params[4], 3);
@@ -2349,7 +2395,7 @@ test('GET /api/decks/:deckId/cards applies q and cursor with round-trippable cur
       cursorCreatedAt: '2026-05-08T13:00:00.000Z',
       cursorId: '3',
     },
-    user: { userId: 'user-1' },
+    user: { userId: 1 },
   };
   const res = createRes();
 
@@ -2359,7 +2405,7 @@ test('GET /api/decks/:deckId/cards applies q and cursor with round-trippable cur
   assert.deepEqual(res.body, { cards: [card], nextCursor: null });
   assert.deepEqual(db.calls[0].params, [
     42,
-    'user-1',
+    1,
     '2026-05-08T13:00:00.000Z',
     3,
     'mito',
@@ -2393,7 +2439,7 @@ test('GET /api/decks/:deckId/cards accepts cursorCreatedAt and cursorId aliases'
       cursorCreatedAt: '2026-05-08T13:00:00.000Z',
       cursorId: '3',
     },
-    user: { userId: 'user-1' },
+    user: { userId: 1 },
   };
   const res = createRes();
 
@@ -2425,7 +2471,7 @@ test('GET /api/cards/:deckId returns 400 for invalid limit and skips db query', 
     const req = {
       params: { deckId: '42' },
       query: { limit },
-      user: { userId: 'user-1' },
+      user: { userId: 1 },
     };
     const res = createRes();
 
@@ -2443,7 +2489,7 @@ test('GET /api/cards/:deckId returns 400 for oversized limit and skips db query'
     const req = {
       params: { deckId: '42' },
       query: { limit },
-      user: { userId: 'user-1' },
+      user: { userId: 1 },
     };
     const res = createRes();
 
@@ -2460,7 +2506,7 @@ test('GET /api/cards/:deckId returns 400 for duplicate limit params and skips db
   const req = {
     params: { deckId: '42' },
     query: { limit: ['1', '2'] },
-    user: { userId: 'user-1' },
+    user: { userId: 1 },
   };
   const res = createRes();
 
@@ -2473,7 +2519,7 @@ test('GET /api/cards/:deckId returns 400 for duplicate limit params and skips db
 
 test('GET /api/cards/:deckId returns 404 when deck is not owned by user', async () => {
   const db = createDb([{ rowCount: 0, rows: [] }]);
-  const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+  const req = { params: { deckId: '42' }, user: { userId: 1 } };
   const res = createRes();
 
   await getDueCardsByDeck(req, res, db);
@@ -2481,7 +2527,7 @@ test('GET /api/cards/:deckId returns 404 when deck is not owned by user', async 
   assert.equal(res.statusCode, 404);
   assert.deepEqual(res.body, { error: 'Deck not found for user' });
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [42, 'user-1', 100]);
+  assert.deepEqual(db.calls[0].params, [42, 1, 100]);
   assert.match(db.calls[0].sql, /WHERE d\.id = \$1 AND d\.user_id = \$2/);
   assertDuePredicate(db.calls[0].sql);
   assert.match(db.calls[0].sql, /ORDER BY c\.next_review ASC NULLS FIRST,\s*c\.id ASC\s+LIMIT \$3/);
@@ -2512,7 +2558,7 @@ test('GET /api/cards/:deckId fails closed when the due-card query result shape i
 
   for (const result of malformedResults) {
     const db = createDb([result]);
-    const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+    const req = { params: { deckId: '42' }, user: { userId: 1 } };
     const res = createRes();
 
     await getDueCardsByDeck(req, res, db);
@@ -2520,7 +2566,7 @@ test('GET /api/cards/:deckId fails closed when the due-card query result shape i
     assert.equal(res.statusCode, 500);
     assert.deepEqual(res.body, { error: 'Internal server error' });
     assert.equal(db.calls.length, 1);
-    assert.deepEqual(db.calls[0].params, [42, 'user-1', 100]);
+    assert.deepEqual(db.calls[0].params, [42, 1, 100]);
   }
 });
 
@@ -2553,7 +2599,7 @@ test('GET /api/cards/:deckId fails closed when the due-card query exceeds the re
   const req = {
     params: { deckId: '42' },
     query: { limit: '1' },
-    user: { userId: 'user-1' },
+    user: { userId: 1 },
   };
   const res = createRes();
   t.mock.method(console, 'error', () => {});
@@ -2563,7 +2609,7 @@ test('GET /api/cards/:deckId fails closed when the due-card query exceeds the re
   assert.equal(res.statusCode, 500);
   assert.deepEqual(res.body, { error: 'Internal server error' });
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [42, 'user-1', 1]);
+  assert.deepEqual(db.calls[0].params, [42, 1, 1]);
 });
 
 test('GET /api/cards/:deckId returns unscheduled and past-due cards with a parameterized default limit when limit is omitted', async () => {
@@ -2588,7 +2634,7 @@ test('GET /api/cards/:deckId returns unscheduled and past-due cards with a param
       })),
     },
   ]);
-  const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+  const req = { params: { deckId: '42' }, user: { userId: 1 } };
   const res = createRes();
 
   await getDueCardsByDeck(req, res, db);
@@ -2600,7 +2646,7 @@ test('GET /api/cards/:deckId returns unscheduled and past-due cards with a param
   assert.equal(Object.hasOwn(res.body[0], '__owned_deck_id'), false);
   assert.equal(Object.hasOwn(res.body[0], 'private_note'), false);
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [42, 'user-1', 100]);
+  assert.deepEqual(db.calls[0].params, [42, 1, 100]);
   assertExplicitPublicCardReadSelect(db.calls[0].sql);
   assert.match(db.calls[0].sql, /LEFT JOIN cards c/);
   assertDuePredicate(db.calls[0].sql);
@@ -2631,7 +2677,7 @@ test('GET /api/cards/:deckId prioritizes unscheduled due cards when limiting stu
   const req = {
     params: { deckId: '42' },
     query: { limit: '2' },
-    user: { userId: 'user-1' },
+    user: { userId: 1 },
   };
   const res = createRes();
 
@@ -2641,7 +2687,7 @@ test('GET /api/cards/:deckId prioritizes unscheduled due cards when limiting stu
   assert.deepEqual(res.body, dueCards);
   assert.equal(res.body[0].next_review, null);
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [42, 'user-1', 2]);
+  assert.deepEqual(db.calls[0].params, [42, 1, 2]);
   assert.match(db.calls[0].sql, /ORDER BY c\.next_review ASC NULLS FIRST,\s*c\.id ASC\s+LIMIT \$3/);
 });
 
@@ -2660,7 +2706,7 @@ test('GET /api/cards/:deckId accepts boundary limit with a parameterized limit',
   const req = {
     params: { deckId: '42' },
     query: { limit: '100' },
-    user: { userId: 'user-1' },
+    user: { userId: 1 },
   };
   const res = createRes();
 
@@ -2669,7 +2715,7 @@ test('GET /api/cards/:deckId accepts boundary limit with a parameterized limit',
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, [dueCard]);
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [42, 'user-1', 100]);
+  assert.deepEqual(db.calls[0].params, [42, 1, 100]);
   assertDuePredicate(db.calls[0].sql);
   assert.match(db.calls[0].sql, /ORDER BY c\.next_review ASC NULLS FIRST,\s*c\.id ASC\s+LIMIT \$3/);
   assert.doesNotMatch(db.calls[0].sql, /LIMIT\s+100/);
@@ -2682,7 +2728,7 @@ test('GET /api/cards/:deckId returns empty array for owned deck with no due card
       rows: [createEmptyCardReadSentinel()],
     },
   ]);
-  const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+  const req = { params: { deckId: '42' }, user: { userId: 1 } };
   const res = createRes();
 
   await getDueCardsByDeck(req, res, db);
@@ -2690,7 +2736,7 @@ test('GET /api/cards/:deckId returns empty array for owned deck with no due card
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, []);
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [42, 'user-1', 100]);
+  assert.deepEqual(db.calls[0].params, [42, 1, 100]);
   assert.match(db.calls[0].sql, /ORDER BY c\.next_review ASC NULLS FIRST,\s*c\.id ASC\s+LIMIT \$3/);
 });
 
@@ -2706,7 +2752,7 @@ test('GET /api/cards/:deckId fails closed when empty-card sentinels are malforme
 
   for (const row of malformedRows) {
     const db = createDb([{ rowCount: 1, rows: [row] }]);
-    const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+    const req = { params: { deckId: '42' }, user: { userId: 1 } };
     const res = createRes();
 
     await getDueCardsByDeck(req, res, db);
@@ -2714,7 +2760,7 @@ test('GET /api/cards/:deckId fails closed when empty-card sentinels are malforme
     assert.equal(res.statusCode, 500);
     assert.deepEqual(res.body, { error: 'Internal server error' });
     assert.equal(db.calls.length, 1);
-    assert.deepEqual(db.calls[0].params, [42, 'user-1', 100]);
+    assert.deepEqual(db.calls[0].params, [42, 1, 100]);
   }
 });
 
@@ -2736,7 +2782,7 @@ test('GET /api/cards/:deckId fails closed when rows are not anchored to the requ
 
   for (const row of malformedRows) {
     const db = createDb([{ rowCount: 1, rows: [row] }]);
-    const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+    const req = { params: { deckId: '42' }, user: { userId: 1 } };
     const res = createRes();
 
     await getDueCardsByDeck(req, res, db);
@@ -2744,7 +2790,7 @@ test('GET /api/cards/:deckId fails closed when rows are not anchored to the requ
     assert.equal(res.statusCode, 500);
     assert.deepEqual(res.body, { error: 'Internal server error' });
     assert.equal(db.calls.length, 1);
-    assert.deepEqual(db.calls[0].params, [42, 'user-1', 100]);
+    assert.deepEqual(db.calls[0].params, [42, 1, 100]);
   }
 });
 
@@ -2781,7 +2827,7 @@ test('GET /api/cards/:deckId fails closed when a due-card row violates read resp
         rows: [{ ...row, __owned_deck_id: 42 }],
       },
     ]);
-    const req = { params: { deckId: '42' }, user: { userId: 'user-1' } };
+    const req = { params: { deckId: '42' }, user: { userId: 1 } };
     const res = createRes();
 
     await getDueCardsByDeck(req, res, db);
@@ -2789,7 +2835,7 @@ test('GET /api/cards/:deckId fails closed when a due-card row violates read resp
     assert.equal(res.statusCode, 500);
     assert.deepEqual(res.body, { error: 'Internal server error' });
     assert.equal(db.calls.length, 1);
-    assert.deepEqual(db.calls[0].params, [42, 'user-1', 100]);
+    assert.deepEqual(db.calls[0].params, [42, 1, 100]);
   }
 });
 
@@ -2807,7 +2853,7 @@ test('POST /api/cards creates a card in an owned deck with one atomic insert-sel
   const db = createDb([
     {
       rowCount: 1,
-      rows: [{ ...createdCard, __owned_user_id: 'user-1', private_note: 'do not expose' }],
+      rows: [{ ...createdCard, __owned_user_id: 1, private_note: 'do not expose' }],
     },
   ]);
   const req = {
@@ -2816,7 +2862,7 @@ test('POST /api/cards creates a card in an owned deck with one atomic insert-sel
       frontContent: '  Capital of France?  ',
       backContent: '  Paris  ',
     },
-    user: { userId: 'user-1' },
+    user: { userId: 1 },
   };
   const res = createRes();
 
@@ -2826,7 +2872,7 @@ test('POST /api/cards creates a card in an owned deck with one atomic insert-sel
   assert.deepEqual(res.body, createdCard);
   assert.equal(Object.hasOwn(res.body, '__owned_user_id'), false);
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [42, 'user-1', 'Capital of France?', 'Paris']);
+  assert.deepEqual(db.calls[0].params, [42, 1, 'Capital of France?', 'Paris']);
   assert.match(db.calls[0].sql, /INSERT\s+INTO\s+cards\s*\(/i);
   assert.match(db.calls[0].sql, /deck_id,\s*front_content,\s*back_content,\s*next_review,\s*interval,\s*ease_factor,\s*review_count/i);
   assert.match(db.calls[0].sql, /SELECT\s+d\.id,\s*\$3,\s*\$4,\s*NOW\(\),\s*1,\s*2\.5,\s*0/i);
@@ -2855,7 +2901,7 @@ test('POST /api/cards returns 500 when the inserted row is missing mutation resp
         next_review: '2026-05-08T12:00:00.000Z',
         interval: 1,
         review_count: 0,
-        __owned_user_id: 'user-1',
+        __owned_user_id: 1,
       }],
     },
   ]);
@@ -2865,7 +2911,7 @@ test('POST /api/cards returns 500 when the inserted row is missing mutation resp
       frontContent: 'Capital of France?',
       backContent: 'Paris',
     },
-    user: { userId: 'user-1' },
+    user: { userId: 1 },
   };
   const res = createRes();
   const originalError = console.error;
@@ -2880,7 +2926,7 @@ test('POST /api/cards returns 500 when the inserted row is missing mutation resp
   assert.equal(res.statusCode, 500);
   assert.deepEqual(res.body, { error: 'Internal server error' });
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [42, 'user-1', 'Capital of France?', 'Paris']);
+  assert.deepEqual(db.calls[0].params, [42, 1, 'Capital of France?', 'Paris']);
 });
 
 test('POST /api/cards fails closed when the inserted row violates card mutation response invariants', async (t) => {
@@ -2893,7 +2939,7 @@ test('POST /api/cards fails closed when the inserted row violates card mutation 
     interval: 1,
     ease_factor: 2.5,
     review_count: 0,
-    __owned_user_id: 'user-1',
+    __owned_user_id: 1,
   };
   const malformedRows = [
     { ...validInsertedCard, id: 'card-77' },
@@ -2922,7 +2968,7 @@ test('POST /api/cards fails closed when the inserted row violates card mutation 
         frontContent: 'Capital of France?',
         backContent: 'Paris',
       },
-      user: { userId: 'user-1' },
+      user: { userId: 1 },
     };
     const res = createRes();
 
@@ -2931,7 +2977,7 @@ test('POST /api/cards fails closed when the inserted row violates card mutation 
     assert.equal(res.statusCode, 500);
     assert.deepEqual(res.body, { error: 'Internal server error' });
     assert.equal(db.calls.length, 1);
-    assert.deepEqual(db.calls[0].params, [42, 'user-1', 'Capital of France?', 'Paris']);
+    assert.deepEqual(db.calls[0].params, [42, 1, 'Capital of France?', 'Paris']);
   }
 });
 
@@ -2958,7 +3004,7 @@ test('POST /api/cards returns 400 for invalid deckId and skips db query', async 
         frontContent: 'Front',
         backContent: 'Back',
       },
-      user: { userId: 'user-1' },
+      user: { userId: 1 },
     };
     const res = createRes();
 
@@ -2987,7 +3033,7 @@ test('POST /api/cards returns 400 for blank front or back content and skips db q
         deckId: 42,
         ...body,
       },
-      user: { userId: 'user-1' },
+      user: { userId: 1 },
     };
     const res = createRes();
 
@@ -3012,7 +3058,7 @@ test('POST /api/cards returns 400 for null bytes in front or back content and sk
         deckId: 42,
         ...body,
       },
-      user: { userId: 'user-1' },
+      user: { userId: 1 },
     };
     const res = createRes();
 
@@ -3047,7 +3093,7 @@ test('POST /api/cards returns 400 for invisible formatting characters and skips 
         deckId: 42,
         ...body,
       },
-      user: { userId: 'user-1' },
+      user: { userId: 1 },
     };
     const res = createRes();
 
@@ -3073,7 +3119,7 @@ test('POST /api/cards returns 400 for oversized front or back content and skips 
         deckId: 42,
         ...body,
       },
-      user: { userId: 'user-1' },
+      user: { userId: 1 },
     };
     const res = createRes();
 
@@ -3093,7 +3139,7 @@ test('POST /api/cards returns 404 when deck is missing or not owned by user', as
       frontContent: 'Front',
       backContent: 'Back',
     },
-    user: { userId: 'user-1' },
+    user: { userId: 1 },
   };
   const res = createRes();
 
@@ -3102,7 +3148,7 @@ test('POST /api/cards returns 404 when deck is missing or not owned by user', as
   assert.equal(res.statusCode, 404);
   assert.deepEqual(res.body, { error: 'Deck not found' });
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [42, 'user-1', 'Front', 'Back']);
+  assert.deepEqual(db.calls[0].params, [42, 1, 'Front', 'Back']);
   assert.match(db.calls[0].sql, /INSERT\s+INTO\s+cards/i);
   assert.match(db.calls[0].sql, /FROM\s+decks\s+d/i);
   assert.match(db.calls[0].sql, /WHERE\s+d\.id\s+=\s+\$1\s+AND\s+d\.user_id\s+=\s+\$2/i);
@@ -3132,7 +3178,7 @@ test('PATCH /api/cards/:cardId returns 400 for invalid cardId and skips db query
         frontContent: 'Front',
         backContent: 'Back',
       },
-      user: { userId: 'user-1' },
+      user: { userId: 1 },
     };
     const res = createRes();
 
@@ -3159,7 +3205,7 @@ test('PATCH /api/cards/:cardId returns 400 for blank front or back content and s
     const req = {
       params: { cardId: '77' },
       body,
-      user: { userId: 'user-1' },
+      user: { userId: 1 },
     };
     const res = createRes();
 
@@ -3182,7 +3228,7 @@ test('PATCH /api/cards/:cardId returns 400 for null bytes in front or back conte
     const req = {
       params: { cardId: '77' },
       body,
-      user: { userId: 'user-1' },
+      user: { userId: 1 },
     };
     const res = createRes();
 
@@ -3215,7 +3261,7 @@ test('PATCH /api/cards/:cardId returns 400 for invisible formatting characters a
     const req = {
       params: { cardId: '77' },
       body,
-      user: { userId: 'user-1' },
+      user: { userId: 1 },
     };
     const res = createRes();
 
@@ -3239,7 +3285,7 @@ test('PATCH /api/cards/:cardId returns 400 for oversized front or back content a
     const req = {
       params: { cardId: '77' },
       body,
-      user: { userId: 'user-1' },
+      user: { userId: 1 },
     };
     const res = createRes();
 
@@ -3268,7 +3314,7 @@ test('PATCH /api/cards/:cardId updates an owned card with one user-scoped query'
       rows: [
         {
           ...updatedCard,
-          __owned_user_id: 'user-1',
+          __owned_user_id: 1,
           __owned_deck_id: 42,
           private_note: 'do not expose',
         },
@@ -3281,7 +3327,7 @@ test('PATCH /api/cards/:cardId updates an owned card with one user-scoped query'
       frontContent: '  Updated front  ',
       backContent: '  Updated back  ',
     },
-    user: { userId: 'user-1' },
+    user: { userId: 1 },
   };
   const res = createRes();
 
@@ -3292,7 +3338,7 @@ test('PATCH /api/cards/:cardId updates an owned card with one user-scoped query'
   assert.equal(Object.hasOwn(res.body, '__owned_user_id'), false);
   assert.equal(Object.hasOwn(res.body, '__owned_deck_id'), false);
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [77, 'user-1', 'Updated front', 'Updated back']);
+  assert.deepEqual(db.calls[0].params, [77, 1, 'Updated front', 'Updated back']);
   assert.match(db.calls[0].sql, /UPDATE\s+cards/i);
   assert.match(db.calls[0].sql, /SET\s+front_content\s+=\s+\$3,\s+back_content\s+=\s+\$4/i);
   assert.match(db.calls[0].sql, /FROM\s+decks\s+d/i);
@@ -3321,7 +3367,7 @@ test('PATCH /api/cards/:cardId returns 500 when the updated row is missing mutat
         next_review: '2026-05-08T12:00:00.000Z',
         interval: 1,
         ease_factor: 2.5,
-        __owned_user_id: 'user-1',
+        __owned_user_id: 1,
       }],
     },
   ]);
@@ -3331,7 +3377,7 @@ test('PATCH /api/cards/:cardId returns 500 when the updated row is missing mutat
       frontContent: 'Updated front',
       backContent: 'Updated back',
     },
-    user: { userId: 'user-1' },
+    user: { userId: 1 },
   };
   const res = createRes();
   const originalError = console.error;
@@ -3346,7 +3392,7 @@ test('PATCH /api/cards/:cardId returns 500 when the updated row is missing mutat
   assert.equal(res.statusCode, 500);
   assert.deepEqual(res.body, { error: 'Internal server error' });
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [77, 'user-1', 'Updated front', 'Updated back']);
+  assert.deepEqual(db.calls[0].params, [77, 1, 'Updated front', 'Updated back']);
 });
 
 test('PATCH /api/cards/:cardId fails closed when the updated row violates card mutation response invariants', async (t) => {
@@ -3359,7 +3405,7 @@ test('PATCH /api/cards/:cardId fails closed when the updated row violates card m
     interval: 1,
     ease_factor: 2.5,
     review_count: 0,
-    __owned_user_id: 'user-1',
+    __owned_user_id: 1,
     __owned_deck_id: 42,
   };
   const malformedRows = [
@@ -3378,7 +3424,7 @@ test('PATCH /api/cards/:cardId fails closed when the updated row violates card m
         frontContent: 'Updated front',
         backContent: 'Updated back',
       },
-      user: { userId: 'user-1' },
+      user: { userId: 1 },
     };
     const res = createRes();
 
@@ -3387,7 +3433,7 @@ test('PATCH /api/cards/:cardId fails closed when the updated row violates card m
     assert.equal(res.statusCode, 500);
     assert.deepEqual(res.body, { error: 'Internal server error' });
     assert.equal(db.calls.length, 1);
-    assert.deepEqual(db.calls[0].params, [77, 'user-1', 'Updated front', 'Updated back']);
+    assert.deepEqual(db.calls[0].params, [77, 1, 'Updated front', 'Updated back']);
   }
 });
 
@@ -3401,7 +3447,7 @@ test('PATCH /api/cards/:cardId fails closed when the updated row deck anchor is 
     interval: 1,
     ease_factor: 2.5,
     review_count: 0,
-    __owned_user_id: 'user-1',
+    __owned_user_id: 1,
     __owned_deck_id: 42,
   };
   const rowWithoutDeckAnchor = { ...validUpdatedCard };
@@ -3422,7 +3468,7 @@ test('PATCH /api/cards/:cardId fails closed when the updated row deck anchor is 
         frontContent: 'Updated front',
         backContent: 'Updated back',
       },
-      user: { userId: 'user-1' },
+      user: { userId: 1 },
     };
     const res = createRes();
 
@@ -3431,7 +3477,7 @@ test('PATCH /api/cards/:cardId fails closed when the updated row deck anchor is 
     assert.equal(res.statusCode, 500);
     assert.deepEqual(res.body, { error: 'Internal server error' });
     assert.equal(db.calls.length, 1);
-    assert.deepEqual(db.calls[0].params, [77, 'user-1', 'Updated front', 'Updated back']);
+    assert.deepEqual(db.calls[0].params, [77, 1, 'Updated front', 'Updated back']);
   }
 });
 
@@ -3443,7 +3489,7 @@ test('PATCH /api/cards/:cardId returns 404 for missing or unowned card with one 
       frontContent: 'Front',
       backContent: 'Back',
     },
-    user: { userId: 'user-1' },
+    user: { userId: 1 },
   };
   const res = createRes();
 
@@ -3452,7 +3498,7 @@ test('PATCH /api/cards/:cardId returns 404 for missing or unowned card with one 
   assert.equal(res.statusCode, 404);
   assert.deepEqual(res.body, { error: 'Card not found' });
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [77, 'user-1', 'Front', 'Back']);
+  assert.deepEqual(db.calls[0].params, [77, 1, 'Front', 'Back']);
   assert.match(db.calls[0].sql, /UPDATE\s+cards/i);
   assert.match(db.calls[0].sql, /FROM\s+decks\s+d/i);
   assert.match(db.calls[0].sql, /d\.id\s+=\s+cards\.deck_id/i);
@@ -3470,10 +3516,10 @@ test('DELETE /api/cards/:cardId deletes an owned card with one user-scoped query
   const db = createDb([
     {
       rowCount: 1,
-      rows: [{ ...deletedCard, __owned_user_id: 'user-1', __owned_deck_id: 42 }],
+      rows: [{ ...deletedCard, __owned_user_id: 1, __owned_deck_id: 42 }],
     },
   ]);
-  const req = { params: { cardId: '77' }, user: { userId: 'user-1' } };
+  const req = { params: { cardId: '77' }, user: { userId: 1 } };
   const res = createRes();
 
   await deleteCard(req, res, db);
@@ -3494,7 +3540,7 @@ test('DELETE /api/cards/:cardId deletes an owned card with one user-scoped query
   assert.equal(Object.hasOwn(res.body.card, '__owned_user_id'), false);
   assert.equal(Object.hasOwn(res.body.card, '__owned_deck_id'), false);
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [77, 'user-1']);
+  assert.deepEqual(db.calls[0].params, [77, 1]);
   assert.match(db.calls[0].sql, /DELETE\s+FROM\s+cards/i);
   assert.match(db.calls[0].sql, /USING\s+decks\s+d/i);
   assert.match(db.calls[0].sql, /WHERE\s+cards\.id\s+=\s+\$1/i);
@@ -3517,13 +3563,13 @@ test('DELETE /api/cards/:cardId response omits unexpected returned card fields',
     back_content: 'Back',
     next_review: '2026-05-08T12:00:00.000Z',
     deck_id: 12,
-    user_id: 'user-1',
-    __owned_user_id: 'user-1',
+    user_id: 1,
+    __owned_user_id: 1,
     __owned_deck_id: 12,
     private_notes: 'do not expose',
   };
   const db = createDb([{ rowCount: 1, rows: [deletedRow] }]);
-  const req = { params: { cardId: '77' }, user: { userId: 'user-1' } };
+  const req = { params: { cardId: '77' }, user: { userId: 1 } };
   const res = createRes();
 
   await deleteCard(req, res, db);
@@ -3555,11 +3601,11 @@ test('DELETE /api/cards/:cardId returns 500 when the deleted row is missing remo
         id: 77,
         front_content: 'Front',
         back_content: 'Back',
-        __owned_user_id: 'user-1',
+        __owned_user_id: 1,
       }],
     },
   ]);
-  const req = { params: { cardId: '77' }, user: { userId: 'user-1' } };
+  const req = { params: { cardId: '77' }, user: { userId: 1 } };
   const res = createRes();
   const originalError = console.error;
   console.error = () => {};
@@ -3573,7 +3619,7 @@ test('DELETE /api/cards/:cardId returns 500 when the deleted row is missing remo
   assert.equal(res.statusCode, 500);
   assert.deepEqual(res.body, { error: 'Internal server error' });
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [77, 'user-1']);
+  assert.deepEqual(db.calls[0].params, [77, 1]);
 });
 
 test('DELETE /api/cards/:cardId fails closed when the deleted row violates removal response invariants', async (t) => {
@@ -3583,7 +3629,7 @@ test('DELETE /api/cards/:cardId fails closed when the deleted row violates remov
     front_content: 'Front',
     back_content: 'Back',
     next_review: '2026-05-08T12:00:00.000Z',
-    __owned_user_id: 'user-1',
+    __owned_user_id: 1,
     __owned_deck_id: 42,
   };
   const malformedRows = [
@@ -3597,7 +3643,7 @@ test('DELETE /api/cards/:cardId fails closed when the deleted row violates remov
 
   for (const row of malformedRows) {
     const db = createDb([{ rowCount: 1, rows: [row] }]);
-    const req = { params: { cardId: '77' }, user: { userId: 'user-1' } };
+    const req = { params: { cardId: '77' }, user: { userId: 1 } };
     const res = createRes();
 
     await deleteCard(req, res, db);
@@ -3605,7 +3651,7 @@ test('DELETE /api/cards/:cardId fails closed when the deleted row violates remov
     assert.equal(res.statusCode, 500);
     assert.deepEqual(res.body, { error: 'Internal server error' });
     assert.equal(db.calls.length, 1);
-    assert.deepEqual(db.calls[0].params, [77, 'user-1']);
+    assert.deepEqual(db.calls[0].params, [77, 1]);
   }
 });
 
@@ -3616,7 +3662,7 @@ test('DELETE /api/cards/:cardId fails closed when the deleted row deck anchor is
     front_content: 'Front',
     back_content: 'Back',
     next_review: '2026-05-08T12:00:00.000Z',
-    __owned_user_id: 'user-1',
+    __owned_user_id: 1,
     __owned_deck_id: 42,
   };
   const rowWithoutDeckId = { ...validDeletedCard };
@@ -3636,7 +3682,7 @@ test('DELETE /api/cards/:cardId fails closed when the deleted row deck anchor is
 
   for (const row of malformedRows) {
     const db = createDb([{ rowCount: 1, rows: [row] }]);
-    const req = { params: { cardId: '77' }, user: { userId: 'user-1' } };
+    const req = { params: { cardId: '77' }, user: { userId: 1 } };
     const res = createRes();
 
     await deleteCard(req, res, db);
@@ -3644,7 +3690,7 @@ test('DELETE /api/cards/:cardId fails closed when the deleted row deck anchor is
     assert.equal(res.statusCode, 500);
     assert.deepEqual(res.body, { error: 'Internal server error' });
     assert.equal(db.calls.length, 1);
-    assert.deepEqual(db.calls[0].params, [77, 'user-1']);
+    assert.deepEqual(db.calls[0].params, [77, 1]);
   }
 });
 
@@ -3658,7 +3704,7 @@ test('card mutation endpoints fail closed when returned ownership proof is missi
     interval: 1,
     ease_factor: 2.5,
     review_count: 0,
-    __owned_user_id: 'user-1',
+    __owned_user_id: 1,
   };
   const deletedCard = {
     id: 77,
@@ -3666,7 +3712,7 @@ test('card mutation endpoints fail closed when returned ownership proof is missi
     front_content: 'Front',
     back_content: 'Back',
     next_review: '2026-05-08T12:00:00.000Z',
-    __owned_user_id: 'user-1',
+    __owned_user_id: 1,
     __owned_deck_id: 42,
   };
   const withoutOwnerProof = (row) => {
@@ -3680,20 +3726,20 @@ test('card mutation endpoints fail closed when returned ownership proof is missi
       handler: createCard,
       req: {
         body: { deckId: '42', frontContent: 'Front', backContent: 'Back' },
-        user: { userId: 'user-1' },
+        user: { userId: 1 },
       },
       row: withoutOwnerProof(mutationCard),
-      params: [42, 'user-1', 'Front', 'Back'],
+      params: [42, 1, 'Front', 'Back'],
     },
     {
       name: 'create card mismatched owner proof',
       handler: createCard,
       req: {
         body: { deckId: '42', frontContent: 'Front', backContent: 'Back' },
-        user: { userId: 'user-1' },
+        user: { userId: 1 },
       },
-      row: { ...mutationCard, __owned_user_id: 'other-user' },
-      params: [42, 'user-1', 'Front', 'Back'],
+      row: { ...mutationCard, __owned_user_id: 2 },
+      params: [42, 1, 'Front', 'Back'],
     },
     {
       name: 'update card missing owner proof',
@@ -3701,10 +3747,10 @@ test('card mutation endpoints fail closed when returned ownership proof is missi
       req: {
         params: { cardId: '77' },
         body: { frontContent: 'Front', backContent: 'Back' },
-        user: { userId: 'user-1' },
+        user: { userId: 1 },
       },
       row: withoutOwnerProof(mutationCard),
-      params: [77, 'user-1', 'Front', 'Back'],
+      params: [77, 1, 'Front', 'Back'],
     },
     {
       name: 'update card mismatched owner proof',
@@ -3712,24 +3758,24 @@ test('card mutation endpoints fail closed when returned ownership proof is missi
       req: {
         params: { cardId: '77' },
         body: { frontContent: 'Front', backContent: 'Back' },
-        user: { userId: 'user-1' },
+        user: { userId: 1 },
       },
-      row: { ...mutationCard, __owned_user_id: 'other-user' },
-      params: [77, 'user-1', 'Front', 'Back'],
+      row: { ...mutationCard, __owned_user_id: 2 },
+      params: [77, 1, 'Front', 'Back'],
     },
     {
       name: 'delete card missing owner proof',
       handler: deleteCard,
-      req: { params: { cardId: '77' }, user: { userId: 'user-1' } },
+      req: { params: { cardId: '77' }, user: { userId: 1 } },
       row: withoutOwnerProof(deletedCard),
-      params: [77, 'user-1'],
+      params: [77, 1],
     },
     {
       name: 'delete card mismatched owner proof',
       handler: deleteCard,
-      req: { params: { cardId: '77' }, user: { userId: 'user-1' } },
-      row: { ...deletedCard, __owned_user_id: 'other-user' },
-      params: [77, 'user-1'],
+      req: { params: { cardId: '77' }, user: { userId: 1 } },
+      row: { ...deletedCard, __owned_user_id: 2 },
+      params: [77, 1],
     },
   ];
 
@@ -3759,7 +3805,7 @@ test('card mutation endpoints fail closed when returned-row cardinality is malfo
     interval: 1,
     ease_factor: 2.5,
     review_count: 0,
-    __owned_user_id: 'user-1',
+    __owned_user_id: 1,
   };
   const deletedCard = {
     id: 77,
@@ -3767,7 +3813,7 @@ test('card mutation endpoints fail closed when returned-row cardinality is malfo
     front_content: 'Front',
     back_content: 'Back',
     next_review: '2026-05-08T12:00:00.000Z',
-    __owned_user_id: 'user-1',
+    __owned_user_id: 1,
     __owned_deck_id: 42,
   };
   const cases = [
@@ -3776,10 +3822,10 @@ test('card mutation endpoints fail closed when returned-row cardinality is malfo
       handler: createCard,
       req: {
         body: { deckId: '42', frontContent: 'Front', backContent: 'Back' },
-        user: { userId: 'user-1' },
+        user: { userId: 1 },
       },
       result: { rowCount: 2, rows: [mutationCard, { ...mutationCard, id: 78 }] },
-      params: [42, 'user-1', 'Front', 'Back'],
+      params: [42, 1, 'Front', 'Back'],
     },
     {
       name: 'update card with rowCount zero but a returned row',
@@ -3787,10 +3833,10 @@ test('card mutation endpoints fail closed when returned-row cardinality is malfo
       req: {
         params: { cardId: '77' },
         body: { frontContent: 'Front', backContent: 'Back' },
-        user: { userId: 'user-1' },
+        user: { userId: 1 },
       },
       result: { rowCount: 0, rows: [mutationCard] },
-      params: [77, 'user-1', 'Front', 'Back'],
+      params: [77, 1, 'Front', 'Back'],
     },
     {
       name: 'update card with multiple returned rows',
@@ -3798,24 +3844,24 @@ test('card mutation endpoints fail closed when returned-row cardinality is malfo
       req: {
         params: { cardId: '77' },
         body: { frontContent: 'Front', backContent: 'Back' },
-        user: { userId: 'user-1' },
+        user: { userId: 1 },
       },
       result: { rowCount: 2, rows: [mutationCard, { ...mutationCard, id: 78 }] },
-      params: [77, 'user-1', 'Front', 'Back'],
+      params: [77, 1, 'Front', 'Back'],
     },
     {
       name: 'delete card with rowCount zero but a returned row',
       handler: deleteCard,
-      req: { params: { cardId: '77' }, user: { userId: 'user-1' } },
+      req: { params: { cardId: '77' }, user: { userId: 1 } },
       result: { rowCount: 0, rows: [deletedCard] },
-      params: [77, 'user-1'],
+      params: [77, 1],
     },
     {
       name: 'delete card with multiple returned rows',
       handler: deleteCard,
-      req: { params: { cardId: '77' }, user: { userId: 'user-1' } },
+      req: { params: { cardId: '77' }, user: { userId: 1 } },
       result: { rowCount: 2, rows: [deletedCard, { ...deletedCard, id: 78 }] },
-      params: [77, 'user-1'],
+      params: [77, 1],
     },
   ];
 
@@ -3853,7 +3899,7 @@ test('DELETE /api/cards/:cardId returns 400 for invalid cardId and skips db quer
 
   for (const cardId of invalidCardIds) {
     const db = createDb([]);
-    const req = { params: { cardId }, user: { userId: 'user-1' } };
+    const req = { params: { cardId }, user: { userId: 1 } };
     const res = createRes();
 
     await deleteCard(req, res, db);
@@ -3866,7 +3912,7 @@ test('DELETE /api/cards/:cardId returns 400 for invalid cardId and skips db quer
 
 test('DELETE /api/cards/:cardId returns 404 for missing or unowned card with one user-scoped query', async () => {
   const db = createDb([{ rowCount: 0, rows: [] }]);
-  const req = { params: { cardId: '77' }, user: { userId: 'user-1' } };
+  const req = { params: { cardId: '77' }, user: { userId: 1 } };
   const res = createRes();
 
   await deleteCard(req, res, db);
@@ -3874,7 +3920,7 @@ test('DELETE /api/cards/:cardId returns 404 for missing or unowned card with one
   assert.equal(res.statusCode, 404);
   assert.deepEqual(res.body, { error: 'Card not found' });
   assert.equal(db.calls.length, 1);
-  assert.deepEqual(db.calls[0].params, [77, 'user-1']);
+  assert.deepEqual(db.calls[0].params, [77, 1]);
   assert.match(db.calls[0].sql, /DELETE\s+FROM\s+cards/i);
   assert.match(db.calls[0].sql, /USING\s+decks\s+d/i);
   assert.match(db.calls[0].sql, /d\.id\s+=\s+cards\.deck_id/i);
@@ -3890,7 +3936,7 @@ test('GET /api/stats returns expected shape with a single user-scoped query', as
     monthReviews: '10',
   };
   const db = createDb([{ rowCount: 1, rows: [stats] }]);
-  const req = { user: { userId: 'user-1' } };
+  const req = { user: { userId: 1 } };
   const res = createRes();
   const now = new Date(2026, 4, 8, 15, 45, 12, 345);
 
@@ -3913,7 +3959,7 @@ test('GET /api/stats returns expected shape with a single user-scoped query', as
   });
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, [
-    'user-1',
+    1,
     new Date(2026, 4, 8),
     new Date(2026, 4, 9),
     new Date(2026, 4, 1),
@@ -3966,7 +4012,7 @@ test('GET /api/stats uses app-local review windows for aggregate counts', async 
       };
     },
   };
-  const req = { user: { userId: 'user-1' } };
+  const req = { user: { userId: 1 } };
   const res = createRes();
   const now = new Date(2026, 4, 8, 15, 45, 12, 345);
 
@@ -3974,7 +4020,7 @@ test('GET /api/stats uses app-local review windows for aggregate counts', async 
 
   assert.equal(res.statusCode, 200);
   assert.deepEqual(db.calls[0].params, [
-    'user-1',
+    1,
     new Date(2026, 4, 8),
     new Date(2026, 4, 9),
     new Date(2026, 4, 1),
@@ -4004,7 +4050,7 @@ test('GET /api/stats preserves exact large PostgreSQL count strings', async () =
       ],
     },
   ]);
-  const req = { user: { userId: 'user-1' } };
+  const req = { user: { userId: 1 } };
   const res = createRes();
 
   await getStats(req, res, db);
@@ -4036,7 +4082,7 @@ test('GET /api/stats handles aggregate count safe integer boundaries', async () 
       ],
     },
   ]);
-  const req = { user: { userId: 'user-1' } };
+  const req = { user: { userId: 1 } };
   const res = createRes();
 
   await getStats(req, res, db);
@@ -4066,7 +4112,7 @@ test('GET /api/stats accepts equal current-card review bucket boundaries', async
       ],
     },
   ]);
-  const req = { user: { userId: 'user-1' } };
+  const req = { user: { userId: 1 } };
   const res = createRes();
 
   await getStats(req, res, db);
@@ -4124,7 +4170,7 @@ test('GET /api/stats fails closed for malformed successful aggregate results', a
   for (const [name, result] of malformedCases) {
     await t.test(name, async () => {
       const db = createDb([result]);
-      const req = { user: { userId: 'user-1' } };
+      const req = { user: { userId: 1 } };
       const res = createRes();
 
       await getStats(req, res, db);
@@ -4132,7 +4178,7 @@ test('GET /api/stats fails closed for malformed successful aggregate results', a
       assert.equal(res.statusCode, 500);
       assert.deepEqual(res.body, { error: 'Internal server error' });
       assert.equal(db.calls.length, 1);
-      assert.equal(db.calls[0].params[0], 'user-1');
+      assert.equal(db.calls[0].params[0], 1);
       const dateParams = db.calls[0].params.slice(1);
       assert.equal(dateParams.length, 4);
       dateParams.forEach((param) => {
@@ -4160,7 +4206,7 @@ test('GET /api/scheduling-insights returns expected shape from one aggregate que
       ],
     },
   ]);
-  const req = { user: { userId: 'user-1' } };
+  const req = { user: { userId: 1 } };
   const res = createRes();
 
   const now = new Date(2026, 4, 8, 15, 45, 12, 345);
@@ -4181,7 +4227,7 @@ test('GET /api/scheduling-insights returns expected shape from one aggregate que
   });
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, [
-    'user-1',
+    1,
     new Date(2026, 4, 8),
     new Date(2026, 4, 9),
     new Date(2026, 4, 10),
@@ -4215,7 +4261,7 @@ test('GET /api/scheduling-insights accepts aggregate equality boundaries', async
       ],
     },
   ]);
-  const req = { user: { userId: 'user-1' } };
+  const req = { user: { userId: 1 } };
   const res = createRes();
 
   await getSchedulingInsights(req, res, db, new Date(2026, 4, 8, 15, 45, 12, 345));
@@ -4262,7 +4308,7 @@ test('GET /api/scheduling-insights fails closed for missing or malformed aggrega
 
   for (const result of malformedResults) {
     const db = createDb([result]);
-    const req = { user: { userId: 'user-1' } };
+    const req = { user: { userId: 1 } };
     const res = createRes();
 
     await getSchedulingInsights(req, res, db, new Date(2026, 4, 8, 15, 45, 12, 345));
@@ -4296,7 +4342,7 @@ test('GET /api/scheduling-insights fails closed for impossible aggregate relatio
 
   for (const row of impossibleRows) {
     const db = createDb([{ rowCount: 1, rows: [row] }]);
-    const req = { user: { userId: 'user-1' } };
+    const req = { user: { userId: 1 } };
     const res = createRes();
 
     await getSchedulingInsights(req, res, db, new Date(2026, 4, 8, 15, 45, 12, 345));
@@ -4324,7 +4370,7 @@ test('GET /api/scheduling-insights treats null next_review as due today load', a
       ],
     },
   ]);
-  const req = { user: { userId: 'user-1' } };
+  const req = { user: { userId: 1 } };
   const res = createRes();
 
   await getSchedulingInsights(req, res, db, new Date(2026, 4, 8, 15, 45, 12, 345));
@@ -4367,7 +4413,7 @@ test('GET /api/scheduling-insights keeps null averageEaseFactor when no positive
       ],
     },
   ]);
-  const req = { user: { userId: 'user-1' } };
+  const req = { user: { userId: 1 } };
   const res = createRes();
 
   const now = new Date(2026, 4, 8, 15, 45, 12, 345);
@@ -4388,7 +4434,7 @@ test('GET /api/scheduling-insights keeps null averageEaseFactor when no positive
   });
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, [
-    'user-1',
+    1,
     new Date(2026, 4, 8),
     new Date(2026, 4, 9),
     new Date(2026, 4, 10),
@@ -4419,7 +4465,7 @@ test('GET /api/scheduling-insights preserves positive averageEaseFactor values',
         ],
       },
     ]);
-    const req = { user: { userId: 'user-1' } };
+    const req = { user: { userId: 1 } };
     const res = createRes();
 
     await getSchedulingInsights(req, res, db, new Date(2026, 4, 8, 15, 45, 12, 345));
@@ -4465,7 +4511,7 @@ test('GET /api/scheduling-insights fails closed for malformed averageEaseFactor 
         ],
       },
     ]);
-    const req = { user: { userId: 'user-1' } };
+    const req = { user: { userId: 1 } };
     const res = createRes();
 
     await getSchedulingInsights(req, res, db, new Date(2026, 4, 8, 15, 45, 12, 345));
@@ -4494,7 +4540,7 @@ test('POST /api/study-session returns 400 for invalid cardId and skips db query'
 
   for (const cardId of invalidCardIds) {
     const db = createDb([]);
-    const req = { body: { cardId, quality: 3 }, user: { userId: 'user-1' } };
+    const req = { body: { cardId, quality: 3 }, user: { userId: 1 } };
     const res = createRes();
 
     await submitStudySession(req, res, db);
@@ -4507,9 +4553,9 @@ test('POST /api/study-session returns 400 for invalid cardId and skips db query'
 
 test('POST /api/study-session returns 400 for absent body before db or scheduler work', async () => {
   const invalidRequests = [
-    { user: { userId: 'user-1' } },
-    { body: undefined, user: { userId: 'user-1' } },
-    { body: null, user: { userId: 'user-1' } },
+    { user: { userId: 1 } },
+    { body: undefined, user: { userId: 1 } },
+    { body: null, user: { userId: 1 } },
   ];
 
   for (const req of invalidRequests) {
@@ -4532,7 +4578,7 @@ test('POST /api/study-session returns 400 for absent body before db or scheduler
 
 test('POST /api/study-session returns 400 for invalid quality', async () => {
   const db = createDb([]);
-  const req = { body: { cardId: 10, quality: 6 }, user: { userId: 'user-1' } };
+  const req = { body: { cardId: 10, quality: 6 }, user: { userId: 1 } };
   const res = createRes();
 
   await submitStudySession(req, res, db);
@@ -4544,7 +4590,7 @@ test('POST /api/study-session returns 400 for invalid quality', async () => {
 
 test('POST /api/study-session returns 404 when card does not exist', async () => {
   const db = createDb([{ rowCount: 0, rows: [] }]);
-  const req = { body: { cardId: 999, quality: 3 }, user: { userId: 'user-1' } };
+  const req = { body: { cardId: 999, quality: 3 }, user: { userId: 1 } };
   const res = createRes();
 
   await submitStudySession(req, res, db);
@@ -4553,13 +4599,13 @@ test('POST /api/study-session returns 404 when card does not exist', async () =>
   assert.deepEqual(res.body, { error: 'Card not found' });
   assert.equal(db.calls.length, 1);
   assertStudySessionCardReadSql(db.calls[0].sql);
-  assert.deepEqual(db.calls[0].params, [999, 'user-1']);
+  assert.deepEqual(db.calls[0].params, [999, 1]);
 });
 
 test('POST /api/study-session returns 404 when card is not in user decks', async () => {
   let schedulerCalled = false;
   const db = createDb([{ rowCount: 0, rows: [] }]);
-  const req = { body: { cardId: 5, quality: 3 }, user: { userId: 'user-1' } };
+  const req = { body: { cardId: 5, quality: 3 }, user: { userId: 1 } };
   const res = createRes();
 
   await submitStudySession(req, res, db, () => {
@@ -4572,13 +4618,13 @@ test('POST /api/study-session returns 404 when card is not in user decks', async
   assert.equal(schedulerCalled, false);
   assert.equal(db.calls.length, 1);
   assertStudySessionCardReadSql(db.calls[0].sql);
-  assert.deepEqual(db.calls[0].params, [5, 'user-1']);
+  assert.deepEqual(db.calls[0].params, [5, 1]);
 });
 
 test('POST /api/study-session rolls back and releases transaction client on missing card', async () => {
   let schedulerCalled = false;
   const db = createTransactionDb([{ rowCount: 0, rows: [] }]);
-  const req = { body: { cardId: 5, quality: 3 }, user: { userId: 'user-1' } };
+  const req = { body: { cardId: 5, quality: 3 }, user: { userId: 1 } };
   const res = createRes();
 
   await submitStudySession(req, res, db, () => {
@@ -4594,14 +4640,14 @@ test('POST /api/study-session rolls back and releases transaction client on miss
   assert.equal(db.calls.length, 3);
   assert.match(db.calls[0].sql, /^\s*BEGIN\s*$/i);
   assertStudySessionCardReadSql(db.calls[1].sql);
-  assert.deepEqual(db.calls[1].params, [5, 'user-1']);
+  assert.deepEqual(db.calls[1].params, [5, 1]);
   assert.match(db.calls[2].sql, /^\s*ROLLBACK\s*$/i);
   assert.doesNotMatch(db.calls.map(({ sql }) => sql).join('\n'), /^\s*COMMIT\s*$/im);
 });
 
 test('POST /api/study-session rolls back and releases transaction client on thrown error', async () => {
   const db = createTransactionDb([new Error('read failed')]);
-  const req = { body: { cardId: 5, quality: 3 }, user: { userId: 'user-1' } };
+  const req = { body: { cardId: 5, quality: 3 }, user: { userId: 1 } };
   const res = createRes();
   const originalError = console.error;
   console.error = () => {};
@@ -4619,7 +4665,7 @@ test('POST /api/study-session rolls back and releases transaction client on thro
   assert.equal(db.calls.length, 3);
   assert.match(db.calls[0].sql, /^\s*BEGIN\s*$/i);
   assertStudySessionCardReadSql(db.calls[1].sql);
-  assert.deepEqual(db.calls[1].params, [5, 'user-1']);
+  assert.deepEqual(db.calls[1].params, [5, 1]);
   assert.match(db.calls[2].sql, /^\s*ROLLBACK\s*$/i);
   assert.doesNotMatch(db.calls.map(({ sql }) => sql).join('\n'), /^\s*COMMIT\s*$/im);
 });
@@ -4640,7 +4686,7 @@ test('POST /api/study-session returns 409 and skips scheduling when an owned car
       })],
     },
   ]);
-  const req = { body: { cardId: 7, quality: 4 }, user: { userId: 'user-1' } };
+  const req = { body: { cardId: 7, quality: 4 }, user: { userId: 1 } };
   const res = createRes();
 
   await submitStudySession(req, res, db, () => {
@@ -4653,7 +4699,7 @@ test('POST /api/study-session returns 409 and skips scheduling when an owned car
   assert.equal(schedulerCalled, false);
   assert.equal(db.calls.length, 1);
   assertStudySessionCardReadSql(db.calls[0].sql);
-  assert.deepEqual(db.calls[0].params, [7, 'user-1']);
+  assert.deepEqual(db.calls[0].params, [7, 1]);
   assert.doesNotMatch(db.calls[0].sql, /AND\s+\(\s*c\.next_review IS NULL\s+OR\s+c\.next_review <= NOW\(\)\s+\)/i);
 });
 
@@ -4686,7 +4732,7 @@ test('POST /api/study-session rolls back before scheduling when the locked card 
     { name: 'invalid card id', row: { ...validSourceCard, id: 'not-a-card' } },
     { name: 'invalid deck id', row: { ...validSourceCard, deck_id: 'not-a-deck' } },
     { name: 'missing owner proof', row: rowMissingOwnerProof },
-    { name: 'mismatched owner proof', row: { ...validSourceCard, __owned_user_id: 'other-user' } },
+    { name: 'mismatched owner proof', row: { ...validSourceCard, __owned_user_id: 2 } },
     { name: 'missing due sentinel', row: rowMissingDueSentinel },
     { name: 'non-boolean due sentinel', row: { ...validSourceCard, __is_due: 'true' } },
     { name: 'missing front content', row: rowMissingFrontContent },
@@ -4708,7 +4754,7 @@ test('POST /api/study-session rolls back before scheduling when the locked card 
       { rowCount: 1, rows: [row] },
       { rowCount: 1, rows: [validUpdateRow] },
     ]);
-    const req = { body: { cardId: 7, quality: 4 }, user: { userId: 'user-1' } };
+    const req = { body: { cardId: 7, quality: 4 }, user: { userId: 1 } };
     const res = createRes();
     let schedulerCalled = false;
 
@@ -4750,7 +4796,7 @@ test('POST /api/study-session rolls back before scheduling when the locked card 
       rows: [sourceCard, { ...sourceCard, id: 8 }],
     },
   ]);
-  const req = { body: { cardId: 7, quality: 4 }, user: { userId: 'user-1' } };
+  const req = { body: { cardId: 7, quality: 4 }, user: { userId: 1 } };
   const res = createRes();
   let schedulerCalled = false;
   t.mock.method(console, 'error', () => {});
@@ -4789,7 +4835,7 @@ test('POST /api/study-session locks an owned due card before scheduling and upda
     ease_factor: 2.5,
     interval: 2,
     review_count: 2,
-    __owned_user_id: 'user-1',
+    __owned_user_id: 1,
     __is_due: true,
   };
   const updatedCard = {
@@ -4806,13 +4852,13 @@ test('POST /api/study-session locks an owned due card before scheduling and upda
       rowCount: 1,
       rows: [{
         ...updatedCard,
-        __owned_user_id: 'user-1',
+        __owned_user_id: 1,
         __updated: true,
         private_note: 'do not expose',
       }],
     },
   ]);
-  const req = { body: { cardId: 7, quality: 4 }, user: { userId: 'user-1' } };
+  const req = { body: { cardId: 7, quality: 4 }, user: { userId: 1 } };
   const res = createRes();
   let scheduledCard = null;
   let scheduledReviewedAt = null;
@@ -4840,7 +4886,7 @@ test('POST /api/study-session locks an owned due card before scheduling and upda
   assert.equal(scheduledCard, sourceCard);
   assert.equal(scheduledReviewedAt instanceof Date, true);
   assert.equal(db.calls[2].params[0], scheduledReviewedAt);
-  assert.deepEqual(db.calls[2].params.slice(1), [nextReview, 3, 2.6, 7, 'user-1']);
+  assert.deepEqual(db.calls[2].params.slice(1), [nextReview, 3, 2.6, 7, 1]);
   assert.doesNotMatch(
     db.calls.slice(0, 3).map(({ sql }) => sql).join('\n'),
     /\bSELECT\s+c\.\*/i,
@@ -4868,9 +4914,9 @@ test('POST /api/study-session treats unscheduled owned cards as due for review',
   };
   const db = createDb([
     { rowCount: 1, rows: [sourceCard] },
-    { rowCount: 1, rows: [{ ...updatedCard, __owned_user_id: 'user-1', __updated: true }] },
+    { rowCount: 1, rows: [{ ...updatedCard, __owned_user_id: 1, __updated: true }] },
   ]);
-  const req = { body: { cardId: 7, quality: 4 }, user: { userId: 'user-1' } };
+  const req = { body: { cardId: 7, quality: 4 }, user: { userId: 1 } };
   const res = createRes();
   let scheduledCard = null;
   let scheduledReviewedAt = null;
@@ -4919,9 +4965,9 @@ test('POST /api/study-session returns updated scheduling metadata for successful
         __is_due: true,
       })],
     },
-    { rowCount: 1, rows: [{ ...updatedCard, __owned_user_id: 'user-1', __updated: true }] },
+    { rowCount: 1, rows: [{ ...updatedCard, __owned_user_id: 1, __updated: true }] },
   ]);
-  const req = { body: { cardId: 7, quality: 4 }, user: { userId: 'user-1' } };
+  const req = { body: { cardId: 7, quality: 4 }, user: { userId: 1 } };
   const res = createRes();
   let scheduledReviewedAt = null;
 
@@ -4958,7 +5004,7 @@ test('POST /api/study-session returns updated scheduling metadata for successful
   assert.match(returningClause, /"__updated"/i);
   assert.equal(scheduledReviewedAt instanceof Date, true);
   assert.equal(db.calls[1].params[0], scheduledReviewedAt);
-  assert.deepEqual(db.calls[1].params.slice(1), [nextReview, 3, 2.6, 7, 'user-1']);
+  assert.deepEqual(db.calls[1].params.slice(1), [nextReview, 3, 2.6, 7, 1]);
 });
 
 test('POST /api/study-session rolls back when persisted scheduling metadata differs from scheduler output', async (t) => {
@@ -4974,7 +5020,7 @@ test('POST /api/study-session rolls back when persisted scheduling metadata diff
     ease_factor: expectedSchedule.ease_factor,
     review_count: 3,
     last_reviewed: '2026-05-08T12:05:00.000Z',
-    __owned_user_id: 'user-1',
+    __owned_user_id: 1,
     __updated: true,
   };
   const mismatchedRows = [
@@ -5009,7 +5055,7 @@ test('POST /api/study-session rolls back when persisted scheduling metadata diff
         },
         { rowCount: 1, rows: [row] },
       ]);
-      const req = { body: { cardId: 7, quality: 4 }, user: { userId: 'user-1' } };
+      const req = { body: { cardId: 7, quality: 4 }, user: { userId: 1 } };
       const res = createRes();
       t.mock.method(console, 'error', () => {});
 
@@ -5028,7 +5074,7 @@ test('POST /api/study-session rolls back when persisted scheduling metadata diff
         expectedSchedule.interval,
         expectedSchedule.ease_factor,
         7,
-        'user-1',
+        1,
       ]);
       assert.match(db.calls[3].sql, /^\s*ROLLBACK\s*$/i);
       assert.doesNotMatch(db.calls.map(({ sql }) => sql).join('\n'), /^\s*COMMIT\s*$/im);
@@ -5052,7 +5098,7 @@ test('POST /api/study-session returns 404 when final user-scoped update finds no
     },
     { rowCount: 0, rows: [] },
   ]);
-  const req = { body: { cardId: 7, quality: 4 }, user: { userId: 'user-1' } };
+  const req = { body: { cardId: 7, quality: 4 }, user: { userId: 1 } };
   const res = createRes();
   let scheduledReviewedAt = null;
 
@@ -5071,7 +5117,7 @@ test('POST /api/study-session returns 404 when final user-scoped update finds no
   assertStudySessionCardReadSql(db.calls[0].sql);
   assertStudySessionUpdateSql(db.calls[1].sql);
   assert.equal(db.calls[1].params[0], scheduledReviewedAt);
-  assert.deepEqual(db.calls[1].params.slice(1), ['2026-05-08T12:00:00.000Z', 3, 2.6, 7, 'user-1']);
+  assert.deepEqual(db.calls[1].params.slice(1), ['2026-05-08T12:00:00.000Z', 3, 2.6, 7, 1]);
 });
 
 test('POST /api/study-session returns 409 when final due-gated update loses a stale-card race', async () => {
@@ -5090,7 +5136,7 @@ test('POST /api/study-session returns 409 when final due-gated update loses a st
     },
     { rowCount: 1, rows: [createStudySessionConflictRow()] },
   ]);
-  const req = { body: { cardId: 7, quality: 4 }, user: { userId: 'user-1' } };
+  const req = { body: { cardId: 7, quality: 4 }, user: { userId: 1 } };
   const res = createRes();
 
   await submitStudySession(req, res, db, () => ({
@@ -5104,7 +5150,7 @@ test('POST /api/study-session returns 409 when final due-gated update loses a st
   assert.equal(db.calls.length, 2);
   assertStudySessionCardReadSql(db.calls[0].sql);
   assertStudySessionUpdateSql(db.calls[1].sql);
-  assert.deepEqual(db.calls[1].params.slice(1), ['2026-05-08T12:00:00.000Z', 3, 2.6, 7, 'user-1']);
+  assert.deepEqual(db.calls[1].params.slice(1), ['2026-05-08T12:00:00.000Z', 3, 2.6, 7, 1]);
 });
 
 test('POST /api/study-session rolls back when the final not-due sentinel is malformed', async (t) => {
@@ -5112,7 +5158,7 @@ test('POST /api/study-session rolls back when the final not-due sentinel is malf
   delete rowMissingOwnerProof.__owned_user_id;
   const malformedRows = [
     { name: 'missing owner proof', row: rowMissingOwnerProof },
-    { name: 'mismatched owner proof', row: createStudySessionConflictRow({ __owned_user_id: 'other-user' }) },
+    { name: 'mismatched owner proof', row: createStudySessionConflictRow({ __owned_user_id: 2 }) },
     { name: 'non-null id', row: createStudySessionConflictRow({ id: 7 }) },
     {
       name: 'non-null scheduling field',
@@ -5150,7 +5196,7 @@ test('POST /api/study-session rolls back when the final update cardinality is ma
       { rowCount: 1, rows: [sourceCard] },
       result,
     ]);
-    const req = { body: { cardId: 7, quality: 4 }, user: { userId: 'user-1' } };
+    const req = { body: { cardId: 7, quality: 4 }, user: { userId: 1 } };
     const res = createRes();
 
     await submitStudySession(req, res, db, () => ({
@@ -5191,7 +5237,7 @@ async function assertMalformedStudySessionUpdateRowRollsBack(updateRow) {
       rows: [updateRow],
     },
   ]);
-  const req = { body: { cardId: 7, quality: 4 }, user: { userId: 'user-1' } };
+  const req = { body: { cardId: 7, quality: 4 }, user: { userId: 1 } };
   const res = createRes();
   const originalError = console.error;
   console.error = () => {};
@@ -5244,7 +5290,7 @@ test('POST /api/study-session rolls back when a successful final update result v
   const malformedRows = [
     { name: 'missing id', row: rowMissingId },
     { name: 'missing owner proof', row: rowMissingOwnerProof },
-    { name: 'mismatched owner proof', row: { ...validUpdateRow, __owned_user_id: 'other-user' } },
+    { name: 'mismatched owner proof', row: { ...validUpdateRow, __owned_user_id: 2 } },
     { name: 'non-numeric id', row: { ...validUpdateRow, id: 'card-7' } },
     { name: 'mismatched id', row: { ...validUpdateRow, id: 8 } },
     { name: 'zero id', row: { ...validUpdateRow, id: 0 } },

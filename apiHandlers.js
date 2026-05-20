@@ -117,6 +117,35 @@ function isValidQuality(quality) {
   return Number.isInteger(quality) && quality >= 0 && quality <= 5;
 }
 
+function toAuthenticatedUserId(value) {
+  if (typeof value === 'number') {
+    return Number.isSafeInteger(value) && value > 0 && value <= MAX_POSTGRES_SERIAL_ID
+      ? value
+      : null;
+  }
+
+  if (typeof value === 'string') {
+    if (!/^[1-9]\d*$/.test(value)) {
+      return null;
+    }
+
+    const isWithinPostgresSerialRange = (
+      value.length < MAX_POSTGRES_SERIAL_ID_TEXT.length
+      || (
+        value.length === MAX_POSTGRES_SERIAL_ID_TEXT.length
+        && value <= MAX_POSTGRES_SERIAL_ID_TEXT
+      )
+    );
+    if (!isWithinPostgresSerialRange) {
+      return null;
+    }
+
+    return Number(value);
+  }
+
+  return null;
+}
+
 function getAuthenticatedUserId(req) {
   const user = req?.user;
   if (
@@ -124,13 +153,16 @@ function getAuthenticatedUserId(req) {
     || typeof user !== 'object'
     || Array.isArray(user)
     || !Object.hasOwn(user, 'userId')
-    || user.userId === null
-    || user.userId === undefined
   ) {
     throw new TypeError(INVALID_AUTH_PRINCIPAL_ERROR);
   }
 
-  return user.userId;
+  const authenticatedUserId = toAuthenticatedUserId(user.userId);
+  if (authenticatedUserId === null) {
+    throw new TypeError(INVALID_AUTH_PRINCIPAL_ERROR);
+  }
+
+  return authenticatedUserId;
 }
 
 function isValidSchedulerNextReview(value) {
