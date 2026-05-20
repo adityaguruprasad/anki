@@ -159,7 +159,7 @@ function createStudySessionCardReadRow(overrides = {}) {
 function createStudySessionUpdateRow(overrides = {}) {
   return {
     id: 7,
-    next_review: '2026-05-08T12:00:00.000Z',
+    next_review: '2026-05-11T12:05:00.000Z',
     interval: 3,
     ease_factor: 2.6,
     review_count: 3,
@@ -4571,7 +4571,7 @@ test('POST /api/study-session rolls back before scheduling when the locked card 
 });
 
 test('POST /api/study-session locks an owned due card before scheduling and updating', async () => {
-  const nextReview = '2026-05-08T12:00:00.000Z';
+  const nextReview = '2026-05-11T12:05:00.000Z';
   const sourceCard = {
     id: 7,
     deck_id: 1,
@@ -4642,7 +4642,7 @@ test('POST /api/study-session locks an owned due card before scheduling and upda
 });
 
 test('POST /api/study-session treats unscheduled owned cards as due for review', async () => {
-  const nextReview = '2026-05-08T12:00:00.000Z';
+  const nextReview = '2026-05-11T12:05:00.000Z';
   const sourceCard = createStudySessionCardReadRow({
     id: 7,
     deck_id: 1,
@@ -4691,7 +4691,7 @@ test('POST /api/study-session treats unscheduled owned cards as due for review',
 });
 
 test('POST /api/study-session returns updated scheduling metadata for successful review', async () => {
-  const nextReview = new Date().toISOString();
+  const nextReview = '2026-05-11T12:05:00.000Z';
   const updatedCard = {
     id: 7,
     next_review: nextReview,
@@ -4953,6 +4953,9 @@ test('POST /api/study-session rolls back when a card-shaped final update result 
 
 test('POST /api/study-session rolls back when a successful final update result violates response invariants', async (t) => {
   const validUpdateRow = createStudySessionUpdateRow();
+  const nextReviewBeforeLastReviewed = new Date(
+    new Date(validUpdateRow.last_reviewed).getTime() - 1
+  ).toISOString();
   const rowMissingId = { ...validUpdateRow };
   delete rowMissingId.id;
   const rowMissingOwnerProof = { ...validUpdateRow };
@@ -4982,6 +4985,8 @@ test('POST /api/study-session rolls back when a successful final update result v
     { name: 'infinite review count', row: { ...validUpdateRow, review_count: Number.POSITIVE_INFINITY } },
     { name: 'null last_reviewed', row: { ...validUpdateRow, last_reviewed: null } },
     { name: 'invalid last_reviewed timestamp', row: { ...validUpdateRow, last_reviewed: 'not-a-date' } },
+    { name: 'next review equal to last reviewed', row: { ...validUpdateRow, next_review: validUpdateRow.last_reviewed } },
+    { name: 'next review before last reviewed', row: { ...validUpdateRow, next_review: nextReviewBeforeLastReviewed } },
   ];
 
   for (const { name, row } of malformedRows) {

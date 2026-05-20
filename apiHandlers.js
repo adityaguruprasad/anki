@@ -221,6 +221,7 @@ function assertStudySessionUpdateSucceeded(row, expectedCardId, expectedUserId) 
     || !isValidPersistedEaseFactor(row.ease_factor)
     || !isValidPersistedReviewCount(row.review_count)
     || !isValidRequiredDatabaseTimestamp(row.last_reviewed)
+    || !isLaterDatabaseTimestamp(row.next_review, row.last_reviewed)
   ) {
     throw new TypeError(INVALID_STUDY_SESSION_UPDATE_RESULT_ERROR);
   }
@@ -393,6 +394,31 @@ function isValidDatabaseTimestamp(value) {
 
 function isValidRequiredDatabaseTimestamp(value) {
   return value !== null && isValidDatabaseTimestamp(value);
+}
+
+function toDatabaseTimestampMilliseconds(value) {
+  if (value instanceof Date) {
+    const timestamp = value.getTime();
+    return Number.isNaN(timestamp) ? null : timestamp;
+  }
+
+  if (!isValidIsoTimestamp(value)) {
+    return null;
+  }
+
+  const timestamp = Date.parse(value);
+  return Number.isNaN(timestamp) ? null : timestamp;
+}
+
+function isLaterDatabaseTimestamp(value, earlierValue) {
+  const timestamp = toDatabaseTimestampMilliseconds(value);
+  const earlierTimestamp = toDatabaseTimestampMilliseconds(earlierValue);
+
+  return (
+    timestamp !== null
+    && earlierTimestamp !== null
+    && timestamp > earlierTimestamp
+  );
 }
 
 function isValidPersistedCardContent(value) {

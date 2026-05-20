@@ -70,7 +70,10 @@ CREATE TABLE cards (
   CONSTRAINT cards_interval_min_check CHECK (interval >= 1),
   CONSTRAINT cards_interval_max_check CHECK (interval <= 36500),
   CONSTRAINT cards_review_count_non_negative_check CHECK (review_count >= 0),
-  CONSTRAINT cards_ease_factor_min_check CHECK (ease_factor >= 1.3)
+  CONSTRAINT cards_ease_factor_min_check CHECK (ease_factor >= 1.3),
+  CONSTRAINT cards_review_temporal_order_check CHECK (
+    next_review IS NULL OR last_reviewed IS NULL OR next_review > last_reviewed
+  )
 );
 
 CREATE INDEX cards_deck_id_next_review_idx

@@ -15,6 +15,10 @@ const intervalCapMigration = fs.readFileSync(
   path.join(__dirname, '..', 'migrations', '005_cap_card_scheduling_interval.sql'),
   'utf8',
 );
+const reviewTemporalOrderMigration = fs.readFileSync(
+  path.join(__dirname, '..', 'migrations', '010_enforce_card_review_temporal_order.sql'),
+  'utf8',
+);
 
 function getCheckFloor(constraintName, columnName) {
   const match = cardsTable.match(
@@ -121,6 +125,10 @@ test('anki.db constrains persisted card scheduling state to app invariants', () 
     cardsTable,
     /\bCONSTRAINT\s+cards_ease_factor_min_check\s+CHECK\s*\(\s*ease_factor\s*>=\s*1\.3\s*\)/i,
   );
+  assert.match(
+    cardsTable,
+    /\bCONSTRAINT\s+cards_review_temporal_order_check\s+CHECK\s*\(\s*next_review\s+IS\s+NULL\s+OR\s+last_reviewed\s+IS\s+NULL\s+OR\s+next_review\s+>\s+last_reviewed\s*\)/i,
+  );
 });
 
 test('card scheduling migration normalizes legacy rows before enforcing constraints', () => {
@@ -168,6 +176,47 @@ test('card interval cap migration clamps legacy rows before enforcing max interv
   assertOrdered(intervalCapMigration, /\bLOCK\s+TABLE\b/i, /\bUPDATE\s+cards\b/i);
   assertOrdered(intervalCapMigration, /\bUPDATE\s+cards\b/i, /\bALTER\s+TABLE\s+cards\b/i);
   assert.doesNotMatch(intervalCapMigration, /\bDELETE\s+FROM\s+cards\b/i);
+});
+
+test('card review temporal order migration repairs stale schedules before enforcing order', () => {
+  assert.match(reviewTemporalOrderMigration, /^\s*(?:--[^\n]*\n)*BEGIN;\s*/i);
+  assert.match(reviewTemporalOrderMigration, /COMMIT;\s*$/i);
+  assert.match(
+    reviewTemporalOrderMigration,
+    /LOCK\s+TABLE\s+cards\s+IN\s+ACCESS\s+EXCLUSIVE\s+MODE/i,
+  );
+  assert.match(
+    reviewTemporalOrderMigration,
+    /UPDATE\s+cards\s+SET\s+next_review\s*=\s*last_reviewed\s*\+\s*\(\s*GREATEST\s*\(\s*interval\s*,\s*1\s*\)\s*\*\s*INTERVAL\s+'1 day'\s*\)/i,
+  );
+  assert.match(
+    reviewTemporalOrderMigration,
+    /WHERE\s+last_reviewed\s+IS\s+NOT\s+NULL\s+AND\s+next_review\s+IS\s+NOT\s+NULL\s+AND\s+next_review\s+<=\s+last_reviewed/i,
+  );
+  assert.match(
+    reviewTemporalOrderMigration,
+    /ADD\s+CONSTRAINT\s+cards_review_temporal_order_check\s+CHECK\s*\(\s*next_review\s+IS\s+NULL\s+OR\s+last_reviewed\s+IS\s+NULL\s+OR\s+next_review\s+>\s+last_reviewed\s*\)/i,
+  );
+  assertOrdered(reviewTemporalOrderMigration, /\bLOCK\s+TABLE\b/i, /\bUPDATE\s+cards\b/i);
+  assertOrdered(reviewTemporalOrderMigration, /\bUPDATE\s+cards\b/i, /\bALTER\s+TABLE\s+cards\b/i);
+  assert.doesNotMatch(reviewTemporalOrderMigration, /\bDELETE\s+FROM\s+cards\b/i);
+});
+
+test('card review temporal order migration creates the bootstrap schema constraint idempotently', () => {
+  const expression = 'next_review\\s+IS\\s+NULL\\s+OR\\s+last_reviewed\\s+IS\\s+NULL\\s+OR\\s+next_review\\s+>\\s+last_reviewed';
+
+  assert.match(
+    cardsTable,
+    new RegExp(`CONSTRAINT\\s+cards_review_temporal_order_check\\s+CHECK\\s*\\(\\s*${expression}\\s*\\)`, 'i'),
+  );
+  assert.match(
+    reviewTemporalOrderMigration,
+    /DROP\s+CONSTRAINT\s+IF\s+EXISTS\s+cards_review_temporal_order_check/i,
+  );
+  assert.match(
+    reviewTemporalOrderMigration,
+    new RegExp(`ADD\\s+CONSTRAINT\\s+cards_review_temporal_order_check\\s+CHECK\\s*\\(\\s*${expression}\\s*\\)`, 'i'),
+  );
 });
 
 test('card scheduling migration and bootstrap schema enforce matching constraints', () => {
