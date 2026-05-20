@@ -158,7 +158,21 @@ test('getValidatedStudySessionSubmissionResponse preserves valid submission payl
     },
   };
   assert.equal(getValidatedStudySessionSubmissionResponse(boundaryResponse), boundaryResponse);
+});
 
+test('getValidatedStudySessionSubmissionResponse requires next review after the review time', () => {
+  const validCard = {
+    id: 2,
+    next_review: '2026-05-09T14:30:00.001Z',
+    last_reviewed: '2026-05-09T14:30:00.000Z',
+    interval: 1,
+    ease_factor: 1.3,
+    review_count: 0,
+  };
+  const response = {
+    success: true,
+    card: validCard,
+  };
   const sameInstantResponse = {
     success: true,
     card: {
@@ -170,7 +184,9 @@ test('getValidatedStudySessionSubmissionResponse preserves valid submission payl
       review_count: 0,
     },
   };
-  assert.equal(getValidatedStudySessionSubmissionResponse(sameInstantResponse), sameInstantResponse);
+
+  assert.equal(getValidatedStudySessionSubmissionResponse(response), response);
+  assert.equal(getValidatedStudySessionSubmissionResponse(sameInstantResponse), null);
 });
 
 test('getValidatedStudySessionSubmissionResponse rejects malformed submission payloads', () => {

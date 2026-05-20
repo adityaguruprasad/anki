@@ -65,9 +65,13 @@ function hasValidStudySessionSchedulingFields(card) {
   }
 
   const lastReviewedDate = new Date(card.last_reviewed);
+  const lastReviewedAt = lastReviewedDate.getTime();
+  const nextReviewAt = nextReviewDate.getTime();
+  // Backend apiHandlers and cards_review_temporal_order_check require this
+  // strict order for successful post-review responses.
   if (
-    Number.isNaN(lastReviewedDate.getTime())
-    || lastReviewedDate.getTime() > nextReviewDate.getTime()
+    Number.isNaN(lastReviewedAt)
+    || lastReviewedAt >= nextReviewAt
   ) {
     return false;
   }
