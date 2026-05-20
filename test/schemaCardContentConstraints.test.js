@@ -10,6 +10,12 @@ const cardContentMigration = fs.readFileSync(
   path.join(__dirname, '..', 'migrations', '007_enforce_card_content_constraints.sql'),
   'utf8',
 );
+const cardContentSafeCharactersMigration = fs.readFileSync(
+  path.join(__dirname, '..', 'migrations', '013_enforce_card_content_safe_characters.sql'),
+  'utf8',
+);
+const UNSAFE_CARD_CONTENT_SQL_CHARACTER_CLASS =
+  String.raw`U&'\[\\061C\\200B\\200E\\200F\\202A-\\202E\\2060\\2066-\\2069\\FEFF\]'`;
 
 function assertOrdered(haystack, firstNeedle, secondNeedle) {
   const firstIndex = haystack.search(firstNeedle);
@@ -47,12 +53,23 @@ function assertMaxLengthContentConstraint(sql, columnName) {
   );
 }
 
+function assertSafeCharacterContentConstraint(sql, columnName) {
+  assert.match(
+    sql,
+    new RegExp(
+      `CONSTRAINT\\s+cards_${columnName}_safe_characters_check\\s+CHECK\\s*\\(\\s*${columnName}\\s*!~\\s*${UNSAFE_CARD_CONTENT_SQL_CHARACTER_CLASS}\\s*\\)`,
+      'i',
+    ),
+  );
+}
+
 test('anki.db constrains persisted card content to API invariants', () => {
   assert.match(cardsTable, /\bfront_content\s+TEXT\s+NOT\s+NULL\b/i);
   assert.match(cardsTable, /\bback_content\s+TEXT\s+NOT\s+NULL\b/i);
 
   for (const columnName of ['front_content', 'back_content']) {
     assertNonBlankContentConstraint(cardsTable, columnName);
+    assertSafeCharacterContentConstraint(cardsTable, columnName);
     assertMaxLengthContentConstraint(cardsTable, columnName);
   }
 });
@@ -158,5 +175,55 @@ test('card content constraint migration creates the bootstrap schema constraints
     );
     assertNonBlankContentConstraint(cardContentMigration, columnName);
     assertMaxLengthContentConstraint(cardContentMigration, columnName);
+  }
+});
+
+test('card content safe-character migration rejects existing invisible formatting before altering cards', () => {
+  assert.match(cardContentSafeCharactersMigration, /^\s*(?:--[^\n]*\n)*BEGIN;\s*/i);
+  assert.match(cardContentSafeCharactersMigration, /COMMIT;\s*$/i);
+  assert.match(
+    cardContentSafeCharactersMigration,
+    /LOCK\s+TABLE\s+cards\s+IN\s+ACCESS\s+EXCLUSIVE\s+MODE/i,
+  );
+
+  assert.match(cardContentSafeCharactersMigration, /\(SELECT\s+COUNT\(\*\)\s+FROM\s+invalid_card_content\)/i);
+  assert.match(cardContentSafeCharactersMigration, /FROM\s+cards/i);
+  assert.match(
+    cardContentSafeCharactersMigration,
+    new RegExp(`front_content\\s+~\\s+${UNSAFE_CARD_CONTENT_SQL_CHARACTER_CLASS}`, 'i'),
+  );
+  assert.match(
+    cardContentSafeCharactersMigration,
+    new RegExp(`back_content\\s+~\\s+${UNSAFE_CARD_CONTENT_SQL_CHARACTER_CLASS}`, 'i'),
+  );
+  assert.match(
+    cardContentSafeCharactersMigration,
+    /RAISE\s+EXCEPTION\s+'Cannot enforce card content safe-character constraints:/i,
+  );
+  assert.match(
+    cardContentSafeCharactersMigration,
+    /\binvalid_card_content_sample\s+AS\s*\(\s*SELECT\s+id\s+FROM\s+invalid_card_content\s+ORDER\s+BY\s+id\s+LIMIT\s+10\s*\)/i,
+  );
+  assert.match(
+    cardContentSafeCharactersMigration,
+    /array_agg\(\s*id::BIGINT\s+ORDER\s+BY\s+id\s*\)/i,
+  );
+  assertOrdered(cardContentSafeCharactersMigration, /\bLOCK\s+TABLE\b/i, /\bDO\s+\$\$/i);
+  assertOrdered(
+    cardContentSafeCharactersMigration,
+    /front_content\s+~/i,
+    /ALTER\s+TABLE\s+cards/i,
+  );
+  assert.doesNotMatch(cardContentSafeCharactersMigration, /\bUPDATE\s+cards\b/i);
+  assert.doesNotMatch(cardContentSafeCharactersMigration, /\bDELETE\s+FROM\s+cards\b/i);
+});
+
+test('card content safe-character migration creates constraints idempotently', () => {
+  for (const columnName of ['front_content', 'back_content']) {
+    assert.match(
+      cardContentSafeCharactersMigration,
+      new RegExp(`DROP\\s+CONSTRAINT\\s+IF\\s+EXISTS\\s+cards_${columnName}_safe_characters_check`, 'i'),
+    );
+    assertSafeCharacterContentConstraint(cardContentSafeCharactersMigration, columnName);
   }
 });

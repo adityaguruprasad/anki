@@ -9,6 +9,12 @@ const BROWSE_CARDS_MAX_LIMIT = 100;
 const DUE_CARDS_DEFAULT_LIMIT = BROWSE_CARDS_MAX_LIMIT;
 const BROWSE_CARDS_MAX_SEARCH_LENGTH = 200;
 const MAX_CARD_CONTENT_LENGTH = 10000;
+// Keep this blocklist in sync with the SQL schema/migration pattern. It targets
+// invisible bidi/isolate controls, zero-width space, word joiner, and BOM-style
+// controls that can make card text misleading, while intentionally allowing
+// ZWNJ/ZWJ because they can be legitimate in human-authored study text.
+const UNSAFE_CARD_CONTENT_FORMATTING_CHARACTER_PATTERN =
+  /[\u061C\u200B\u200E\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/u;
 // anki.db uses PostgreSQL SERIAL/INTEGER ids; reject impossible ids before
 // they reach hot API queries where PostgreSQL would raise int4 range errors.
 const MAX_POSTGRES_SERIAL_ID = 2147483647;
@@ -367,8 +373,12 @@ function validateCardContent(value, fieldName) {
     return { ok: false, error: `Invalid ${fieldName}: must be a non-empty string` };
   }
 
-  if (trimmed.includes('\u0000')) {
+  if (value.includes('\u0000')) {
     return { ok: false, error: `Invalid ${fieldName}: cannot contain null bytes` };
+  }
+
+  if (UNSAFE_CARD_CONTENT_FORMATTING_CHARACTER_PATTERN.test(value)) {
+    return { ok: false, error: `Invalid ${fieldName}: cannot contain invisible formatting characters` };
   }
 
   if (trimmed.length > MAX_CARD_CONTENT_LENGTH) {

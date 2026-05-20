@@ -21,6 +21,8 @@ const { getVarcharColumnLength, readAnkiSchema } = require('./schemaHelpers');
 
 const UNSAFE_DECK_NAME_ERROR =
   'Invalid deck name: cannot contain line breaks, control characters, or invisible formatting characters';
+const UNSAFE_CARD_CONTENT_ERROR_SUFFIX =
+  'cannot contain invisible formatting characters';
 
 function createRes() {
   return {
@@ -2899,7 +2901,9 @@ test('POST /api/cards fails closed when the inserted row violates card mutation 
     { ...validInsertedCard, deck_id: 2147483648 },
     { ...validInsertedCard, deck_id: 43 },
     { ...validInsertedCard, front_content: '   ' },
+    { ...validInsertedCard, front_content: 'Capital\u200B of France?' },
     { ...validInsertedCard, back_content: '' },
+    { ...validInsertedCard, back_content: 'Pa\u202Eris' },
     { ...validInsertedCard, next_review: 'not-a-date' },
     { ...validInsertedCard, interval: 0 },
     { ...validInsertedCard, interval: 36501 },
@@ -2999,6 +3003,41 @@ test('POST /api/cards returns 400 for null bytes in front or back content and sk
   const invalidContentCases = [
     [{ frontContent: 'Front\u0000', backContent: 'Back' }, 'Invalid frontContent: cannot contain null bytes'],
     [{ frontContent: 'Front', backContent: 'Back\u0000' }, 'Invalid backContent: cannot contain null bytes'],
+  ];
+
+  for (const [body, error] of invalidContentCases) {
+    const db = createDb([]);
+    const req = {
+      body: {
+        deckId: 42,
+        ...body,
+      },
+      user: { userId: 'user-1' },
+    };
+    const res = createRes();
+
+    await createCard(req, res, db);
+
+    assert.equal(res.statusCode, 400);
+    assert.deepEqual(res.body, { error });
+    assert.equal(db.calls.length, 0);
+  }
+});
+
+test('POST /api/cards returns 400 for invisible formatting characters and skips db query', async () => {
+  const invalidContentCases = [
+    [
+      { frontContent: 'Front\u200B', backContent: 'Back' },
+      `Invalid frontContent: ${UNSAFE_CARD_CONTENT_ERROR_SUFFIX}`,
+    ],
+    [
+      { frontContent: 'Front', backContent: 'Back\u202E' },
+      `Invalid backContent: ${UNSAFE_CARD_CONTENT_ERROR_SUFFIX}`,
+    ],
+    [
+      { frontContent: '\u2066Front', backContent: 'Back' },
+      `Invalid frontContent: ${UNSAFE_CARD_CONTENT_ERROR_SUFFIX}`,
+    ],
   ];
 
   for (const [body, error] of invalidContentCases) {
@@ -3136,6 +3175,39 @@ test('PATCH /api/cards/:cardId returns 400 for null bytes in front or back conte
   const invalidContentCases = [
     [{ frontContent: 'Front\u0000', backContent: 'Back' }, 'Invalid frontContent: cannot contain null bytes'],
     [{ frontContent: 'Front', backContent: 'Back\u0000' }, 'Invalid backContent: cannot contain null bytes'],
+  ];
+
+  for (const [body, error] of invalidContentCases) {
+    const db = createDb([]);
+    const req = {
+      params: { cardId: '77' },
+      body,
+      user: { userId: 'user-1' },
+    };
+    const res = createRes();
+
+    await updateCard(req, res, db);
+
+    assert.equal(res.statusCode, 400);
+    assert.deepEqual(res.body, { error });
+    assert.equal(db.calls.length, 0);
+  }
+});
+
+test('PATCH /api/cards/:cardId returns 400 for invisible formatting characters and skips db query', async () => {
+  const invalidContentCases = [
+    [
+      { frontContent: 'Front\u200B', backContent: 'Back' },
+      `Invalid frontContent: ${UNSAFE_CARD_CONTENT_ERROR_SUFFIX}`,
+    ],
+    [
+      { frontContent: 'Front', backContent: 'Back\u202E' },
+      `Invalid backContent: ${UNSAFE_CARD_CONTENT_ERROR_SUFFIX}`,
+    ],
+    [
+      { frontContent: 'Front', backContent: 'Back\uFEFF' },
+      `Invalid backContent: ${UNSAFE_CARD_CONTENT_ERROR_SUFFIX}`,
+    ],
   ];
 
   for (const [body, error] of invalidContentCases) {
@@ -3293,6 +3365,8 @@ test('PATCH /api/cards/:cardId fails closed when the updated row violates card m
   const malformedRows = [
     { ...validUpdatedCard, id: 78 },
     { ...validUpdatedCard, deck_id: 'not-a-deck' },
+    { ...validUpdatedCard, front_content: 'Updated\u200B front' },
+    { ...validUpdatedCard, back_content: 'Updated\u202E back' },
   ];
   t.mock.method(console, 'error', () => {});
 
