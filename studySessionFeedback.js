@@ -2,6 +2,7 @@ const {
   hasRouteSafeCardId,
   hasSameRouteSafeCardId,
 } = require('./cardIdentifier');
+const { isValidIsoTimestamp } = require('./isoTimestampValidation');
 
 const QUALITY_LABELS = Object.freeze({
   1: 'Hard',
@@ -41,7 +42,7 @@ function getStudySessionQualityLabel(quality) {
 }
 
 function getValidNextReviewDate(nextReview) {
-  if (typeof nextReview !== 'string' || nextReview.trim() === '') {
+  if (!isValidIsoTimestamp(nextReview)) {
     return null;
   }
 

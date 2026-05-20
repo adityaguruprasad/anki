@@ -61,6 +61,34 @@ test('getStudySessionSubmissionFeedback falls back for unrecognized quality and 
   });
 });
 
+test('getStudySessionSubmissionFeedback ignores parseable timestamps outside the API contract', () => {
+  [
+    '2026-05-09',
+    '2026-05-09T14:30:00',
+    '2026-05-09T14:30:00.000Z ',
+  ].forEach((nextReview) => {
+    let formatDateCallCount = 0;
+    const feedback = getStudySessionSubmissionFeedback({
+      quality: 3,
+      response: {
+        success: true,
+        card: {
+          next_review: nextReview,
+        },
+      },
+      formatDate() {
+        formatDateCallCount += 1;
+        return 'unexpected date';
+      },
+    });
+
+    assert.deepEqual(feedback, {
+      message: 'Answered Good. Review schedule updated.',
+    });
+    assert.equal(formatDateCallCount, 0, `formatDate was called for ${JSON.stringify(nextReview)}`);
+  });
+});
+
 test('getStudySessionSubmissionRecovery maps stale-card conflicts to next-card recovery', () => {
   assert.deepEqual(getStudySessionSubmissionRecovery({ status: 409 }), {
     action: STUDY_SESSION_SUBMISSION_RECOVERY_ACTIONS.LOAD_NEXT_DUE_CARD,
@@ -150,6 +178,9 @@ test('getValidatedStudySessionSubmissionResponse rejects malformed submission pa
     { success: true, card: { ...validCard, id: '1' } },
     { success: true, card: { ...validCard, next_review: '' } },
     { success: true, card: { ...validCard, next_review: 'not-a-date' } },
+    { success: true, card: { ...validCard, next_review: '2026-05-09' } },
+    { success: true, card: { ...validCard, next_review: '2026-05-09T14:30:00' } },
+    { success: true, card: { ...validCard, next_review: '2026-05-09T14:30:00.000Z ' } },
     { success: true, card: { ...validCard, next_review: new Date('2026-05-09T14:30:00.000Z') } },
   ].forEach((response) => {
     assert.equal(getValidatedStudySessionSubmissionResponse(response), null);
