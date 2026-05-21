@@ -6,6 +6,7 @@ const {
   hasDeckCardMutationPayload,
   parseDeckCardMutationResponsePayload,
 } = require('../deckCardMutationResponse');
+const { MAX_CARD_CONTENT_LENGTH } = require('../cardContentValidation');
 const { MAX_POSTGRES_SERIAL_ID } = require('../cardIdentifier');
 
 const VALID_NEXT_REVIEW = '2026-05-10T12:00:00.000Z';
@@ -151,6 +152,17 @@ test('parseDeckCardMutationResponsePayload rejects blank card content fields', (
     createValidCardPayload({ id: 1, back_content: '' }),
     createValidCardPayload({ id: 1, back_content: '  ' }),
     createValidCardPayload({ id: 1, back_content: '\n\t' }),
+  ].forEach(assertMalformed);
+});
+
+test('parseDeckCardMutationResponsePayload rejects content outside the shared safe-text contract', () => {
+  [
+    createValidCardPayload({ id: 1, front_content: 'Front\u0000' }),
+    createValidCardPayload({ id: 1, back_content: 'Back\u0000' }),
+    createValidCardPayload({ id: 1, front_content: 'Question\u202E1' }),
+    createValidCardPayload({ id: 1, back_content: 'Answer\u200B1' }),
+    createValidCardPayload({ id: 1, front_content: 'x'.repeat(MAX_CARD_CONTENT_LENGTH + 1) }),
+    createValidCardPayload({ id: 1, back_content: 'x'.repeat(MAX_CARD_CONTENT_LENGTH + 1) }),
   ].forEach(assertMalformed);
 });
 

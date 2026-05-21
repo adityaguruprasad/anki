@@ -1,6 +1,6 @@
+const { MAX_CARD_CONTENT_LENGTH } = require('./cardContentValidation');
 const { parseDeckCardMutationResponsePayload } = require('./deckCardMutationResponse');
 
-const MAX_CARD_CONTENT_LENGTH = 10000;
 const MAX_CARD_CONTENT_LENGTH_LABEL = MAX_CARD_CONTENT_LENGTH.toLocaleString('en-US');
 
 const CARD_CREATE_MESSAGES = Object.freeze({

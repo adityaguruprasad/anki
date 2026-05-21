@@ -7,6 +7,7 @@ const {
   hasMatchingCursorFamilies,
   parseDeckCardBrowseResponsePayload,
 } = require('../deckCardBrowseResponse');
+const { MAX_CARD_CONTENT_LENGTH } = require('../cardContentValidation');
 const { MAX_POSTGRES_SERIAL_ID } = require('../cardIdentifier');
 
 function assertMalformed(payload, options) {
@@ -205,6 +206,20 @@ test('parseDeckCardBrowseResponsePayload rejects invalid card rows', () => {
     { id: 1, front_content: 'Front', back_content: 7 },
   ].forEach((card) => {
     assertMalformed({ cards: [card] });
+  });
+});
+
+test('parseDeckCardBrowseResponsePayload rejects card text outside the shared safe-text contract', () => {
+  [
+    { id: 1, front_content: 'Front\u0000', back_content: 'Back' },
+    { id: 1, front_content: 'Front', back_content: 'Back\u0000' },
+    { id: 1, front_content: 'Front\u202E', back_content: 'Back' },
+    { id: 1, front_content: 'Front', back_content: 'Back\u200B' },
+    { id: 1, front_content: 'x'.repeat(MAX_CARD_CONTENT_LENGTH + 1), back_content: 'Back' },
+    { id: 1, front_content: 'Front', back_content: 'x'.repeat(MAX_CARD_CONTENT_LENGTH + 1) },
+  ].forEach((card) => {
+    assertMalformed({ cards: [card] });
+    assert.equal(hasDeckCardBrowseRowPayload(card), false);
   });
 });
 

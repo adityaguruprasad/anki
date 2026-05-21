@@ -1,3 +1,4 @@
+const { isValidCardContent } = require('./cardContentValidation');
 const { isValidIsoTimestamp } = require('./isoTimestampValidation');
 const {
   hasRouteSafeCardId,
@@ -10,10 +11,6 @@ const MALFORMED_DECK_CARD_BROWSE_PAYLOAD_ERROR = 'Malformed deck-card browse pay
 
 function isObjectRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function isNonBlankString(value) {
-  return typeof value === 'string' && value.trim().length > 0;
 }
 
 function hasOwn(value, key) {
@@ -50,8 +47,8 @@ function hasDeckCardBrowseRowPayload(card, options = {}) {
     isObjectRecord(card)
     && hasUsableId(card.id)
     && hasExpectedDeckAnchor(card, expectedDeckId)
-    && isNonBlankString(card.front_content)
-    && isNonBlankString(card.back_content)
+    && isValidCardContent(card.front_content)
+    && isValidCardContent(card.back_content)
   );
 }
 

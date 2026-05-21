@@ -1,3 +1,4 @@
+const { isValidCardContent } = require('./cardContentValidation');
 const { hasRouteSafeCardId, normalizeRouteSafeId } = require('./cardIdentifier');
 
 const MALFORMED_DUE_CARD_PAYLOAD_ERROR = 'Malformed due-card payload';
@@ -13,10 +14,6 @@ function hasMatchingExpectedDeckId(deckId, expectedDeckId) {
   return normalizedDeckId !== null && normalizedDeckId === normalizedExpectedDeckId;
 }
 
-function isNonBlankCardContent(value) {
-  return typeof value === 'string' && value.trim().length > 0;
-}
-
 function hasStudySessionDueCardRowPayload(card, options = {}) {
   const { expectedDeckId } = options;
   // Only omitted/undefined preserves legacy unanchored callers; null or invalid values opt into validation and fail.
@@ -27,8 +24,8 @@ function hasStudySessionDueCardRowPayload(card, options = {}) {
     && typeof card === 'object'
     && !Array.isArray(card)
     && hasSafeStudySessionCardId(card.id)
-    && isNonBlankCardContent(card.front_content)
-    && isNonBlankCardContent(card.back_content)
+    && isValidCardContent(card.front_content)
+    && isValidCardContent(card.back_content)
     && (!hasExpectedDeckId || hasMatchingExpectedDeckId(card.deck_id, expectedDeckId))
   );
 }

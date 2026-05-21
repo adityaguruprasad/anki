@@ -6,6 +6,7 @@ const {
   hasDeckCardRemovalSuccessPayload,
   parseDeckCardRemovalSuccessPayload,
 } = require('../deckCardRemovalResponse');
+const { MAX_CARD_CONTENT_LENGTH } = require('../cardContentValidation');
 
 const VALID_NEXT_REVIEW = '2026-05-10T12:00:00.000Z';
 
@@ -141,6 +142,17 @@ test('parseDeckCardRemovalSuccessPayload requires the authoritative deleted card
     createValidRemovalPayload({ id: 1.5 }),
     createValidRemovalPayload({ front_content: 42 }),
     createValidRemovalPayload({ back_content: null }),
+  ].forEach(assertMalformed);
+});
+
+test('parseDeckCardRemovalSuccessPayload rejects deleted card text outside the shared safe-text contract', () => {
+  [
+    createValidRemovalPayload({ front_content: 'Front\u0000' }),
+    createValidRemovalPayload({ back_content: 'Back\u0000' }),
+    createValidRemovalPayload({ front_content: 'Front\u202E' }),
+    createValidRemovalPayload({ back_content: 'Back\u200B' }),
+    createValidRemovalPayload({ front_content: 'x'.repeat(MAX_CARD_CONTENT_LENGTH + 1) }),
+    createValidRemovalPayload({ back_content: 'x'.repeat(MAX_CARD_CONTENT_LENGTH + 1) }),
   ].forEach(assertMalformed);
 });
 

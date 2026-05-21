@@ -1,3 +1,4 @@
+const { validateCardContent } = require('./cardContentValidation');
 const { validateDeckName } = require('./deckNameValidation');
 const { isValidIsoTimestamp } = require('./isoTimestampValidation');
 const { MAX_INTERVAL_DAYS, MIN_EASE_FACTOR } = require('./spacedRepetition');
@@ -8,13 +9,6 @@ const BROWSE_CARDS_MAX_LIMIT = 100;
 // changing the explicit limit contract.
 const DUE_CARDS_DEFAULT_LIMIT = BROWSE_CARDS_MAX_LIMIT;
 const BROWSE_CARDS_MAX_SEARCH_LENGTH = 200;
-const MAX_CARD_CONTENT_LENGTH = 10000;
-// Keep this blocklist in sync with the SQL schema/migration pattern. It targets
-// invisible bidi/isolate controls, zero-width space, word joiner, and BOM-style
-// controls that can make card text misleading, while intentionally allowing
-// ZWNJ/ZWJ because they can be legitimate in human-authored study text.
-const UNSAFE_CARD_CONTENT_FORMATTING_CHARACTER_PATTERN =
-  /[\u061C\u200B\u200E\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/u;
 // anki.db uses PostgreSQL SERIAL/INTEGER ids; reject impossible ids before
 // they reach hot API queries where PostgreSQL would raise int4 range errors.
 const MAX_POSTGRES_SERIAL_ID = 2147483647;
@@ -395,31 +389,6 @@ function toRequiredNullablePositiveAggregateNumber(value, errorMessage) {
 
 function getDueCardPredicate(tableAlias = 'c') {
   return `(${tableAlias}.next_review IS NULL OR ${tableAlias}.next_review <= NOW())`;
-}
-
-function validateCardContent(value, fieldName) {
-  if (typeof value !== 'string') {
-    return { ok: false, error: `Invalid ${fieldName}: must be a non-empty string` };
-  }
-
-  const trimmed = value.trim();
-  if (trimmed.length === 0) {
-    return { ok: false, error: `Invalid ${fieldName}: must be a non-empty string` };
-  }
-
-  if (value.includes('\u0000')) {
-    return { ok: false, error: `Invalid ${fieldName}: cannot contain null bytes` };
-  }
-
-  if (UNSAFE_CARD_CONTENT_FORMATTING_CHARACTER_PATTERN.test(value)) {
-    return { ok: false, error: `Invalid ${fieldName}: cannot contain invisible formatting characters` };
-  }
-
-  if (trimmed.length > MAX_CARD_CONTENT_LENGTH) {
-    return { ok: false, error: `Invalid ${fieldName}: must be ${MAX_CARD_CONTENT_LENGTH} characters or fewer` };
-  }
-
-  return { ok: true, value: trimmed };
 }
 
 function assertObjectHasOwnFields(row, fields, errorMessage) {

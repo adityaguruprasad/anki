@@ -1,3 +1,4 @@
+const { isValidCardContent } = require('./cardContentValidation');
 const MALFORMED_DECK_CARD_MUTATION_PAYLOAD_ERROR = 'Malformed deck-card mutation payload';
 const { MAX_INTERVAL_DAYS, MIN_EASE_FACTOR } = require('./spacedRepetition');
 const {
@@ -25,10 +26,6 @@ function hasSameDeckId(leftId, rightId) {
   const normalizedRightId = normalizeRouteSafeId(rightId);
 
   return normalizedLeftId !== null && normalizedLeftId === normalizedRightId;
-}
-
-function isNonBlankCardContent(value) {
-  return typeof value === 'string' && value.trim().length > 0;
 }
 
 function hasOwn(value, key) {
@@ -73,8 +70,8 @@ function hasDeckCardMutationPayload(payload, options = {}) {
   return (
     isObjectRecord(payload)
     && hasUsableCardId(payload.id)
-    && isNonBlankCardContent(payload.front_content)
-    && isNonBlankCardContent(payload.back_content)
+    && isValidCardContent(payload.front_content)
+    && isValidCardContent(payload.back_content)
     && hasValidMutationNextReview(payload)
     && hasValidMutationSchedulingMetadata(payload, options)
     && (!hasExpectedId || (hasUsableCardId(expectedId) && hasSameCardId(payload.id, expectedId)))

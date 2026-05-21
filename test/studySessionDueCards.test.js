@@ -7,6 +7,7 @@ const {
   hasStudySessionDueCardRowPayload,
   selectValidatedStudySessionDueCard,
 } = require('../studySessionDueCards');
+const { MAX_CARD_CONTENT_LENGTH } = require('../cardContentValidation');
 const { MAX_POSTGRES_SERIAL_ID } = require('../cardIdentifier');
 
 test('selectValidatedStudySessionDueCard keeps empty arrays on the no-due path', () => {
@@ -137,6 +138,23 @@ test('selectValidatedStudySessionDueCard rejects blank or missing content', () =
       () => selectValidatedStudySessionDueCard([card]),
       new RegExp(MALFORMED_DUE_CARD_PAYLOAD_ERROR),
     );
+  });
+});
+
+test('selectValidatedStudySessionDueCard rejects content outside the shared safe-text contract', () => {
+  [
+    { id: 1, front_content: 'Front\u0000', back_content: 'Back' },
+    { id: 1, front_content: 'Front', back_content: 'Back\u0000' },
+    { id: 1, front_content: 'Question\u202E1', back_content: 'Answer' },
+    { id: 1, front_content: 'Question', back_content: 'Answer\u200B1' },
+    { id: 1, front_content: 'x'.repeat(MAX_CARD_CONTENT_LENGTH + 1), back_content: 'Back' },
+    { id: 1, front_content: 'Front', back_content: 'x'.repeat(MAX_CARD_CONTENT_LENGTH + 1) },
+  ].forEach((card) => {
+    assert.throws(
+      () => selectValidatedStudySessionDueCard([card]),
+      new RegExp(MALFORMED_DUE_CARD_PAYLOAD_ERROR),
+    );
+    assert.equal(hasStudySessionDueCardRowPayload(card), false);
   });
 });
 
