@@ -334,6 +334,28 @@ function assertBrowseCursorPredicateSql(sql, timestampPlaceholder = '$3', idPlac
   );
 }
 
+function assertBrowseSearchPredicateSql(sql, searchPlaceholder = '$3') {
+  const joinMatch = /\bLEFT\s+JOIN\s+cards\s+c\s+ON\b/i.exec(sql);
+  const whereMatch = /\bWHERE\s+d\.id\s+=\s+\$1\s+AND\s+d\.user_id\s+=\s+\$2\b/i.exec(sql);
+  assert.ok(joinMatch, 'expected browse SQL to left join cards');
+  assert.ok(whereMatch, 'expected browse SQL to scope the deck owner in WHERE');
+  assert.ok(joinMatch.index < whereMatch.index, 'expected browse card join before deck-owner WHERE');
+
+  const joinClause = sql.slice(joinMatch.index, whereMatch.index);
+  const whereAndOrderClause = sql.slice(whereMatch.index);
+  const escapedPlaceholder = escapeRegExp(searchPlaceholder);
+  const searchPredicatePattern = new RegExp(
+    [
+      `POSITION\\(LOWER\\(${escapedPlaceholder}\\) IN LOWER\\(c\\.front_content\\)\\) > 0`,
+      `OR POSITION\\(LOWER\\(${escapedPlaceholder}\\) IN LOWER\\(c\\.back_content\\)\\) > 0`,
+    ].join('\\s+'),
+    'i'
+  );
+
+  assert.match(joinClause, searchPredicatePattern);
+  assert.doesNotMatch(whereAndOrderClause, /POSITION\(LOWER\(/i);
+}
+
 function assertDeleteDeckAtomicSql(sql) {
   assert.match(sql, /WITH\s+target\s+AS\s*\(/i);
   assert.match(sql, /SELECT\s+id\s+FROM\s+decks/i);
@@ -1555,6 +1577,24 @@ test('GET /api/decks/:deckId/cards returns 404 for missing or unowned deck', asy
   assert.deepEqual(db.calls[0].params, [42, 1, 51]);
 });
 
+test('GET /api/decks/:deckId/cards returns 404 for missing or unowned deck with q', async () => {
+  const db = createDb([{ rowCount: 0, rows: [] }]);
+  const req = {
+    params: { deckId: '42' },
+    query: { q: 'absent' },
+    user: { userId: 1 },
+  };
+  const res = createRes();
+
+  await getCardsByDeck(req, res, db);
+
+  assert.equal(res.statusCode, 404);
+  assert.deepEqual(res.body, { error: 'Deck not found for user' });
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [42, 1, 'absent', 51]);
+  assertBrowseSearchPredicateSql(db.calls[0].sql);
+});
+
 test('GET /api/decks/:deckId/cards fails closed when the list query result shape is malformed', async (t) => {
   const validRow = {
     ...createCardReadRow({
@@ -2170,10 +2210,7 @@ test('GET /api/decks/:deckId/cards filters q against front and back content with
   assert.deepEqual(res.body, { cards: [card], nextCursor: null });
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, [42, 1, 'Mito', 51]);
-  assert.match(
-    db.calls[0].sql,
-    /POSITION\(LOWER\(\$3\) IN LOWER\(c\.front_content\)\) > 0\s+OR POSITION\(LOWER\(\$3\) IN LOWER\(c\.back_content\)\) > 0/i
-  );
+  assertBrowseSearchPredicateSql(db.calls[0].sql);
   assert.match(db.calls[0].sql, /ORDER BY c\.created_at DESC,\s*c\.id DESC\s+LIMIT \$4/);
   assert.doesNotMatch(db.calls[0].sql, /Mito/);
 });
@@ -2198,6 +2235,7 @@ test('GET /api/decks/:deckId/cards returns empty page for owned deck with no q m
   assert.deepEqual(res.body, { cards: [], nextCursor: null });
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, [42, 1, 'absent', 51]);
+  assertBrowseSearchPredicateSql(db.calls[0].sql);
 });
 
 test('GET /api/decks/:deckId/cards returns 400 for invalid cursor and skips db query', async () => {

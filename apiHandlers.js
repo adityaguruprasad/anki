@@ -1311,6 +1311,9 @@ async function getCardsByDeck(req, res, db) {
     params.push(requestedRowLimit);
     const limitPlaceholder = `$${params.length}`;
 
+    // Keep both cursor and search filters in the LEFT JOIN below. Moving them
+    // to WHERE would null-drop the LEFT JOIN sentinel row and cause spurious
+    // 404s for owned decks whose cards are filtered out.
     const result = await db.query(
       `SELECT ${CARD_READ_SELECT_LIST},
               to_char(c.created_at, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "__cursor_created_at",
