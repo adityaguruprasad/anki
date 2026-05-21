@@ -1,4 +1,4 @@
-const { MAX_CARD_CONTENT_LENGTH } = require('./cardContentValidation');
+const { MAX_CARD_CONTENT_LENGTH, validateCardContent } = require('./cardContentValidation');
 const { parseDeckCardMutationResponsePayload } = require('./deckCardMutationResponse');
 
 const MAX_CARD_CONTENT_LENGTH_LABEL = MAX_CARD_CONTENT_LENGTH.toLocaleString('en-US');
@@ -7,6 +7,8 @@ const CARD_CREATE_MESSAGES = Object.freeze({
   missingContent: 'Front and back content are required.',
   frontTooLong: `Front content must be ${MAX_CARD_CONTENT_LENGTH_LABEL} characters or fewer.`,
   backTooLong: `Back content must be ${MAX_CARD_CONTENT_LENGTH_LABEL} characters or fewer.`,
+  frontUnsafe: 'Front content cannot contain null bytes or invisible formatting characters.',
+  backUnsafe: 'Back content cannot contain null bytes or invisible formatting characters.',
   createFailed: 'Unable to add card.',
   networkFailed: 'Network error. Please try again.',
   success: 'Card added.',
@@ -24,6 +26,52 @@ function normalizeCardContent(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function validateCardSubmissionContent({ frontContent, backContent } = {}) {
+  const trimmedFrontContent = normalizeCardContent(frontContent);
+  const trimmedBackContent = normalizeCardContent(backContent);
+
+  if (!trimmedFrontContent || !trimmedBackContent) {
+    return {
+      ok: false,
+      error: CARD_CREATE_MESSAGES.missingContent,
+    };
+  }
+
+  if (trimmedFrontContent.length > MAX_CARD_CONTENT_LENGTH) {
+    return {
+      ok: false,
+      error: CARD_CREATE_MESSAGES.frontTooLong,
+    };
+  }
+
+  if (trimmedBackContent.length > MAX_CARD_CONTENT_LENGTH) {
+    return {
+      ok: false,
+      error: CARD_CREATE_MESSAGES.backTooLong,
+    };
+  }
+
+  if (!validateCardContent(trimmedFrontContent, 'frontContent').ok) {
+    return {
+      ok: false,
+      error: CARD_CREATE_MESSAGES.frontUnsafe,
+    };
+  }
+
+  if (!validateCardContent(trimmedBackContent, 'backContent').ok) {
+    return {
+      ok: false,
+      error: CARD_CREATE_MESSAGES.backUnsafe,
+    };
+  }
+
+  return {
+    ok: true,
+    frontContent: trimmedFrontContent,
+    backContent: trimmedBackContent,
+  };
+}
+
 /**
  * Callers must return on `blocked` before showing validation errors.
  */
@@ -32,38 +80,20 @@ function createCardSubmission({ frontContent, backContent, isSubmitting }) {
     return { ok: false, blocked: true };
   }
 
-  const trimmedFrontContent = normalizeCardContent(frontContent);
-  const trimmedBackContent = normalizeCardContent(backContent);
-
-  if (!trimmedFrontContent || !trimmedBackContent) {
+  const validation = validateCardSubmissionContent({ frontContent, backContent });
+  if (!validation.ok) {
     return {
       ok: false,
       blocked: false,
-      error: CARD_CREATE_MESSAGES.missingContent,
-    };
-  }
-
-  if (trimmedFrontContent.length > MAX_CARD_CONTENT_LENGTH) {
-    return {
-      ok: false,
-      blocked: false,
-      error: CARD_CREATE_MESSAGES.frontTooLong,
-    };
-  }
-
-  if (trimmedBackContent.length > MAX_CARD_CONTENT_LENGTH) {
-    return {
-      ok: false,
-      blocked: false,
-      error: CARD_CREATE_MESSAGES.backTooLong,
+      error: validation.error,
     };
   }
 
   return {
     ok: true,
     blocked: false,
-    frontContent: trimmedFrontContent,
-    backContent: trimmedBackContent,
+    frontContent: validation.frontContent,
+    backContent: validation.backContent,
   };
 }
 
@@ -151,4 +181,5 @@ module.exports = {
   getCardCreateResponseCompletion,
   getCreateCardFailureMessage,
   shouldRunCardCreateFinallyCleanup,
+  validateCardSubmissionContent,
 };

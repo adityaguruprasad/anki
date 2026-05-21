@@ -97,6 +97,7 @@ const {
   getCardCreateNetworkFailureCompletion,
   getCardCreateResponseCompletion,
   shouldRunCardCreateFinallyCleanup,
+  validateCardSubmissionContent,
 } = deckCardCreateState;
 const {
   beginDeckManagementMutation,
@@ -1117,17 +1118,23 @@ const DeckManagement = ({ env, onAuthExpired }) => {
     event.preventDefault();
 
     const currentForm = cardEditForms[card.id] || {};
-    const frontContent = currentForm.frontContent ?? card.front_content ?? '';
-    const backContent = currentForm.backContent ?? card.back_content ?? '';
+    const currentFrontContent = currentForm.frontContent ?? card.front_content ?? '';
+    const currentBackContent = currentForm.backContent ?? card.back_content ?? '';
+    const contentValidation = validateCardSubmissionContent({
+      frontContent: currentFrontContent,
+      backContent: currentBackContent,
+    });
 
-    if (!frontContent.trim() || !backContent.trim()) {
+    if (!contentValidation.ok) {
       setCardActionState(card.id, {
         saving: false,
-        error: 'Front and back content are required.',
+        error: contentValidation.error,
         success: '',
       });
       return;
     }
+
+    const { frontContent, backContent } = contentValidation;
 
     if (!beginCardSave(cardActionInFlightRef.current, card.id)) {
       return;

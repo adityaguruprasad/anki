@@ -94,6 +94,34 @@ test('deleteCard requires a card object with an id before removal work', () => {
   );
 });
 
+test('saveCard validates shared card content rules before starting a save request', () => {
+  const body = extractConstFunctionBody('saveCard');
+  const validationIndex = body.indexOf('const contentValidation = validateCardSubmissionContent({');
+  const validationFailureIndex = body.indexOf('if (!contentValidation.ok) {', validationIndex);
+  const validationErrorIndex = body.indexOf('error: contentValidation.error,', validationFailureIndex);
+  const normalizedContentIndex = body.indexOf('const { frontContent, backContent } = contentValidation;', validationIndex);
+  const inFlightIndex = body.indexOf('if (!beginCardSave(cardActionInFlightRef.current, card.id)) {');
+  const requestBodyIndex = body.indexOf('frontContent,', inFlightIndex);
+  const fetchIndex = body.indexOf('const response = await fetch(', inFlightIndex);
+
+  assert.match(
+    deckSource,
+    /const \{[\s\S]*validateCardSubmissionContent,[\s\S]*\} = deckCardCreateState;/,
+    'Expected DeckManagement to import shared card content submission validation',
+  );
+  assert.notEqual(validationIndex, -1, 'Expected saveCard to validate editable card text');
+  assert.notEqual(validationFailureIndex, -1, 'Expected saveCard to handle validation failures locally');
+  assert.notEqual(validationErrorIndex, -1, 'Expected saveCard to show the shared validation error');
+  assert.notEqual(normalizedContentIndex, -1, 'Expected saveCard to use normalized validated content');
+  assert.notEqual(inFlightIndex, -1, 'Expected saveCard to keep its in-flight guard');
+  assert.notEqual(fetchIndex, -1, 'Expected saveCard to keep the save request');
+  assert.notEqual(requestBodyIndex, -1, 'Expected saveCard to submit validated content');
+  assert.ok(validationIndex < inFlightIndex, 'Expected unsafe content to return before save in-flight state starts');
+  assert.ok(validationFailureIndex < inFlightIndex, 'Expected validation failures before save in-flight state starts');
+  assert.ok(normalizedContentIndex < fetchIndex, 'Expected validated content before the save request body is built');
+  assert.ok(fetchIndex < requestBodyIndex, 'Expected the save request body to include validated content');
+});
+
 test('clearDeckCardSearch reloads first page without a search filter through existing guards', () => {
   const body = extractConstFunctionBody('clearDeckCardSearch');
 

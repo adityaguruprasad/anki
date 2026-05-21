@@ -10,6 +10,7 @@ const {
   getCardCreateResponseCompletion,
   getCreateCardFailureMessage,
   shouldRunCardCreateFinallyCleanup,
+  validateCardSubmissionContent,
 } = require('../deckCardCreateState');
 
 const VALID_NEXT_REVIEW = '2026-05-10T12:00:00.000Z';
@@ -111,6 +112,76 @@ test('createCardSubmission rejects back content over 10,000 trimmed characters',
       ok: false,
       blocked: false,
       error: CARD_CREATE_MESSAGES.backTooLong,
+    },
+  );
+});
+
+test('validateCardSubmissionContent rejects unsafe text before card mutations submit', () => {
+  [
+    [
+      { frontContent: 'Front\u0000', backContent: 'Back' },
+      CARD_CREATE_MESSAGES.frontUnsafe,
+    ],
+    [
+      { frontContent: 'Question\u202E1', backContent: 'Back' },
+      CARD_CREATE_MESSAGES.frontUnsafe,
+    ],
+    [
+      { frontContent: 'Front', backContent: 'Back\u0000' },
+      CARD_CREATE_MESSAGES.backUnsafe,
+    ],
+    [
+      { frontContent: 'Front', backContent: 'Answer\u200B1' },
+      CARD_CREATE_MESSAGES.backUnsafe,
+    ],
+  ].forEach(([input, error]) => {
+    assert.deepEqual(validateCardSubmissionContent(input), {
+      ok: false,
+      error,
+    });
+  });
+});
+
+test('createCardSubmission rejects unsafe content without starting submission', () => {
+  assert.deepEqual(
+    createCardSubmission({
+      frontContent: 'Front\u2066',
+      backContent: 'Back',
+      isSubmitting: false,
+    }),
+    {
+      ok: false,
+      blocked: false,
+      error: CARD_CREATE_MESSAGES.frontUnsafe,
+    },
+  );
+});
+
+test('createCardSubmission blocks unsafe content while a submission is in flight', () => {
+  assert.deepEqual(
+    createCardSubmission({
+      frontContent: 'Front\u2066',
+      backContent: 'Back\u0000',
+      isSubmitting: true,
+    }),
+    {
+      ok: false,
+      blocked: true,
+    },
+  );
+});
+
+test('validateCardSubmissionContent keeps allowed joiners in study text', () => {
+  // ZWNJ/ZWJ can carry meaning in human-authored study text, so they are preserved.
+  assert.deepEqual(
+    validateCardSubmissionContent({
+      frontContent: 'Biology\u200C101',
+      backContent: 'Answer\u200D1',
+    }),
+    {
+      ok: true,
+      frontContent: 'Biology\u200C101',
+      backContent: 'Answer\u200D1',
     },
   );
 });
