@@ -99,6 +99,91 @@ test('rejectJsonArrayBody rejects top-level JSON array bodies before route handl
   assert.doesNotMatch(JSON.stringify(res.body), /secret|deckId|password/i);
 });
 
+test('rejectJsonArrayBody strips inherited fields from parsed object bodies', () => {
+  const inheritedFields = {
+    deckId: 42,
+    password: 'inherited-secret',
+  };
+  const body = Object.create(inheritedFields);
+  body.frontContent = 'Front';
+  body.backContent = 'Back';
+  const req = { body };
+  const res = createRes();
+  let nextCalls = 0;
+
+  rejectJsonArrayBody(req, res, () => {
+    nextCalls += 1;
+  });
+
+  assert.equal(nextCalls, 1);
+  assert.equal(res.statusCode, 200);
+  assert.equal(Object.getPrototypeOf(req.body), null);
+  assert.deepEqual(Object.keys(req.body), ['frontContent', 'backContent']);
+  assert.equal(req.body.frontContent, 'Front');
+  assert.equal(req.body.backContent, 'Back');
+  assert.equal(req.body.deckId, undefined);
+  assert.equal(req.body.password, undefined);
+});
+
+test('rejectJsonArrayBody hides Object.prototype pollution from parsed object bodies', () => {
+  const originalDeckId = Object.getOwnPropertyDescriptor(Object.prototype, 'deckId');
+  const originalPassword = Object.getOwnPropertyDescriptor(Object.prototype, 'password');
+
+  try {
+    Object.defineProperty(Object.prototype, 'deckId', {
+      configurable: true,
+      enumerable: true,
+      value: 42,
+      writable: true,
+    });
+    Object.defineProperty(Object.prototype, 'password', {
+      configurable: true,
+      enumerable: true,
+      value: 'prototype-secret',
+      writable: true,
+    });
+
+    const body = {
+      frontContent: 'Front',
+      backContent: 'Back',
+    };
+    const req = { body };
+    const res = createRes();
+    let nextCalls = 0;
+
+    assert.equal(body.deckId, 42);
+    assert.equal(body.password, 'prototype-secret');
+
+    rejectJsonArrayBody(req, res, () => {
+      nextCalls += 1;
+    });
+
+    assert.equal(nextCalls, 1);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body, null);
+    assert.equal(Object.getPrototypeOf(req.body), null);
+    assert.deepEqual(Object.keys(req.body), ['frontContent', 'backContent']);
+    assert.equal(req.body.frontContent, 'Front');
+    assert.equal(req.body.backContent, 'Back');
+    assert.equal(Object.hasOwn(req.body, 'deckId'), false);
+    assert.equal(Object.hasOwn(req.body, 'password'), false);
+    assert.equal(req.body.deckId, undefined);
+    assert.equal(req.body.password, undefined);
+  } finally {
+    if (originalDeckId) {
+      Object.defineProperty(Object.prototype, 'deckId', originalDeckId);
+    } else {
+      delete Object.prototype.deckId;
+    }
+
+    if (originalPassword) {
+      Object.defineProperty(Object.prototype, 'password', originalPassword);
+    } else {
+      delete Object.prototype.password;
+    }
+  }
+});
+
 test('rejectJsonArrayBody passes through parsed object and absent body requests', () => {
   const cases = [
     ['parsed object body', { name: 'Biology' }],

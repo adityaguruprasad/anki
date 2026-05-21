@@ -56,8 +56,16 @@ function handleJsonBodyError(error, req, res, next) {
 function rejectJsonArrayBody(req, res, next) {
   // Express' JSON parser keeps strict parsing enabled by default, so primitive
   // JSON bodies are rejected as malformed before this parsed-body shape guard.
-  if (Array.isArray(req?.body)) {
+  const body = req?.body;
+
+  if (Array.isArray(body)) {
     return res.status(400).json({ error: JSON_REQUEST_BODY_ARRAY_ERROR });
+  }
+
+  if (body !== null && typeof body === 'object') {
+    // Shallow top-level defense against Object.prototype pollution leaking
+    // inherited fields into route handlers.
+    Object.setPrototypeOf(body, null);
   }
 
   return next();
