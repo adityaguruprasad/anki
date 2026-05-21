@@ -3062,7 +3062,7 @@ test('POST /api/cards creates a card in an owned deck with one atomic insert-sel
   const db = createDb([
     {
       rowCount: 1,
-      rows: [{ ...createdCard, __owned_user_id: 1, private_note: 'do not expose' }],
+      rows: [{ ...createdCard, __owned_user_id: 1, __owned_deck_id: 42, private_note: 'do not expose' }],
     },
   ]);
   const req = {
@@ -3080,6 +3080,7 @@ test('POST /api/cards creates a card in an owned deck with one atomic insert-sel
   assert.equal(res.statusCode, 201);
   assert.deepEqual(res.body, createdCard);
   assert.equal(Object.hasOwn(res.body, '__owned_user_id'), false);
+  assert.equal(Object.hasOwn(res.body, '__owned_deck_id'), false);
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, [42, 1, 'Capital of France?', 'Paris']);
   assert.match(db.calls[0].sql, /INSERT\s+INTO\s+cards\s*\(/i);
@@ -3090,6 +3091,7 @@ test('POST /api/cards creates a card in an owned deck with one atomic insert-sel
   assert.match(db.calls[0].sql, /WITH\s+inserted\s+AS\s*\(/i);
   assert.match(db.calls[0].sql, /JOIN\s+decks\s+d\s+ON\s+d\.id\s+=\s+i\.deck_id/i);
   assert.match(db.calls[0].sql, /d\.user_id\s+AS\s+"__owned_user_id"/i);
+  assert.match(db.calls[0].sql, /d\.id\s+AS\s+"__owned_deck_id"/i);
   assert.match(
     db.calls[0].sql,
     /RETURNING\s+id,\s+deck_id,\s+front_content,\s+back_content,\s+next_review,\s+interval,\s+ease_factor,\s+review_count/i
@@ -3111,6 +3113,7 @@ test('POST /api/cards returns 500 when the inserted row is missing mutation resp
         interval: 1,
         review_count: 0,
         __owned_user_id: 1,
+        __owned_deck_id: 42,
       }],
     },
   ]);
@@ -3149,6 +3152,7 @@ test('POST /api/cards fails closed when the inserted row violates card mutation 
     ease_factor: 2.5,
     review_count: 0,
     __owned_user_id: 1,
+    __owned_deck_id: 42,
   };
   const malformedRows = [
     { ...validInsertedCard, id: 'card-77' },
@@ -3166,6 +3170,50 @@ test('POST /api/cards fails closed when the inserted row violates card mutation 
     { ...validInsertedCard, ease_factor: Number.NaN },
     { ...validInsertedCard, review_count: -1 },
     { ...validInsertedCard, review_count: 1.5 },
+  ];
+  t.mock.method(console, 'error', () => {});
+
+  for (const row of malformedRows) {
+    const db = createDb([{ rowCount: 1, rows: [row] }]);
+    const req = {
+      body: {
+        deckId: '42',
+        frontContent: 'Capital of France?',
+        backContent: 'Paris',
+      },
+      user: { userId: 1 },
+    };
+    const res = createRes();
+
+    await createCard(req, res, db);
+
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.body, { error: 'Internal server error' });
+    assert.equal(db.calls.length, 1);
+    assert.deepEqual(db.calls[0].params, [42, 1, 'Capital of France?', 'Paris']);
+  }
+});
+
+test('POST /api/cards fails closed when the inserted row deck anchor is missing or mismatched', async (t) => {
+  const validInsertedCard = {
+    id: 77,
+    deck_id: 42,
+    front_content: 'Capital of France?',
+    back_content: 'Paris',
+    next_review: '2026-05-08T12:00:00.000Z',
+    interval: 1,
+    ease_factor: 2.5,
+    review_count: 0,
+    __owned_user_id: 1,
+    __owned_deck_id: 42,
+  };
+  const rowWithoutDeckAnchor = { ...validInsertedCard };
+  delete rowWithoutDeckAnchor.__owned_deck_id;
+  const malformedRows = [
+    rowWithoutDeckAnchor,
+    { ...validInsertedCard, __owned_deck_id: null },
+    { ...validInsertedCard, __owned_deck_id: 'deck-42' },
+    { ...validInsertedCard, __owned_deck_id: 43 },
   ];
   t.mock.method(console, 'error', () => {});
 
@@ -3914,6 +3962,7 @@ test('card mutation endpoints fail closed when returned ownership proof is missi
     ease_factor: 2.5,
     review_count: 0,
     __owned_user_id: 1,
+    __owned_deck_id: 42,
   };
   const deletedCard = {
     id: 77,
@@ -4015,6 +4064,7 @@ test('card mutation endpoints fail closed when returned-row cardinality is malfo
     ease_factor: 2.5,
     review_count: 0,
     __owned_user_id: 1,
+    __owned_deck_id: 42,
   };
   const deletedCard = {
     id: 77,

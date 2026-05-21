@@ -1415,7 +1415,8 @@ async function createCard(req, res, db) {
               i.interval,
               i.ease_factor,
               i.review_count,
-              d.user_id AS "__owned_user_id"
+              d.user_id AS "__owned_user_id",
+              d.id AS "__owned_deck_id"
        FROM inserted i
        JOIN decks d ON d.id = i.deck_id`,
       [
@@ -1434,6 +1435,7 @@ async function createCard(req, res, db) {
     assertCardMutationResult(createdCard, {
       expectedDeckId: deckIdValidation.value,
       expectedUserId: userId,
+      requireDeckOwnershipProof: true,
     });
     return res.status(201).json(toCardMutationPayload(createdCard));
   } catch (err) {
