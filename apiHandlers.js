@@ -22,6 +22,8 @@ const MAX_POSTGRES_SERIAL_ID_TEXT = String(MAX_POSTGRES_SERIAL_ID);
 const MAX_SAFE_INTEGER_TEXT = String(Number.MAX_SAFE_INTEGER);
 const MAX_SAFE_INTEGER_BIGINT = BigInt(Number.MAX_SAFE_INTEGER);
 const AGGREGATE_DECIMAL_TEXT_PATTERN = /^\d+(?:\.\d+)?$/;
+const CARD_OWNERSHIP_PROOF_FIELD = '__owned_user_id';
+const CARD_DECK_OWNERSHIP_PROOF_FIELD = '__owned_deck_id';
 const CARD_READ_FIELDS = Object.freeze([
   'id',
   'deck_id',
@@ -36,6 +38,7 @@ const CARD_READ_FIELDS = Object.freeze([
 ]);
 const EMPTY_CARD_LIST_ROW_ALLOWED_FIELDS = Object.freeze([
   ...CARD_READ_FIELDS,
+  CARD_OWNERSHIP_PROOF_FIELD,
   '__owned_deck_id',
   '__cursor_created_at',
 ]);
@@ -77,8 +80,6 @@ const DELETE_CARD_RESPONSE_CARD_FIELDS = Object.freeze([
   'back_content',
   'next_review',
 ]);
-const CARD_OWNERSHIP_PROOF_FIELD = '__owned_user_id';
-const CARD_DECK_OWNERSHIP_PROOF_FIELD = '__owned_deck_id';
 const STATS_RESPONSE_FIELDS = Object.freeze([
   'totalCards',
   'totalDecks',
@@ -731,6 +732,9 @@ function assertCardBrowseCursorResult(row) {
 
 function assertCardListRowAnchoredToDeck(row, deckId, options = {}) {
   assertObjectHasOwnFields(row, ['id', '__owned_deck_id'], INVALID_CARD_READ_RESULT_ERROR);
+  if (options.expectedUserId !== undefined) {
+    assertExpectedCardOwner(row, options.expectedUserId, INVALID_CARD_READ_RESULT_ERROR);
+  }
 
   const ownedDeckIdValidation = validatePositiveIntegerIdentifier(row.__owned_deck_id, 'deckId');
   if (!ownedDeckIdValidation.ok || ownedDeckIdValidation.value !== deckId) {
@@ -749,8 +753,9 @@ function assertCardListRowAnchoredToDeck(row, deckId, options = {}) {
   }
 }
 
-function assertDueCardListRow(row, deckId) {
+function assertDueCardListRow(row, deckId, options = {}) {
   assertCardListRowAnchoredToDeck(row, deckId, {
+    expectedUserId: options.expectedUserId,
     allowedEmptySidecarFields: ['__is_due'],
   });
   assertObjectHasOwnFields(row, ['__is_due'], INVALID_CARD_READ_RESULT_ERROR);
@@ -1238,6 +1243,7 @@ async function getDueCardsByDeck(req, res, db) {
     const result = await db.query(
       `SELECT ${CARD_READ_SELECT_LIST},
               d.id AS "__owned_deck_id",
+              d.user_id AS "__owned_user_id",
               -- Keep this proof expression coupled to the LEFT JOIN due predicate below.
               CASE
                 WHEN c.id IS NULL THEN NULL
@@ -1264,7 +1270,7 @@ async function getDueCardsByDeck(req, res, db) {
     }
 
     for (const row of rows) {
-      assertDueCardListRow(row, deckId);
+      assertDueCardListRow(row, deckId, { expectedUserId: userId });
     }
 
     const dueCards = rows
@@ -1339,7 +1345,8 @@ async function getCardsByDeck(req, res, db) {
     const result = await db.query(
       `SELECT ${CARD_READ_SELECT_LIST},
               to_char(c.created_at, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "__cursor_created_at",
-              d.id AS "__owned_deck_id"
+              d.id AS "__owned_deck_id",
+              d.user_id AS "__owned_user_id"
        FROM decks d
        LEFT JOIN cards c
          ON c.deck_id = d.id${cursorClause}${searchClause}
@@ -1360,7 +1367,7 @@ async function getCardsByDeck(req, res, db) {
     }
 
     for (const row of rows) {
-      assertCardListRowAnchoredToDeck(row, deckId);
+      assertCardListRowAnchoredToDeck(row, deckId, { expectedUserId: userId });
     }
 
     const cardRows = rows.filter((row) => row.id !== null);

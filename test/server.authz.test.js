@@ -145,6 +145,7 @@ function createEmptyCardReadSentinel(overrides = {}) {
     review_count: null,
     ease_factor: null,
     __owned_deck_id: 42,
+    __owned_user_id: 1,
     ...overrides,
   };
 }
@@ -153,6 +154,7 @@ function createDueCardQueryRow(card, overrides = {}) {
   return {
     ...card,
     __owned_deck_id: 42,
+    __owned_user_id: 1,
     __is_due: true,
     ...overrides,
   };
@@ -1565,6 +1567,7 @@ test('GET /api/decks/:deckId/cards fails closed when the list query result shape
     }),
     __cursor_created_at: '2026-05-08T13:00:00.000000Z',
     __owned_deck_id: 42,
+    __owned_user_id: 1,
   };
   const malformedResults = [
     null,
@@ -1626,6 +1629,7 @@ test('GET /api/decks/:deckId/cards fails closed when the browse query exceeds th
         ...card,
         __cursor_created_at: card.created_at.replace('.000Z', '.000000Z'),
         __owned_deck_id: 42,
+        __owned_user_id: 1,
       })),
     },
   ]);
@@ -1694,7 +1698,7 @@ test('GET /api/decks/:deckId/cards fails closed when empty-card sentinels includ
     rows: [
       createEmptyCardReadSentinel({
         __cursor_created_at: null,
-        __owned_user_id: 1,
+        private_note: 'do not expose',
       }),
     ],
   }]);
@@ -1722,8 +1726,46 @@ test('GET /api/decks/:deckId/cards fails closed when rows are not anchored to th
   const malformedRows = [
     { id: null },
     { id: null, __owned_deck_id: 41 },
-    { ...card, deck_id: 41, __cursor_created_at: '2026-05-08T13:00:00.000000Z', __owned_deck_id: 42 },
-    { ...card, __cursor_created_at: '2026-05-08T13:00:00.000000Z', __owned_deck_id: 41 },
+    { ...card, deck_id: 41, __cursor_created_at: '2026-05-08T13:00:00.000000Z', __owned_deck_id: 42, __owned_user_id: 1 },
+    { ...card, __cursor_created_at: '2026-05-08T13:00:00.000000Z', __owned_deck_id: 41, __owned_user_id: 1 },
+  ];
+  t.mock.method(console, 'error', () => {});
+
+  for (const row of malformedRows) {
+    const db = createDb([{ rowCount: 1, rows: [row] }]);
+    const req = { params: { deckId: '42' }, user: { userId: 1 } };
+    const res = createRes();
+
+    await getCardsByDeck(req, res, db);
+
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.body, { error: 'Internal server error' });
+    assert.equal(db.calls.length, 1);
+    assert.deepEqual(db.calls[0].params, [42, 1, 51]);
+  }
+});
+
+test('GET /api/decks/:deckId/cards fails closed when rows lack authenticated-user ownership proof', async (t) => {
+  const card = createCardReadRow({
+    id: 3,
+    deck_id: 42,
+    front_content: 'Future card',
+    back_content: 'Answer',
+    created_at: '2026-05-08T13:00:00.000Z',
+    next_review: '2026-05-20T12:00:00.000Z',
+  });
+  const validRow = {
+    ...card,
+    __cursor_created_at: '2026-05-08T13:00:00.000000Z',
+    __owned_deck_id: 42,
+    __owned_user_id: 1,
+  };
+  const rowMissingOwnerProof = { ...validRow };
+  delete rowMissingOwnerProof.__owned_user_id;
+  const malformedRows = [
+    rowMissingOwnerProof,
+    { ...validRow, __owned_user_id: 2 },
+    createEmptyCardReadSentinel({ __cursor_created_at: null, __owned_user_id: 2 }),
   ];
   t.mock.method(console, 'error', () => {});
 
@@ -1768,6 +1810,7 @@ test('GET /api/decks/:deckId/cards returns default-limited owned deck cards newe
         private_note: 'do not expose',
         __cursor_created_at: card.created_at.replace('.000Z', '.000000Z'),
         __owned_deck_id: 42,
+        __owned_user_id: 1,
       })),
     },
   ]);
@@ -1779,6 +1822,7 @@ test('GET /api/decks/:deckId/cards returns default-limited owned deck cards newe
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, { cards, nextCursor: null });
   assert.equal(Object.hasOwn(res.body.cards[0], '__owned_deck_id'), false);
+  assert.equal(Object.hasOwn(res.body.cards[0], '__owned_user_id'), false);
   assert.equal(Object.hasOwn(res.body.cards[0], '__cursor_created_at'), false);
   assert.equal(Object.hasOwn(res.body.cards[0], 'private_note'), false);
   assert.equal(db.calls.length, 1);
@@ -1817,7 +1861,7 @@ test('GET /api/decks/:deckId/cards fails closed when a card row violates read re
     const db = createDb([
       {
         rowCount: 1,
-        rows: [{ ...row, __cursor_created_at: '2026-05-08T13:00:00.000000Z', __owned_deck_id: 42 }],
+        rows: [{ ...row, __cursor_created_at: '2026-05-08T13:00:00.000000Z', __owned_deck_id: 42, __owned_user_id: 1 }],
       },
     ]);
     const req = { params: { deckId: '42' }, user: { userId: 1 } };
@@ -1843,6 +1887,7 @@ test('GET /api/decks/:deckId/cards uses one user-scoped ordered browse query wit
   assert.deepEqual(db.calls[0].params, [42, 1, 51]);
   assertExplicitPublicCardReadSelect(db.calls[0].sql);
   assert.match(db.calls[0].sql, /to_char\(c\.created_at,\s*'YYYY-MM-DD"T"HH24:MI:SS\.US"Z"'\)\s+AS\s+"__cursor_created_at"/);
+  assert.match(db.calls[0].sql, /d\.user_id\s+AS\s+"__owned_user_id"/i);
   assert.match(db.calls[0].sql, /FROM decks d\s+LEFT JOIN cards c/i);
   assert.match(db.calls[0].sql, /ON c\.deck_id = d\.id/i);
   assert.match(db.calls[0].sql, /WHERE d\.id = \$1 AND d\.user_id = \$2/);
@@ -1874,8 +1919,8 @@ test('GET /api/decks/:deckId/cards returns next cursor only when limit plus one 
     {
       rowCount: 2,
       rows: [
-        { ...card, __cursor_created_at: '2026-05-08T13:00:00.123456Z', __owned_deck_id: 42 },
-        { ...extraCard, __cursor_created_at: '2026-05-08T12:00:00.000000Z', __owned_deck_id: 42 },
+        { ...card, __cursor_created_at: '2026-05-08T13:00:00.123456Z', __owned_deck_id: 42, __owned_user_id: 1 },
+        { ...extraCard, __cursor_created_at: '2026-05-08T12:00:00.000000Z', __owned_deck_id: 42, __owned_user_id: 1 },
       ],
     },
   ]);
@@ -1900,6 +1945,7 @@ test('GET /api/decks/:deckId/cards returns next cursor only when limit plus one 
   });
   assert.equal(Object.hasOwn(res.body.cards[0], '__cursor_created_at'), false);
   assert.equal(Object.hasOwn(res.body.cards[0], '__owned_deck_id'), false);
+  assert.equal(Object.hasOwn(res.body.cards[0], '__owned_user_id'), false);
   assert.deepEqual(db.calls[0].params, [42, 1, 2]);
   assert.match(db.calls[0].sql, /\bLIMIT \$3/);
   assert.doesNotMatch(db.calls[0].sql, /LIMIT\s+1/);
@@ -1923,11 +1969,12 @@ test('GET /api/decks/:deckId/cards fails closed when next cursor metadata is mal
     next_review: '2026-05-19T12:00:00.000Z',
     __cursor_created_at: '2026-05-08T12:00:00.000000Z',
     __owned_deck_id: 42,
+    __owned_user_id: 1,
   });
   const malformedPageRows = [
-    { ...baseCard, __owned_deck_id: 42 },
-    { ...baseCard, __cursor_created_at: 'not-a-date', __owned_deck_id: 42 },
-    { ...baseCard, id: 'card-3', __cursor_created_at: '2026-05-08T13:00:00.000000Z', __owned_deck_id: 42 },
+    { ...baseCard, __owned_deck_id: 42, __owned_user_id: 1 },
+    { ...baseCard, __cursor_created_at: 'not-a-date', __owned_deck_id: 42, __owned_user_id: 1 },
+    { ...baseCard, id: 'card-3', __cursor_created_at: '2026-05-08T13:00:00.000000Z', __owned_deck_id: 42, __owned_user_id: 1 },
   ];
   t.mock.method(console, 'error', () => {});
 
@@ -1966,7 +2013,7 @@ test('GET /api/decks/:deckId/cards omits next cursor when only limit rows are re
   const db = createDb([
     {
       rowCount: 1,
-      rows: [{ ...card, __cursor_created_at: '2026-05-08T13:00:00.123456Z', __owned_deck_id: 42 }],
+      rows: [{ ...card, __cursor_created_at: '2026-05-08T13:00:00.123456Z', __owned_deck_id: 42, __owned_user_id: 1 }],
     },
   ]);
   const req = {
@@ -2107,7 +2154,7 @@ test('GET /api/decks/:deckId/cards filters q against front and back content with
   const db = createDb([
     {
       rowCount: 1,
-      rows: [{ ...card, __cursor_created_at: '2026-05-08T13:00:00.000000Z', __owned_deck_id: 42 }],
+      rows: [{ ...card, __cursor_created_at: '2026-05-08T13:00:00.000000Z', __owned_deck_id: 42, __owned_user_id: 1 }],
     },
   ]);
   const req = {
@@ -2313,7 +2360,7 @@ test('GET /api/decks/:deckId/cards accepts nextCursor round-trip with both curso
   const db = createDb([
     {
       rowCount: 1,
-      rows: [{ ...card, __cursor_created_at: '2026-05-08T12:00:00.000000Z', __owned_deck_id: 42 }],
+      rows: [{ ...card, __cursor_created_at: '2026-05-08T12:00:00.000000Z', __owned_deck_id: 42, __owned_user_id: 1 }],
     },
   ]);
   const req = {
@@ -2392,7 +2439,7 @@ test('GET /api/decks/:deckId/cards applies keyset cursor with parameterized SQL'
   const db = createDb([
     {
       rowCount: 1,
-      rows: [{ ...card, __cursor_created_at: '2026-05-08T12:00:00.000000Z', __owned_deck_id: 42 }],
+      rows: [{ ...card, __cursor_created_at: '2026-05-08T12:00:00.000000Z', __owned_deck_id: 42, __owned_user_id: 1 }],
     },
   ]);
   const req = {
@@ -2438,7 +2485,7 @@ test('GET /api/decks/:deckId/cards compares offset cursor timestamps as UTC inst
   const db = createDb([
     {
       rowCount: 1,
-      rows: [{ ...card, __cursor_created_at: '2026-05-08T12:00:00.000000Z', __owned_deck_id: 42 }],
+      rows: [{ ...card, __cursor_created_at: '2026-05-08T12:00:00.000000Z', __owned_deck_id: 42, __owned_user_id: 1 }],
     },
   ]);
   const req = {
@@ -2481,7 +2528,7 @@ test('GET /api/decks/:deckId/cards applies q and cursor with round-trippable cur
   const db = createDb([
     {
       rowCount: 1,
-      rows: [{ ...card, __cursor_created_at: '2026-05-08T12:00:00.000000Z', __owned_deck_id: 42 }],
+      rows: [{ ...card, __cursor_created_at: '2026-05-08T12:00:00.000000Z', __owned_deck_id: 42, __owned_user_id: 1 }],
     },
   ]);
   const req = {
@@ -2526,7 +2573,7 @@ test('GET /api/decks/:deckId/cards accepts cursorCreatedAt and cursorId aliases'
   const db = createDb([
     {
       rowCount: 1,
-      rows: [{ ...card, __cursor_created_at: '2026-05-08T12:00:00.000000Z', __owned_deck_id: 42 }],
+      rows: [{ ...card, __cursor_created_at: '2026-05-08T12:00:00.000000Z', __owned_deck_id: 42, __owned_user_id: 1 }],
     },
   ]);
   const req = {
@@ -2723,6 +2770,7 @@ test('GET /api/cards/:deckId returns unscheduled and past-due cards with a param
         ...card,
         private_note: 'do not expose',
         __owned_deck_id: 42,
+        __owned_user_id: 1,
         __is_due: true,
       })),
     },
@@ -2737,12 +2785,14 @@ test('GET /api/cards/:deckId returns unscheduled and past-due cards with a param
   assert.deepEqual(res.body[0], unscheduledCard);
   assert.deepEqual(res.body[1], pastDueCard);
   assert.equal(Object.hasOwn(res.body[0], '__owned_deck_id'), false);
+  assert.equal(Object.hasOwn(res.body[0], '__owned_user_id'), false);
   assert.equal(Object.hasOwn(res.body[0], '__is_due'), false);
   assert.equal(Object.hasOwn(res.body[0], 'private_note'), false);
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, [42, 1, 100]);
   assertExplicitPublicCardReadSelect(db.calls[0].sql);
   assert.match(db.calls[0].sql, /LEFT JOIN cards c/);
+  assert.match(db.calls[0].sql, /d\.user_id\s+AS\s+"__owned_user_id"/i);
   assert.match(db.calls[0].sql, /AS "__is_due"/);
   assertDuePredicate(db.calls[0].sql);
   assert.match(db.calls[0].sql, /WHERE d\.id = \$1 AND d\.user_id = \$2/);
@@ -2904,6 +2954,38 @@ test('GET /api/cards/:deckId fails closed when rows are not anchored to the requ
     { id: null, __owned_deck_id: 41 },
     { ...dueCard, deck_id: 41, __owned_deck_id: 42, __is_due: true },
     { ...dueCard, __owned_deck_id: 41, __is_due: true },
+  ];
+  t.mock.method(console, 'error', () => {});
+
+  for (const row of malformedRows) {
+    const db = createDb([{ rowCount: 1, rows: [row] }]);
+    const req = { params: { deckId: '42' }, user: { userId: 1 } };
+    const res = createRes();
+
+    await getDueCardsByDeck(req, res, db);
+
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.body, { error: 'Internal server error' });
+    assert.equal(db.calls.length, 1);
+    assert.deepEqual(db.calls[0].params, [42, 1, 100]);
+  }
+});
+
+test('GET /api/cards/:deckId fails closed when rows lack authenticated-user ownership proof', async (t) => {
+  const dueCard = createCardReadRow({
+    id: 11,
+    deck_id: 42,
+    front_content: 'Due card',
+    back_content: 'Answer',
+    next_review: '2026-05-08T12:00:00.000Z',
+  });
+  const validRow = createDueCardQueryRow(dueCard);
+  const rowMissingOwnerProof = { ...validRow };
+  delete rowMissingOwnerProof.__owned_user_id;
+  const malformedRows = [
+    rowMissingOwnerProof,
+    { ...validRow, __owned_user_id: 2 },
+    createEmptyDueCardQueryRow({ __owned_user_id: 2 }),
   ];
   t.mock.method(console, 'error', () => {});
 
