@@ -38,7 +38,7 @@ function requiredIndex(source, needle, message, fromIndex = 0) {
   return index;
 }
 
-const authExpiredCheck = 'if (handleAuthExpiredResponse(response, onAuthExpired)) {';
+const authResponseCheck = 'if (handleStudySessionAuthResponse({';
 
 test('fetchNextCard clears in-flight state on current auth-expired due-card responses', () => {
   const body = extractConstFunctionBody('fetchNextCard');
@@ -47,17 +47,11 @@ test('fetchNextCard clears in-flight state on current auth-expired due-card resp
     'const response = await fetch(apiRequests.dueCardUrl(requestDeckId), {',
     'Expected due-card loading to fetch the next card',
   );
-  const currentGuardIndex = requiredIndex(
-    body,
-    'if (!isCurrentRequest()) return;',
-    'Expected due-card responses to keep the stale-request guard',
-    fetchIndex,
-  );
   const authExpiredIndex = requiredIndex(
     body,
-    authExpiredCheck,
+    authResponseCheck,
     'Expected due-card responses to keep auth-expiration handling',
-    currentGuardIndex,
+    fetchIndex,
   );
   const responseOkIndex = requiredIndex(
     body,
@@ -68,12 +62,17 @@ test('fetchNextCard clears in-flight state on current auth-expired due-card resp
   const authExpiredBranch = body.slice(authExpiredIndex, responseOkIndex);
 
   assert.ok(
-    currentGuardIndex < authExpiredIndex,
-    'Expected stale due-card responses to return before auth-expiration state updates',
+    authExpiredIndex < responseOkIndex,
+    'Expected auth handling before generic due-card failures',
   );
   assert.match(
     authExpiredBranch,
-    /setSubmitInFlight\(false\);\s*setIsLoading\(false\);\s*return;/,
+    /isCurrent: isCurrentRequest,/,
+    'Expected due-card auth handling to guard stale responses through the lifecycle predicate',
+  );
+  assert.match(
+    authExpiredBranch,
+    /onCurrentAuthExpired: \(\) => \{\s*setSubmitInFlight\(false\);\s*setIsLoading\(false\);\s*\},[\s\S]*return;/,
     'Expected current auth-expired due-card responses to clear submit and loading state',
   );
 });
@@ -85,17 +84,11 @@ test('loadStudySession clears in-flight state on current auth-expired deck-list 
     'const response = await fetch(apiRequests.deckListUrl, {',
     'Expected automatic study-session loading to fetch decks',
   );
-  const currentGuardIndex = requiredIndex(
-    body,
-    'if (!isCurrentRequest()) return;',
-    'Expected deck-list responses to keep the stale-request guard',
-    fetchIndex,
-  );
   const authExpiredIndex = requiredIndex(
     body,
-    authExpiredCheck,
+    authResponseCheck,
     'Expected deck-list responses to keep auth-expiration handling',
-    currentGuardIndex,
+    fetchIndex,
   );
   const responseOkIndex = requiredIndex(
     body,
@@ -106,12 +99,17 @@ test('loadStudySession clears in-flight state on current auth-expired deck-list 
   const authExpiredBranch = body.slice(authExpiredIndex, responseOkIndex);
 
   assert.ok(
-    currentGuardIndex < authExpiredIndex,
-    'Expected stale deck-list responses to return before auth-expiration state updates',
+    authExpiredIndex < responseOkIndex,
+    'Expected auth handling before generic deck-list failures',
   );
   assert.match(
     authExpiredBranch,
-    /setSubmitInFlight\(false\);\s*setIsLoading\(false\);\s*return;/,
+    /isCurrent: isCurrentRequest,/,
+    'Expected deck-list auth handling to guard stale responses through the lifecycle predicate',
+  );
+  assert.match(
+    authExpiredBranch,
+    /onCurrentAuthExpired: \(\) => \{\s*setSubmitInFlight\(false\);\s*setIsLoading\(false\);\s*\},[\s\S]*return;/,
     'Expected current auth-expired deck-list responses to clear submit and loading state',
   );
 });
@@ -123,17 +121,11 @@ test('handleAnswer clears submit state on current auth-expired submit responses'
     'const response = await fetch(apiRequests.submitUrl, {',
     'Expected answer handling to submit the review result',
   );
-  const currentGuardIndex = requiredIndex(
-    body,
-    'if (!isCurrentSubmitRequest()) {',
-    'Expected submit responses to keep the stale-route guard',
-    fetchIndex,
-  );
   const authExpiredIndex = requiredIndex(
     body,
-    authExpiredCheck,
+    authResponseCheck,
     'Expected submit responses to keep auth-expiration handling',
-    currentGuardIndex,
+    fetchIndex,
   );
   const recoveryIndex = requiredIndex(
     body,
@@ -144,12 +136,17 @@ test('handleAnswer clears submit state on current auth-expired submit responses'
   const authExpiredBranch = body.slice(authExpiredIndex, recoveryIndex);
 
   assert.ok(
-    currentGuardIndex < authExpiredIndex,
-    'Expected stale submit responses to return before auth-expiration state updates',
+    authExpiredIndex < recoveryIndex,
+    'Expected submit auth handling before stale-card conflict recovery',
   );
   assert.match(
     authExpiredBranch,
-    /setSubmitInFlight\(false\);\s*return;/,
+    /isCurrent: isCurrentSubmitRequest,/,
+    'Expected submit auth handling to guard stale responses through the lifecycle predicate',
+  );
+  assert.match(
+    authExpiredBranch,
+    /onCurrentAuthExpired: \(\) => \{\s*setSubmitInFlight\(false\);\s*\},[\s\S]*return;/,
     'Expected current auth-expired submit responses to clear submit state',
   );
 });

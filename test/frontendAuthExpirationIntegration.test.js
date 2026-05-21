@@ -17,6 +17,10 @@ function countAuthExpirationCalls(source) {
   return (source.match(/handleAuthExpiredResponse\(response,\s*onAuthExpired\)/g) || []).length;
 }
 
+function countStudySessionAuthExpirationCalls(source) {
+  return (source.match(/handleStudySessionAuthResponse\(\s*\{/g) || []).length;
+}
+
 test('App passes the stable auth-expired callback into protected route components', () => {
   const mainSource = readRepoFile('main.js');
 
@@ -69,6 +73,16 @@ test('protected components check auth-expired responses before generic failures'
     assert.match(source, /require\(['"]\.\/authExpiration['"]\)/);
     assert.match(source, /const \{ handleAuthExpiredResponse \} = authExpiration;/);
     assert.match(source, /onAuthExpired/);
+    if (fileName === 'studySession.js') {
+      assert.match(source, /handleStudySessionAuthResponse/);
+      assert.equal(
+        countStudySessionAuthExpirationCalls(source),
+        expectedCalls,
+        'Expected studySession.js to check every protected response through the freshness-aware helper'
+      );
+      return;
+    }
+
     assert.equal(
       countAuthExpirationCalls(source),
       expectedCalls,

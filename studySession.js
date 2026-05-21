@@ -33,6 +33,7 @@ const {
 } = studySessionTarget;
 const { selectValidatedStudySessionDueCard } = studySessionDueCards;
 const {
+  handleStudySessionAuthResponse,
   isCurrentStudySessionFetchRequest,
   isCurrentStudySessionRouteRequest,
 } = studySessionRequestLifecycle;
@@ -94,11 +95,16 @@ const StudySession = ({ env, onAuthExpired }) => {
         headers: buildAuthHeaders(localStorage),
       });
 
-      if (!isCurrentRequest()) return;
-
-      if (handleAuthExpiredResponse(response, onAuthExpired)) {
-        setSubmitInFlight(false);
-        setIsLoading(false);
+      if (handleStudySessionAuthResponse({
+        isCurrent: isCurrentRequest,
+        response,
+        onAuthExpired,
+        onCurrentAuthExpired: () => {
+          setSubmitInFlight(false);
+          setIsLoading(false);
+        },
+        handleAuthExpiredResponse,
+      })) {
         return;
       }
 
@@ -180,11 +186,16 @@ const StudySession = ({ env, onAuthExpired }) => {
         headers: buildAuthHeaders(localStorage),
       });
 
-      if (!isCurrentRequest()) return;
-
-      if (handleAuthExpiredResponse(response, onAuthExpired)) {
-        setSubmitInFlight(false);
-        setIsLoading(false);
+      if (handleStudySessionAuthResponse({
+        isCurrent: isCurrentRequest,
+        response,
+        onAuthExpired,
+        onCurrentAuthExpired: () => {
+          setSubmitInFlight(false);
+          setIsLoading(false);
+        },
+        handleAuthExpiredResponse,
+      })) {
         return;
       }
 
@@ -259,12 +270,15 @@ const StudySession = ({ env, onAuthExpired }) => {
         body: JSON.stringify({ cardId: currentCard.id, quality }),
       });
 
-      if (!isCurrentSubmitRequest()) {
-        return;
-      }
-
-      if (handleAuthExpiredResponse(response, onAuthExpired)) {
-        setSubmitInFlight(false);
+      if (handleStudySessionAuthResponse({
+        isCurrent: isCurrentSubmitRequest,
+        response,
+        onAuthExpired,
+        onCurrentAuthExpired: () => {
+          setSubmitInFlight(false);
+        },
+        handleAuthExpiredResponse,
+      })) {
         return;
       }
 

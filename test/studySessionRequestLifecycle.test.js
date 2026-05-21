@@ -4,10 +4,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const {
+  handleStudySessionAuthResponse,
   isCurrentStudySessionFetchRequest,
   isCurrentStudySessionRouteRequest,
   isMountedStudySessionRequest,
 } = require('../studySessionRequestLifecycle');
+const { handleAuthExpiredResponse } = require('../authExpiration');
 const {
   FRONTEND_MODULES,
 } = require('../scripts/sync-cra-src');
@@ -100,6 +102,109 @@ test('isCurrentStudySessionFetchRequest requires mounted component, route, and l
   );
 });
 
+test('handleStudySessionAuthResponse stops stale responses before auth-expired callbacks', () => {
+  const response = { status: 401 };
+  const authExpiredCalls = [];
+  const onAuthExpiredCalls = [];
+  let currentAuthExpiredWasCalled = false;
+
+  const result = handleStudySessionAuthResponse({
+    isCurrent: () => false,
+    response,
+    onAuthExpired: (expiredResponse) => {
+      onAuthExpiredCalls.push(expiredResponse);
+    },
+    onCurrentAuthExpired: () => {
+      currentAuthExpiredWasCalled = true;
+    },
+    handleAuthExpiredResponse(expiredResponse, onAuthExpired) {
+      authExpiredCalls.push(expiredResponse);
+      onAuthExpired(expiredResponse);
+      return true;
+    },
+  });
+
+  assert.equal(result, true);
+  assert.deepEqual(authExpiredCalls, []);
+  assert.deepEqual(onAuthExpiredCalls, []);
+  assert.equal(currentAuthExpiredWasCalled, false);
+});
+
+test('handleStudySessionAuthResponse stops after current auth-expired responses', () => {
+  [401, 403].forEach((status) => {
+    const response = { status };
+    const calls = [];
+    let currentAuthExpiredWasCalled = false;
+
+    const result = handleStudySessionAuthResponse({
+      isCurrent: () => true,
+      response,
+      onAuthExpired: (expiredResponse) => {
+        calls.push(expiredResponse);
+      },
+      onCurrentAuthExpired: () => {
+        currentAuthExpiredWasCalled = true;
+      },
+      handleAuthExpiredResponse,
+    });
+
+    assert.equal(result, true);
+    assert.deepEqual(calls, [response]);
+    assert.equal(currentAuthExpiredWasCalled, true);
+  });
+});
+
+test('handleStudySessionAuthResponse leaves current non-auth responses available for normal handling', () => {
+  let callbackWasCalled = false;
+  let currentAuthExpiredWasCalled = false;
+
+  const result = handleStudySessionAuthResponse({
+    isCurrent: () => true,
+    response: { status: 500 },
+    onAuthExpired: () => {
+      callbackWasCalled = true;
+    },
+    onCurrentAuthExpired: () => {
+      currentAuthExpiredWasCalled = true;
+    },
+    handleAuthExpiredResponse,
+  });
+
+  assert.equal(result, false);
+  assert.equal(callbackWasCalled, false);
+  assert.equal(currentAuthExpiredWasCalled, false);
+});
+
+test('handleStudySessionAuthResponse requires its helper contracts', () => {
+  assert.throws(
+    () => handleStudySessionAuthResponse({
+      response: { status: 401 },
+      onAuthExpired: () => {},
+      onCurrentAuthExpired: () => {},
+      handleAuthExpiredResponse,
+    }),
+    TypeError,
+  );
+  assert.throws(
+    () => handleStudySessionAuthResponse({
+      isCurrent: () => true,
+      response: { status: 401 },
+      onAuthExpired: () => {},
+      onCurrentAuthExpired: () => {},
+    }),
+    TypeError,
+  );
+  assert.throws(
+    () => handleStudySessionAuthResponse({
+      isCurrent: () => true,
+      response: { status: 401 },
+      onAuthExpired: () => {},
+      handleAuthExpiredResponse,
+    }),
+    TypeError,
+  );
+});
+
 test('StudySession wires lifecycle checks into async request completions', () => {
   assert.match(
     studySessionSource,
@@ -139,12 +244,17 @@ test('StudySession wires lifecycle checks into async request completions', () =>
   );
   assert.equal(
     currentSubmitGuardCount,
-    3,
-    'Expected submit continuations and failures to check route and mounted state before state updates',
+    2,
+    'Expected submit body parsing and failures to check route and mounted state before state updates',
   );
   assert.ok(
     FRONTEND_MODULES.includes('studySessionRequestLifecycle.js'),
     'Expected the lifecycle helper to be mirrored into CRA src',
+  );
+  assert.match(
+    studySessionSource,
+    /handleStudySessionAuthResponse/,
+    'Expected StudySession to route auth-expired responses through the lifecycle helper',
   );
 });
 

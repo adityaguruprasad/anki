@@ -18,7 +18,7 @@ test('StudySession validates due-card JSON before storing or branching on cards'
 
   const jsonIndex = studySessionSource.indexOf('const cards = await response.json();');
   const authExpiredIndex = studySessionSource.indexOf(
-    'if (handleAuthExpiredResponse(response, onAuthExpired))',
+    'if (handleStudySessionAuthResponse({',
   );
   const responseOkIndex = studySessionSource.indexOf('if (!response.ok) {');
   const staleGuardAfterJsonIndex = studySessionSource.indexOf(
@@ -37,7 +37,9 @@ test('StudySession validates due-card JSON before storing or branching on cards'
 
   assert.ok(jsonIndex >= 0, 'Expected StudySession to parse due-card JSON');
   assert.ok(
-    authExpiredIndex >= 0 && responseOkIndex > authExpiredIndex && responseOkIndex < jsonIndex,
+    authExpiredIndex >= 0
+      && responseOkIndex > authExpiredIndex
+      && responseOkIndex < jsonIndex,
     'Expected auth expiration handling to stay before generic due-card fetch handling',
   );
   assert.ok(

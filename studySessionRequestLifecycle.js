@@ -18,7 +18,29 @@ function isCurrentStudySessionFetchRequest(options = {}) {
     && requestIdRef.current === requestId;
 }
 
+function handleStudySessionAuthResponse(options) {
+  const {
+    handleAuthExpiredResponse,
+    isCurrent,
+    onCurrentAuthExpired,
+    onAuthExpired,
+    response,
+  } = options;
+
+  if (!isCurrent()) {
+    return true;
+  }
+
+  if (handleAuthExpiredResponse(response, onAuthExpired)) {
+    onCurrentAuthExpired();
+    return true;
+  }
+
+  return false;
+}
+
 module.exports = {
+  handleStudySessionAuthResponse,
   isCurrentStudySessionFetchRequest,
   isCurrentStudySessionRouteRequest,
   isMountedStudySessionRequest,

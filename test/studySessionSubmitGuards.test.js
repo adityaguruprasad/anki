@@ -39,6 +39,7 @@ function requiredIndex(source, needle, message, fromIndex = 0) {
 }
 
 const currentSubmitGuard = 'if (!isCurrentSubmitRequest()) {';
+const authResponseCheck = 'if (handleStudySessionAuthResponse({';
 
 test('handleAnswer guards stale or unmounted submit responses before auth and generic failure handling', () => {
   const body = extractConstFunctionBody('handleAnswer');
@@ -47,16 +48,11 @@ test('handleAnswer guards stale or unmounted submit responses before auth and ge
     'const response = await fetch(apiRequests.submitUrl, {',
     'Expected answer submission to keep the submit fetch',
   );
-  const currentGuardIndex = requiredIndex(
-    body,
-    currentSubmitGuard,
-    'Expected a current submit guard after the submit fetch resolves',
-    fetchIndex,
-  );
   const authExpiredIndex = requiredIndex(
     body,
-    'if (handleAuthExpiredResponse(response, onAuthExpired))',
+    authResponseCheck,
     'Expected answer submission to keep auth-expiration handling',
+    fetchIndex,
   );
   const responseOkIndex = requiredIndex(
     body,
@@ -74,23 +70,27 @@ test('handleAnswer guards stale or unmounted submit responses before auth and ge
     /const isCurrentSubmitRequest = \(\) => isCurrentStudySessionRouteRequest\(\{\s*mountedRef,\s*locationSearchRef,\s*requestSearch,\s*\}\);/,
     'Expected submit checks to use the route lifecycle helper with the captured route search',
   );
-  assert.ok(fetchIndex < currentGuardIndex, 'Expected current submit guard after fetch resolution');
   assert.ok(
-    currentGuardIndex < authExpiredIndex,
-    'Expected stale/current submit guard before auth-expiration handling',
+    fetchIndex < authExpiredIndex,
+    'Expected submit responses to enter lifecycle-aware auth handling after fetch resolution',
   );
   assert.ok(
-    currentGuardIndex < responseOkIndex,
-    'Expected stale/current submit guard before generic non-OK handling',
+    authExpiredIndex < responseOkIndex,
+    'Expected lifecycle-aware auth handling before generic non-OK handling',
   );
   assert.ok(
-    currentGuardIndex < responseTextIndex,
-    'Expected stale/current submit guard before successful response parsing',
+    authExpiredIndex < responseTextIndex,
+    'Expected lifecycle-aware auth handling before successful response parsing',
   );
   assert.match(
-    body.slice(currentGuardIndex, authExpiredIndex),
+    body.slice(authExpiredIndex, responseOkIndex),
+    /isCurrent: isCurrentSubmitRequest,/,
+    'Expected auth handling to check stale or unmounted submit responses through the lifecycle predicate',
+  );
+  assert.match(
+    body.slice(authExpiredIndex, responseOkIndex),
     /return;/,
-    'Expected stale or unmounted submit responses to return without response side effects',
+    'Expected handled auth or stale submit responses to return without response side effects',
   );
 });
 
@@ -98,7 +98,7 @@ test('handleAnswer preserves current submit success behavior behind lifecycle gu
   const body = extractConstFunctionBody('handleAnswer');
   const authExpiredIndex = requiredIndex(
     body,
-    'if (handleAuthExpiredResponse(response, onAuthExpired))',
+    authResponseCheck,
     'Expected answer submission to keep auth-expiration handling',
   );
   const responseOkIndex = requiredIndex(
@@ -218,7 +218,7 @@ test('handleAnswer recovers stale-card submit conflicts without the generic retr
   const body = extractConstFunctionBody('handleAnswer');
   const authExpiredIndex = requiredIndex(
     body,
-    'if (handleAuthExpiredResponse(response, onAuthExpired))',
+    authResponseCheck,
     'Expected answer submission to keep auth-expiration handling',
   );
   const recoveryIndex = requiredIndex(
