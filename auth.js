@@ -12,6 +12,8 @@ const DEFAULT_DEV_JWT_SECRET = 'your_secret_key';
 const DEFAULT_JWT_EXPIRES_IN_SECONDS = 60 * 60 * 24;
 const JWT_TOKEN_ALGORITHM = 'HS256';
 const JWT_TOKEN_TYPE = 'JWT';
+// App-issued and verifiable JWT headers are intentionally strict: alg and typ only.
+const JWT_HEADER_FIELDS = Object.freeze(['alg', 'typ']);
 const JWT_PAYLOAD_FIELDS = Object.freeze(['userId', 'iat', 'exp']);
 const JWT_SECRET_DEFAULT_PRODUCTION_ERROR =
   'JWT_SECRET must not use the default development secret in production';
@@ -209,16 +211,16 @@ function validateJwtHeader(header) {
     throw new Error('Invalid token header');
   }
 
+  if (Object.keys(header).some((field) => !JWT_HEADER_FIELDS.includes(field))) {
+    throw new Error('Unsupported token header');
+  }
+
   if (header.alg !== JWT_TOKEN_ALGORITHM) {
     throw new Error('Invalid token algorithm');
   }
 
   if (header.typ !== JWT_TOKEN_TYPE) {
     throw new Error('Invalid token type');
-  }
-
-  if (Object.hasOwn(header, 'crit')) {
-    throw new Error('Unsupported token header');
   }
 }
 

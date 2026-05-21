@@ -1898,15 +1898,32 @@ test('verifyToken requires the API-issued JWT header contract', () => {
   );
 });
 
-test('verifyToken accepts benign extra JWT header fields when the signature is valid', () => {
+test('verifyToken accepts signed tokens with exactly the allowed JWT header fields', () => {
   const payload = { userId: 106, iat: 1000, exp: 2000 };
+  const token = signRawJwt(
+    { alg: 'HS256', typ: 'JWT' },
+    payload,
+    'strict-header-happy-path-secret'
+  );
+
+  assert.deepEqual(
+    verifyToken(token, 'strict-header-happy-path-secret', { now: 1000 }),
+    payload
+  );
+});
+
+test('verifyToken rejects signed tokens with unsupported JWT header fields', () => {
+  const payload = { userId: 107, iat: 1000, exp: 2000 };
   const token = signRawJwt(
     { alg: 'HS256', typ: 'JWT', kid: 'active-key' },
     payload,
     'extra-header-secret'
   );
 
-  assert.deepEqual(verifyToken(token, 'extra-header-secret', { now: 1000 }), payload);
+  assert.throws(
+    () => verifyToken(token, 'extra-header-secret', { now: 1000 }),
+    /Unsupported token header/
+  );
 });
 
 test('verifyToken rejects oversized token strings before JWT part decoding', () => {
