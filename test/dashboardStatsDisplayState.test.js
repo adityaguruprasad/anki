@@ -74,6 +74,11 @@ test('hasDashboardStatsPayload requires the full stats endpoint contract', () =>
   [
     createValidDashboardStats(),
     createValidDashboardStats({
+      todayReviews: 9,
+      weekReviews: 9,
+      monthReviews: 9,
+    }),
+    createValidDashboardStats({
       totalCards: '900719925474099312345',
       totalDecks: '00012',
       todayReviews: ' 0 ',
@@ -91,9 +96,40 @@ test('hasDashboardStatsPayload requires the full stats endpoint contract', () =>
     createValidDashboardStats({ monthReviews: '9007199254740992' }),
     createValidDashboardStats({ totalCards: null }),
     createValidDashboardStats({ totalDecks: -1 }),
+    createValidDashboardStats({ todayReviews: 5, weekReviews: 4, monthReviews: 9 }),
+    createValidDashboardStats({ todayReviews: 1, weekReviews: 10, monthReviews: 9 }),
+    createValidDashboardStats({ totalCards: 8, monthReviews: 9 }),
   ].forEach((stats) => {
     assert.equal(hasDashboardStatsPayload(stats), false);
   });
+});
+
+test('hasDashboardStatsPayload mirrors the server card-count-by-last_reviewed invariant', () => {
+  assert.equal(
+    hasDashboardStatsPayload(createValidDashboardStats({
+      totalCards: ' 00009 ',
+      totalDecks: ' 003 ',
+      weekReviews: '0004',
+      monthReviews: '0000000000009',
+    })),
+    true
+  );
+
+  assert.equal(
+    hasDashboardStatsPayload(createValidDashboardStats({
+      totalCards: ' 0000000000008 ',
+      monthReviews: '0000000000009',
+    })),
+    false
+  );
+
+  assert.equal(
+    hasDashboardStatsPayload(createValidDashboardStats({
+      totalCards: '8',
+      monthReviews: ' 00009 ',
+    })),
+    false
+  );
 });
 
 test('toDisplayCount formats valid dashboard totals without numeric string coercion', () => {

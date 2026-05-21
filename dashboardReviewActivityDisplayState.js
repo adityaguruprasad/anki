@@ -38,15 +38,26 @@ function normalizeReviewActivityCount(value) {
 }
 
 function hasReviewActivityStats(stats) {
-  return (
-    Boolean(stats)
-    && typeof stats === 'object'
-    && !Array.isArray(stats)
-    && REVIEW_ACTIVITY_CHART_BUCKETS.every(({ key }) => (
-      Object.prototype.hasOwnProperty.call(stats, key)
-      && normalizeReviewActivityCount(stats[key]) !== null
-    ))
-  );
+  if (
+    !stats
+    || typeof stats !== 'object'
+    || Array.isArray(stats)
+  ) {
+    return false;
+  }
+
+  const reviewCounts = REVIEW_ACTIVITY_CHART_BUCKETS.map(({ key }) => {
+    if (!Object.prototype.hasOwnProperty.call(stats, key)) {
+      return null;
+    }
+
+    return normalizeReviewActivityCount(stats[key]);
+  });
+
+  return reviewCounts.every((count, index) => (
+    count !== null
+    && (index === 0 || reviewCounts[index - 1] <= count)
+  ));
 }
 
 function toReviewActivityCount(value) {

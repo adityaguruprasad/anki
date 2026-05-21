@@ -1,18 +1,26 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
+const reviewActivityDisplayState = require('../dashboardReviewActivityDisplayState');
+
 const {
   DASHBOARD_REVIEW_ACTIVITY_COPY,
   buildDashboardReviewActivityDisplayState,
   buildReviewActivityChartData,
   hasReviewActivityStats,
   toReviewActivityCount,
-} = require('../dashboardReviewActivityDisplayState');
+} = reviewActivityDisplayState;
+
+test('exports toReviewActivityCount for dashboard stats validation', () => {
+  assert.equal(typeof reviewActivityDisplayState.toReviewActivityCount, 'function');
+  assert.equal(reviewActivityDisplayState.toReviewActivityCount(' 00012 '), 12);
+});
 
 test('hasReviewActivityStats requires valid review activity count fields', () => {
   [
     { todayReviews: 0, weekReviews: 1, monthReviews: Number.MAX_SAFE_INTEGER },
-    { todayReviews: '0', weekReviews: ' 12 ', monthReviews: '0003' },
+    { todayReviews: 3, weekReviews: 3, monthReviews: 3 },
+    { todayReviews: '0', weekReviews: ' 12 ', monthReviews: '0013' },
   ].forEach((stats) => {
     assert.equal(hasReviewActivityStats(stats), true);
   });
@@ -32,6 +40,9 @@ test('hasReviewActivityStats requires valid review activity count fields', () =>
     { todayReviews: 1, weekReviews: '9007199254740992', monthReviews: 2 },
     { todayReviews: 1, weekReviews: ' ', monthReviews: 2 },
     { todayReviews: 1, weekReviews: 'cards', monthReviews: 2 },
+    { todayReviews: 3, weekReviews: 2, monthReviews: 4 },
+    { todayReviews: 1, weekReviews: 5, monthReviews: 4 },
+    Object.create({ todayReviews: 1, weekReviews: 2, monthReviews: 3 }),
   ].forEach((stats) => {
     assert.equal(hasReviewActivityStats(stats), false);
   });
@@ -103,6 +114,8 @@ test('buildReviewActivityChartData suppresses malformed review activity stats', 
     { todayReviews: '', weekReviews: 1, monthReviews: 2 },
     { todayReviews: ' ', weekReviews: 1, monthReviews: 2 },
     { todayReviews: 'cards', weekReviews: 1, monthReviews: 2 },
+    { todayReviews: 3, weekReviews: 2, monthReviews: 4 },
+    { todayReviews: 1, weekReviews: 5, monthReviews: 4 },
   ].forEach((stats) => {
     assert.equal(buildReviewActivityChartData(stats), null);
   });

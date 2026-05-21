@@ -1,4 +1,7 @@
-const { hasReviewActivityStats } = require('./dashboardReviewActivityDisplayState');
+const {
+  hasReviewActivityStats,
+  toReviewActivityCount,
+} = require('./dashboardReviewActivityDisplayState');
 
 const DASHBOARD_STATS_COPY = Object.freeze({
   loading: 'Loading stats...',
@@ -50,8 +53,36 @@ function hasStatsPayload(stats) {
   );
 }
 
+// Both operands must be normalized decimal count strings: trimmed, digits only,
+// and no leading zeroes except "0". totalCards may exceed Number.MAX_SAFE_INTEGER,
+// so length plus lexical comparison preserves numeric order without Number coercion.
+function isNormalizedCountLessThanOrEqual(left, right) {
+  if (left.length !== right.length) {
+    return left.length < right.length;
+  }
+
+  return left <= right;
+}
+
+function hasStatsAggregateInvariants(stats) {
+  const totalCards = normalizeStatsCount(stats.totalCards);
+  const monthReviews = toReviewActivityCount(stats.monthReviews);
+
+  return (
+    totalCards !== null
+    && monthReviews !== null
+    && isNormalizedCountLessThanOrEqual(String(monthReviews), totalCards)
+  );
+}
+
 function hasDashboardStatsPayload(stats) {
-  return hasStatsPayload(stats) && hasReviewActivityStats(stats);
+  // Mirrors the server contract: these buckets count current cards by
+  // last_reviewed, so todayReviews <= weekReviews <= monthReviews <= totalCards.
+  return (
+    hasStatsPayload(stats)
+    && hasReviewActivityStats(stats)
+    && hasStatsAggregateInvariants(stats)
+  );
 }
 
 function toDisplayCount(value) {
