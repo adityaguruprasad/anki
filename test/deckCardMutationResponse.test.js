@@ -16,6 +16,9 @@ function createValidCardPayload(overrides = {}) {
     front_content: 'Front',
     back_content: 'Back',
     next_review: VALID_NEXT_REVIEW,
+    interval: 1,
+    ease_factor: 2.5,
+    review_count: 0,
     ...overrides,
   };
 }
@@ -34,6 +37,9 @@ test('parseDeckCardMutationResponsePayload preserves valid cards and extra field
     front_content: 'Front',
     back_content: 'Back',
     next_review: '2026-05-10T12:00:00.000Z',
+    interval: 1,
+    ease_factor: 2.5,
+    review_count: 0,
     cursorCreatedAt: '2026-05-09T12:00:00.000Z',
     repetitions: 4,
   };
@@ -175,6 +181,49 @@ test('parseDeckCardMutationResponsePayload accepts null, past, and future next_r
     assert.equal(parseDeckCardMutationResponsePayload(payload), payload);
     assert.equal(hasDeckCardMutationPayload(payload), true);
   });
+});
+
+test('parseDeckCardMutationResponsePayload requires trustworthy scheduling metadata', () => {
+  [
+    { id: 1, front_content: 'Front', back_content: 'Back', next_review: VALID_NEXT_REVIEW },
+    createValidCardPayload({ interval: undefined }),
+    createValidCardPayload({ interval: 0 }),
+    createValidCardPayload({ interval: 36501 }),
+    createValidCardPayload({ interval: 1.5 }),
+    createValidCardPayload({ interval: '1' }),
+    createValidCardPayload({ ease_factor: undefined }),
+    createValidCardPayload({ ease_factor: 1.29 }),
+    createValidCardPayload({ ease_factor: Number.NaN }),
+    createValidCardPayload({ ease_factor: Number.POSITIVE_INFINITY }),
+    createValidCardPayload({ ease_factor: '2.5' }),
+    createValidCardPayload({ review_count: undefined }),
+    createValidCardPayload({ review_count: -1 }),
+    createValidCardPayload({ review_count: 1.5 }),
+    createValidCardPayload({ review_count: '0' }),
+  ].forEach(assertMalformed);
+});
+
+test('parseDeckCardMutationResponsePayload accepts scheduling metadata boundaries', () => {
+  const payload = createValidCardPayload({
+    interval: 36500,
+    ease_factor: 1.3,
+    review_count: Number.MAX_SAFE_INTEGER,
+  });
+
+  assert.equal(parseDeckCardMutationResponsePayload(payload), payload);
+  assert.equal(hasDeckCardMutationPayload(payload), true);
+});
+
+test('hasDeckCardMutationPayload can opt out of scheduling metadata for smaller card contracts', () => {
+  const payload = {
+    id: 7,
+    front_content: 'Front',
+    back_content: 'Back',
+    next_review: VALID_NEXT_REVIEW,
+  };
+
+  assert.equal(hasDeckCardMutationPayload(payload), false);
+  assert.equal(hasDeckCardMutationPayload(payload, { requireSchedulingMetadata: false }), true);
 });
 
 test('hasDeckCardMutationPayload accepts only single-card mutation objects', () => {

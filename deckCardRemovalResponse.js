@@ -10,7 +10,12 @@ function hasDeckCardRemovalSuccessPayload(payload, options = {}) {
   return (
     isObjectRecord(payload)
     && payload.success === true
-    && hasDeckCardMutationPayload(payload.card, options)
+    // Delete echoes intentionally use a smaller card contract than create/update
+    // responses because scheduling metadata is irrelevant after removal.
+    && hasDeckCardMutationPayload(payload.card, {
+      ...options,
+      requireSchedulingMetadata: false,
+    })
   );
 }
 

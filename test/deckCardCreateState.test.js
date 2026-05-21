@@ -20,6 +20,9 @@ function createValidCreatedCard(overrides = {}) {
     front_content: 'Front',
     back_content: 'Back',
     next_review: VALID_NEXT_REVIEW,
+    interval: 1,
+    ease_factor: 2.5,
+    review_count: 0,
     ...overrides,
   };
 }
@@ -368,6 +371,34 @@ test('card-create response completion rejects untrustworthy next_review metadata
     createValidCreatedCard({ next_review: false }),
     createValidCreatedCard({ next_review: new Date(VALID_NEXT_REVIEW) }),
     createValidCreatedCard({ next_review: ['2026-05-10T12:00:00.000Z'] }),
+  ].forEach((payload) => {
+    assert.deepEqual(
+      getCardCreateResponseCompletion({
+        isCurrent: true,
+        responseOk: true,
+        payload,
+      }),
+      {
+        type: CARD_CREATE_COMPLETION_TYPES.INVALID_RESPONSE,
+        ignored: false,
+        error: CARD_CREATE_MESSAGES.createFailed,
+      },
+    );
+  });
+});
+
+test('card-create response completion rejects malformed scheduling metadata', () => {
+  [
+    { id: 11, front_content: 'Front', back_content: 'Back', next_review: VALID_NEXT_REVIEW },
+    createValidCreatedCard({ interval: 0 }),
+    createValidCreatedCard({ interval: 36501 }),
+    createValidCreatedCard({ interval: '1' }),
+    createValidCreatedCard({ ease_factor: 1.29 }),
+    createValidCreatedCard({ ease_factor: Number.NaN }),
+    createValidCreatedCard({ ease_factor: '2.5' }),
+    createValidCreatedCard({ review_count: -1 }),
+    createValidCreatedCard({ review_count: 1.5 }),
+    createValidCreatedCard({ review_count: '0' }),
   ].forEach((payload) => {
     assert.deepEqual(
       getCardCreateResponseCompletion({

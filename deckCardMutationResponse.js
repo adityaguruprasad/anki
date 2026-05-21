@@ -1,4 +1,5 @@
 const MALFORMED_DECK_CARD_MUTATION_PAYLOAD_ERROR = 'Malformed deck-card mutation payload';
+const { MAX_INTERVAL_DAYS, MIN_EASE_FACTOR } = require('./spacedRepetition');
 const {
   hasRouteSafeCardId,
   hasRouteSafeId,
@@ -30,12 +31,38 @@ function isNonBlankCardContent(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
+function hasOwn(value, key) {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
 function hasValidMutationNextReview(card) {
-  if (!Object.prototype.hasOwnProperty.call(card, 'next_review')) {
+  if (!hasOwn(card, 'next_review')) {
     return false;
   }
 
   return card.next_review === null || isValidIsoTimestamp(card.next_review);
+}
+
+function hasValidMutationSchedulingMetadata(card, options = {}) {
+  // Create/update responses must carry scheduling metadata by default; smaller
+  // contracts, such as delete-card echoes, opt out explicitly.
+  if (options.requireSchedulingMetadata === false) {
+    return true;
+  }
+
+  return (
+    hasOwn(card, 'interval')
+    && Number.isSafeInteger(card.interval)
+    && card.interval >= 1
+    && card.interval <= MAX_INTERVAL_DAYS
+    && hasOwn(card, 'ease_factor')
+    && typeof card.ease_factor === 'number'
+    && Number.isFinite(card.ease_factor)
+    && card.ease_factor >= MIN_EASE_FACTOR
+    && hasOwn(card, 'review_count')
+    && Number.isSafeInteger(card.review_count)
+    && card.review_count >= 0
+  );
 }
 
 function hasDeckCardMutationPayload(payload, options = {}) {
@@ -49,6 +76,7 @@ function hasDeckCardMutationPayload(payload, options = {}) {
     && isNonBlankCardContent(payload.front_content)
     && isNonBlankCardContent(payload.back_content)
     && hasValidMutationNextReview(payload)
+    && hasValidMutationSchedulingMetadata(payload, options)
     && (!hasExpectedId || (hasUsableCardId(expectedId) && hasSameCardId(payload.id, expectedId)))
     && (
       !hasExpectedDeckId
