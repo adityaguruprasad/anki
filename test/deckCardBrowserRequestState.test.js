@@ -16,6 +16,7 @@ const {
   setDeckCardBrowserAppendRequest,
   isLatestDeckCardBrowserReplaceRequest,
 } = require('../deckCardBrowserRequestState');
+const { MAX_POSTGRES_SERIAL_ID } = require('../cardIdentifier');
 
 test('beginDeckCardBrowserReplaceRequest advances request ids per deck without mutating state', () => {
   const requestState = {};
@@ -69,6 +70,61 @@ test('createDeckCardBrowserAppendRequest scopes load-more requests to current re
       cursorId: '42',
     },
   });
+});
+
+test('normalizeCursor follows the server cursor timestamp and card-id contract', () => {
+  assert.deepEqual(
+    normalizeCursor({
+      cursorCreatedAt: '2026-05-09T12:00:00.000Z',
+      cursorId: ' 00042 ',
+    }),
+    {
+      cursorCreatedAt: '2026-05-09T12:00:00.000Z',
+      cursorId: '42',
+    },
+  );
+  assert.deepEqual(
+    normalizeCursor({
+      beforeCreatedAt: '2026-05-09T12:00:00.123456Z',
+      beforeId: MAX_POSTGRES_SERIAL_ID,
+    }),
+    {
+      cursorCreatedAt: '2026-05-09T12:00:00.123456Z',
+      cursorId: String(MAX_POSTGRES_SERIAL_ID),
+    },
+  );
+  [
+    { cursorCreatedAt: 'not-a-date', cursorId: 42 },
+    { cursorCreatedAt: '2026-05-09', cursorId: 42 },
+    { cursorCreatedAt: '2026-05-09T12:00:00.000Z ', cursorId: 42 },
+    { cursorCreatedAt: '2026-05-09T12:00:00.000Z', cursorId: 0 },
+    { cursorCreatedAt: '2026-05-09T12:00:00.000Z', cursorId: '-1' },
+    { cursorCreatedAt: '2026-05-09T12:00:00.000Z', cursorId: '1.5' },
+    { cursorCreatedAt: '2026-05-09T12:00:00.000Z', cursorId: 'card-42' },
+    { cursorCreatedAt: '2026-05-09T12:00:00.000Z', cursorId: MAX_POSTGRES_SERIAL_ID + 1 },
+  ].forEach((cursor) => {
+    assert.equal(normalizeCursor(cursor), null, `Expected ${JSON.stringify(cursor)} to be rejected`);
+  });
+});
+
+test('canStartDeckCardBrowserAppendRequest blocks requests with malformed cursors', () => {
+  const { requestState, requestId } = beginDeckCardBrowserReplaceRequest({}, 11, {
+    searchQuery: 'biology',
+  });
+  const malformedCursorRequest = createDeckCardBrowserAppendRequest(requestState, 11, {
+    requestId,
+    searchQuery: 'biology',
+    cursor: {
+      cursorCreatedAt: 'not-a-date',
+      cursorId: '10',
+    },
+  });
+
+  assert.equal(malformedCursorRequest.cursor, null);
+  assert.equal(
+    canStartDeckCardBrowserAppendRequest(requestState, {}, 11, malformedCursorRequest),
+    false,
+  );
 });
 
 test('canStartDeckCardBrowserAppendRequest blocks stale rendered load-more requests', () => {

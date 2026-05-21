@@ -207,6 +207,19 @@ test('normal load-more display remains available without append errors', () => {
   assert.equal(state.loadMoreButtonLabel, DECK_CARD_BROWSER_COPY.loadingMore);
 });
 
+test('load-more display is hidden when the stored next cursor is malformed', () => {
+  const state = buildDeckCardBrowserDisplayState({
+    nextCursor: {
+      cursorCreatedAt: 'not-a-date',
+      cursorId: '9',
+    },
+    error: '',
+  });
+
+  assert.equal(state.showError, false);
+  assert.equal(state.showLoadMore, false);
+});
+
 test('legacy string errors normalize to replace failures', () => {
   const state = buildDeckCardBrowserDisplayState({
     appliedSearchQuery: 'history',

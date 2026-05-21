@@ -103,6 +103,7 @@ function buildDeckCardBrowserDisplayState(deckCards = {}) {
   const isLoadingMore = Boolean(currentDeckCards.loadingMore);
   const loadedCards = Array.isArray(currentDeckCards.cards) ? currentDeckCards.cards : [];
   const appliedSearchQuery = normalizeSearchQuery(currentDeckCards.appliedSearchQuery);
+  const normalizedNextCursor = normalizeCursor(currentDeckCards.nextCursor);
   const showEmptyState = Boolean(currentDeckCards.hasLoaded)
     && loadedCards.length === 0
     && !isLoading;
@@ -111,7 +112,7 @@ function buildDeckCardBrowserDisplayState(deckCards = {}) {
   const retryBusy = isAppendError ? isLoadingMore : isLoading;
   const retrySearchQuery = error?.searchQuery || appliedSearchQuery;
   const retryCursor = isAppendError
-    ? error?.cursor || normalizeCursor(currentDeckCards.nextCursor)
+    ? error?.cursor || normalizedNextCursor
     : null;
   const retryRequestId = isAppendError
     ? getAppendRetryRequestId(error?.requestId, currentDeckCards.browserRequestId)
@@ -140,7 +141,7 @@ function buildDeckCardBrowserDisplayState(deckCards = {}) {
     loadMoreButtonLabel: isLoadingMore
       ? DECK_CARD_BROWSER_COPY.loadingMore
       : DECK_CARD_BROWSER_COPY.loadMore,
-    showLoadMore: Boolean(currentDeckCards.nextCursor) && !isAppendError,
+    showLoadMore: Boolean(normalizedNextCursor) && !isAppendError,
     showError: Boolean(error),
     errorKind: error?.kind || null,
     errorTitle: isAppendError

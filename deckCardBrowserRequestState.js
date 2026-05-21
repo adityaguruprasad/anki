@@ -1,3 +1,6 @@
+const { normalizeRouteSafeCardId } = require('./cardIdentifier');
+const { isValidIsoTimestamp } = require('./isoTimestampValidation');
+
 function normalizeDeckId(deckId) {
   return String(deckId);
 }
@@ -57,14 +60,15 @@ function normalizeCursor(cursor) {
 
   const cursorCreatedAt = cursor.cursorCreatedAt ?? cursor.beforeCreatedAt;
   const cursorId = cursor.cursorId ?? cursor.beforeId;
+  const normalizedCursorId = normalizeRouteSafeCardId(cursorId);
 
-  if (!cursorCreatedAt || !cursorId) {
+  if (!isValidIsoTimestamp(cursorCreatedAt) || normalizedCursorId === null) {
     return null;
   }
 
   return {
-    cursorCreatedAt: String(cursorCreatedAt),
-    cursorId: String(cursorId),
+    cursorCreatedAt,
+    cursorId: normalizedCursorId,
   };
 }
 
@@ -139,8 +143,10 @@ function isLatestDeckCardBrowserReplaceRequest(requestState, deckId, requestId) 
 function canStartDeckCardBrowserAppendRequest(requestState, appendRequestState, deckId, request) {
   const latestRequest = getLatestDeckCardBrowserRequest(requestState, deckId);
 
+  // Short-circuit append requests whose cursor normalization failed.
   return (
     Boolean(request)
+    && Boolean(request.cursor)
     && latestRequest.requestId === request.requestId
     && latestRequest.searchQuery === request.searchQuery
     && !appendRequestState[normalizeDeckId(deckId)]
