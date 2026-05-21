@@ -1307,11 +1307,17 @@ async function getCardsByDeck(req, res, db) {
     const params = [deckId, userId];
     let cursorClause = '';
     if (cursorValidation.value !== null) {
+      const cursorCreatedAtPlaceholder = `$${params.length + 1}`;
+      const cursorIdPlaceholder = `$${params.length + 2}`;
+      // cards.created_at is a schema UTC wall-clock TIMESTAMP; normalize API
+      // cursor instants here so raw offset strings cannot shift by DB session time zone.
+      const cursorCreatedAtUtcExpression =
+        `(${cursorCreatedAtPlaceholder}::timestamptz AT TIME ZONE 'UTC')`;
       params.push(cursorValidation.value.cursorCreatedAt, cursorValidation.value.cursorId);
       cursorClause = `
         AND (
-          c.created_at < $3
-          OR (c.created_at = $3 AND c.id < $4)
+          c.created_at < ${cursorCreatedAtUtcExpression}
+          OR (c.created_at = ${cursorCreatedAtUtcExpression} AND c.id < ${cursorIdPlaceholder})
         )`;
     }
 

@@ -17,7 +17,7 @@ const {
   validatePositiveIntegerIdentifier,
   updateCard,
 } = require('../apiHandlers');
-const { getVarcharColumnLength, readAnkiSchema } = require('./schemaHelpers');
+const { getTableDefinition, getVarcharColumnLength, readAnkiSchema } = require('./schemaHelpers');
 
 const UNSAFE_DECK_NAME_ERROR =
   'Invalid deck name: cannot contain line breaks, control characters, or invisible formatting characters';
@@ -310,6 +310,26 @@ function assertStudySessionUpdateSql(sql) {
   assert.match(sql, /UNION\s+ALL\s+SELECT\s+NULL\s+AS\s+id[\s\S]*?NULL\s+AS\s+last_reviewed[\s\S]*?target\.__owned_user_id\s+AS\s+"__owned_user_id"[\s\S]*?FALSE\s+AS\s+"__updated"[\s\S]*?FROM\s+target/i);
   assert.match(sql, /FALSE\s+AS\s+"__updated"/i);
   assert.match(sql, /WHERE\s+NOT\s+EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+updated\s*\)/i);
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function assertBrowseCursorPredicateSql(sql, timestampPlaceholder = '$3', idPlaceholder = '$4') {
+  const utcTimestampExpression =
+    `\\(${escapeRegExp(timestampPlaceholder)}::timestamptz\\s+AT\\s+TIME\\s+ZONE\\s+'UTC'\\)`;
+
+  assert.match(
+    sql,
+    new RegExp(
+      [
+        `c\\.created_at < ${utcTimestampExpression}`,
+        `OR \\(c\\.created_at = ${utcTimestampExpression} AND c\\.id < ${escapeRegExp(idPlaceholder)}\\)`,
+      ].join('\\s+'),
+      'i'
+    )
+  );
 }
 
 function assertDeleteDeckAtomicSql(sql) {
@@ -2192,6 +2212,10 @@ test('GET /api/decks/:deckId/cards returns 400 for invalid cursor and skips db q
       error: 'Invalid beforeCreatedAt: must be a valid date',
     },
     {
+      query: { beforeCreatedAt: '2026-05-08T13:00:00+24:00', beforeId: '3' },
+      error: 'Invalid beforeCreatedAt: must be a valid date',
+    },
+    {
       query: { beforeCreatedAt: '2026-02-31T13:00:00.000Z', beforeId: '3' },
       error: 'Invalid beforeCreatedAt: must be a valid date',
     },
@@ -2343,6 +2367,19 @@ test('GET /api/decks/:deckId/cards rejects conflicting complete cursor families 
   }
 });
 
+test('GET /api/decks/:deckId/cards cursor SQL stays aligned with cards.created_at TIMESTAMP', () => {
+  const cardsTable = getTableDefinition('cards');
+
+  assert.match(
+    cardsTable,
+    /\bcreated_at\s+TIMESTAMP\s+NOT\s+NULL\s+DEFAULT\s+CURRENT_TIMESTAMP\b/i,
+  );
+  assert.doesNotMatch(
+    cardsTable,
+    /\bcreated_at\s+(?:TIMESTAMPTZ|TIMESTAMP\s+WITH\s+TIME\s+ZONE)\b/i,
+  );
+});
+
 test('GET /api/decks/:deckId/cards applies keyset cursor with parameterized SQL', async () => {
   const card = createCardReadRow({
     id: 2,
@@ -2381,11 +2418,55 @@ test('GET /api/decks/:deckId/cards applies keyset cursor with parameterized SQL'
   assert.equal(db.calls[0].params[4], 3);
   assert.match(
     db.calls[0].sql,
-    /LEFT JOIN cards c\s+ON c\.deck_id = d\.id\s+AND \(\s+c\.created_at < \$3\s+OR \(c\.created_at = \$3 AND c\.id < \$4\)\s+\)/i
+    /LEFT JOIN cards c\s+ON c\.deck_id = d\.id\s+AND \(/i
   );
+  assertBrowseCursorPredicateSql(db.calls[0].sql);
   assert.match(db.calls[0].sql, /ORDER BY c\.created_at DESC,\s*c\.id DESC\s+LIMIT \$5/);
   assert.doesNotMatch(db.calls[0].sql, /2026-05-08T13:00:00\.000Z/);
   assert.doesNotMatch(db.calls[0].sql, /beforeId/);
+});
+
+test('GET /api/decks/:deckId/cards compares offset cursor timestamps as UTC instants', async () => {
+  const card = createCardReadRow({
+    id: 2,
+    deck_id: 42,
+    front_content: 'Older card',
+    back_content: 'Answer',
+    created_at: '2026-05-08T12:00:00.000Z',
+    next_review: '2026-05-19T12:00:00.000Z',
+  });
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [{ ...card, __cursor_created_at: '2026-05-08T12:00:00.000000Z', __owned_deck_id: 42 }],
+    },
+  ]);
+  const req = {
+    params: { deckId: '42' },
+    query: {
+      limit: '2',
+      beforeCreatedAt: '2026-05-08T06:00:00.123456-07:00',
+      beforeId: '3',
+    },
+    user: { userId: 1 },
+  };
+  const res = createRes();
+
+  await getCardsByDeck(req, res, db);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, { cards: [card], nextCursor: null });
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [
+    42,
+    1,
+    '2026-05-08T06:00:00.123456-07:00',
+    3,
+    3,
+  ]);
+  assertBrowseCursorPredicateSql(db.calls[0].sql);
+  assert.match(db.calls[0].sql, /\$3::timestamptz\s+AT\s+TIME\s+ZONE\s+'UTC'/i);
+  assert.doesNotMatch(db.calls[0].sql, /2026-05-08T06:00:00\.123456-07:00/);
 });
 
 test('GET /api/decks/:deckId/cards applies q and cursor with round-trippable cursor params', async () => {
@@ -2427,7 +2508,7 @@ test('GET /api/decks/:deckId/cards applies q and cursor with round-trippable cur
     'mito',
     3,
   ]);
-  assert.match(db.calls[0].sql, /c\.created_at < \$3\s+OR \(c\.created_at = \$3 AND c\.id < \$4\)/);
+  assertBrowseCursorPredicateSql(db.calls[0].sql);
   assert.match(db.calls[0].sql, /POSITION\(LOWER\(\$5\) IN LOWER\(c\.front_content\)\) > 0/i);
   assert.match(db.calls[0].sql, /ORDER BY c\.created_at DESC,\s*c\.id DESC\s+LIMIT \$6/);
   assert.doesNotMatch(db.calls[0].sql, /mito/);
