@@ -487,6 +487,11 @@ test('register rejects invalid password hasher output before inserting a user', 
     { name: 'undefined hash', hash: undefined },
     { name: 'non-string hash', hash: null },
     { name: 'empty hash', hash: '' },
+    { name: 'whitespace-only hash', hash: '   ' },
+    { name: 'hash with line break', hash: 'stored\nhash' },
+    { name: 'hash with mid-string NBSP', hash: 'stored\u00A0hash' },
+    { name: 'hash with mid-string ideographic space', hash: 'stored\u3000hash' },
+    { name: 'hash with invisible formatting mark', hash: 'stored\u202ehash' },
     { name: 'over-length hash', hash: 'x'.repeat(AUTH_PASSWORD_HASH_MAX_LENGTH + 1) },
   ];
 
@@ -1017,6 +1022,11 @@ test('login treats invalid stored password hashes as credential failures with ra
     { name: 'null hash', passwordHash: null },
     { name: 'numeric hash', passwordHash: 12345 },
     { name: 'empty hash', passwordHash: '' },
+    { name: 'whitespace-only hash', passwordHash: '   ' },
+    { name: 'hash with line break', passwordHash: 'stored\nhash' },
+    { name: 'hash with mid-string NBSP', passwordHash: 'stored\u00A0hash' },
+    { name: 'hash with mid-string ideographic space', passwordHash: 'stored\u3000hash' },
+    { name: 'hash with invisible formatting mark', passwordHash: 'stored\u202ehash' },
     {
       name: 'over-length hash',
       passwordHash: 'x'.repeat(AUTH_PASSWORD_HASH_MAX_LENGTH + 1),

@@ -5,6 +5,13 @@ CREATE TABLE users (
   email VARCHAR(100) UNIQUE NOT NULL,
   password_hash VARCHAR(100) NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  -- Keep persisted credential material aligned with auth.js before any login
+  -- path treats it as a password verifier.
+  CONSTRAINT users_password_hash_non_blank_check CHECK (password_hash ~ '[^[:space:]]'),
+  CONSTRAINT users_password_hash_safe_characters_check CHECK (
+    password_hash !~ U&'[\0001-\001F\007F-\009F\00A0\061C\1680\2000-\200A\200B-\200F\2028\2029\202A-\202E\202F\205F\2060\2066-\2069\3000\FEFF]'
+  ),
+  CONSTRAINT users_password_hash_max_length_check CHECK (char_length(password_hash) <= 100),
   -- PostgreSQL text cannot contain NUL; these checks cover the remaining
   -- account identity characters rejected by auth.js before writes.
   CONSTRAINT users_username_trimmed_check CHECK (username = TRIM(username)),

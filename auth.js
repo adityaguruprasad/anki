@@ -59,6 +59,8 @@ const USERNAME_UNSAFE_CHARACTER_PATTERN =
   /[\x00-\x1F\x7F-\x9F\u061C\u200B-\u200F\u2028\u2029\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/u;
 const EMAIL_UNSAFE_CHARACTER_PATTERN =
   /[\s\x00-\x1F\x7F-\x9F\u061C\u200B-\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/u;
+const PASSWORD_HASH_UNSAFE_CHARACTER_PATTERN =
+  /[\x00-\x1F\x7F-\x9F\u00A0\u061C\u1680\u2000-\u200A\u200B-\u200F\u2028\u2029\u202A-\u202E\u202F\u205F\u2060\u2066-\u2069\u3000\uFEFF]/u;
 // Bcrypt hash of a non-secret placeholder; used only to equalize missing-account login work.
 const MISSING_ACCOUNT_DUMMY_PASSWORD_HASH =
   '$2b$10$xnS.9dA.hjbGf20CAaG6xuMuScJF.XYy.xwfX5K5UHddi5gJdzBKK';
@@ -368,8 +370,9 @@ function isDuplicateAccountError(error) {
 function validatePasswordHash(passwordHash) {
   return (
     typeof passwordHash === 'string'
-    && passwordHash.length > 0
+    && passwordHash.trim().length > 0
     && passwordHash.length <= AUTH_PASSWORD_HASH_MAX_LENGTH
+    && !PASSWORD_HASH_UNSAFE_CHARACTER_PATTERN.test(passwordHash)
   );
 }
 
