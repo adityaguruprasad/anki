@@ -149,6 +149,22 @@ function createEmptyCardReadSentinel(overrides = {}) {
   };
 }
 
+function createDueCardQueryRow(card, overrides = {}) {
+  return {
+    ...card,
+    __owned_deck_id: 42,
+    __is_due: true,
+    ...overrides,
+  };
+}
+
+function createEmptyDueCardQueryRow(overrides = {}) {
+  return createEmptyCardReadSentinel({
+    __is_due: null,
+    ...overrides,
+  });
+}
+
 function createStudySessionCardReadRow(overrides = {}) {
   return {
     ...createCardReadRow(overrides),
@@ -2529,21 +2545,19 @@ test('GET /api/cards/:deckId returns 404 when deck is not owned by user', async 
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, [42, 1, 100]);
   assert.match(db.calls[0].sql, /WHERE d\.id = \$1 AND d\.user_id = \$2/);
+  assert.match(db.calls[0].sql, /AS "__is_due"/);
   assertDuePredicate(db.calls[0].sql);
   assert.match(db.calls[0].sql, /ORDER BY c\.next_review ASC NULLS FIRST,\s*c\.id ASC\s+LIMIT \$3/);
 });
 
 test('GET /api/cards/:deckId fails closed when the due-card query result shape is malformed', async (t) => {
-  const validRow = {
-    ...createCardReadRow({
-      id: 11,
-      deck_id: 42,
-      front_content: 'Due card',
-      back_content: 'Answer',
-      next_review: '2026-05-08T12:00:00.000Z',
-    }),
-    __owned_deck_id: 42,
-  };
+  const validRow = createDueCardQueryRow(createCardReadRow({
+    id: 11,
+    deck_id: 42,
+    front_content: 'Due card',
+    back_content: 'Answer',
+    next_review: '2026-05-08T12:00:00.000Z',
+  }));
   const malformedResults = [
     null,
     { rowCount: 0, rows: [validRow] },
@@ -2590,10 +2604,7 @@ test('GET /api/cards/:deckId fails closed when the due-card query exceeds the re
   const db = createDb([
     {
       rowCount: 2,
-      rows: dueCards.map((card) => ({
-        ...card,
-        __owned_deck_id: 42,
-      })),
+      rows: dueCards.map((card) => createDueCardQueryRow(card)),
     },
   ]);
   const req = {
@@ -2631,6 +2642,7 @@ test('GET /api/cards/:deckId returns unscheduled and past-due cards with a param
         ...card,
         private_note: 'do not expose',
         __owned_deck_id: 42,
+        __is_due: true,
       })),
     },
   ]);
@@ -2644,11 +2656,13 @@ test('GET /api/cards/:deckId returns unscheduled and past-due cards with a param
   assert.deepEqual(res.body[0], unscheduledCard);
   assert.deepEqual(res.body[1], pastDueCard);
   assert.equal(Object.hasOwn(res.body[0], '__owned_deck_id'), false);
+  assert.equal(Object.hasOwn(res.body[0], '__is_due'), false);
   assert.equal(Object.hasOwn(res.body[0], 'private_note'), false);
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, [42, 1, 100]);
   assertExplicitPublicCardReadSelect(db.calls[0].sql);
   assert.match(db.calls[0].sql, /LEFT JOIN cards c/);
+  assert.match(db.calls[0].sql, /AS "__is_due"/);
   assertDuePredicate(db.calls[0].sql);
   assert.match(db.calls[0].sql, /WHERE d\.id = \$1 AND d\.user_id = \$2/);
   assert.match(db.calls[0].sql, /ORDER BY c\.next_review ASC NULLS FIRST,\s*c\.id ASC\s+LIMIT \$3/);
@@ -2671,7 +2685,7 @@ test('GET /api/cards/:deckId prioritizes unscheduled due cards when limiting stu
   const db = createDb([
     {
       rowCount: 2,
-      rows: dueCards.map((card) => ({ ...card, __owned_deck_id: 42 })),
+      rows: dueCards.map((card) => createDueCardQueryRow(card)),
     },
   ]);
   const req = {
@@ -2700,7 +2714,7 @@ test('GET /api/cards/:deckId accepts boundary limit with a parameterized limit',
   const db = createDb([
     {
       rowCount: 1,
-      rows: [{ ...dueCard, __owned_deck_id: 42 }],
+      rows: [createDueCardQueryRow(dueCard)],
     },
   ]);
   const req = {
@@ -2721,11 +2735,43 @@ test('GET /api/cards/:deckId accepts boundary limit with a parameterized limit',
   assert.doesNotMatch(db.calls[0].sql, /LIMIT\s+100/);
 });
 
+test('GET /api/cards/:deckId fails closed when due-card rows lack true due proof', async (t) => {
+  const validDueCard = createDueCardQueryRow(createCardReadRow({
+    id: 11,
+    deck_id: 42,
+    front_content: 'Due card',
+    back_content: 'Answer',
+    next_review: '2026-05-08T12:00:00.000Z',
+  }));
+  const rowWithoutDueProof = { ...validDueCard };
+  delete rowWithoutDueProof.__is_due;
+  const malformedRows = [
+    rowWithoutDueProof,
+    { ...validDueCard, __is_due: false },
+    { ...validDueCard, __is_due: null },
+    { ...validDueCard, __is_due: 'true' },
+  ];
+  t.mock.method(console, 'error', () => {});
+
+  for (const row of malformedRows) {
+    const db = createDb([{ rowCount: 1, rows: [row] }]);
+    const req = { params: { deckId: '42' }, user: { userId: 1 } };
+    const res = createRes();
+
+    await getDueCardsByDeck(req, res, db);
+
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.body, { error: 'Internal server error' });
+    assert.equal(db.calls.length, 1);
+    assert.deepEqual(db.calls[0].params, [42, 1, 100]);
+  }
+});
+
 test('GET /api/cards/:deckId returns empty array for owned deck with no due cards', async () => {
   const db = createDb([
     {
       rowCount: 1,
-      rows: [createEmptyCardReadSentinel()],
+      rows: [createEmptyDueCardQueryRow()],
     },
   ]);
   const req = { params: { deckId: '42' }, user: { userId: 1 } };
@@ -2775,8 +2821,8 @@ test('GET /api/cards/:deckId fails closed when rows are not anchored to the requ
   const malformedRows = [
     { id: null },
     { id: null, __owned_deck_id: 41 },
-    { ...dueCard, deck_id: 41, __owned_deck_id: 42 },
-    { ...dueCard, __owned_deck_id: 41 },
+    { ...dueCard, deck_id: 41, __owned_deck_id: 42, __is_due: true },
+    { ...dueCard, __owned_deck_id: 41, __is_due: true },
   ];
   t.mock.method(console, 'error', () => {});
 
@@ -2824,7 +2870,7 @@ test('GET /api/cards/:deckId fails closed when a due-card row violates read resp
     const db = createDb([
       {
         rowCount: 1,
-        rows: [{ ...row, __owned_deck_id: 42 }],
+        rows: [createDueCardQueryRow(row)],
       },
     ]);
     const req = { params: { deckId: '42' }, user: { userId: 1 } };

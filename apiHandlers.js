@@ -729,7 +729,7 @@ function assertCardBrowseCursorResult(row) {
   }
 }
 
-function assertCardListRowAnchoredToDeck(row, deckId) {
+function assertCardListRowAnchoredToDeck(row, deckId, options = {}) {
   assertObjectHasOwnFields(row, ['id', '__owned_deck_id'], INVALID_CARD_READ_RESULT_ERROR);
 
   const ownedDeckIdValidation = validatePositiveIntegerIdentifier(row.__owned_deck_id, 'deckId');
@@ -738,7 +738,7 @@ function assertCardListRowAnchoredToDeck(row, deckId) {
   }
 
   if (row.id === null) {
-    assertEmptyCardListRow(row);
+    assertEmptyCardListRow(row, options);
     return;
   }
 
@@ -749,12 +749,48 @@ function assertCardListRowAnchoredToDeck(row, deckId) {
   }
 }
 
-function assertEmptyCardListRow(row) {
+function assertDueCardListRow(row, deckId) {
+  assertCardListRowAnchoredToDeck(row, deckId, {
+    allowedEmptySidecarFields: ['__is_due'],
+  });
+  assertObjectHasOwnFields(row, ['__is_due'], INVALID_CARD_READ_RESULT_ERROR);
+
+  if (row.id === null) {
+    if (row.__is_due !== null) {
+      throw new TypeError(INVALID_CARD_READ_RESULT_ERROR);
+    }
+    return;
+  }
+
+  if (row.__is_due !== true) {
+    throw new TypeError(INVALID_CARD_READ_RESULT_ERROR);
+  }
+}
+
+function normalizeAllowedEmptySidecarFields(options = {}) {
+  const allowedEmptySidecarFields = options?.allowedEmptySidecarFields;
+  if (allowedEmptySidecarFields === undefined) {
+    return [];
+  }
+
+  if (!Array.isArray(allowedEmptySidecarFields)) {
+    throw new TypeError(INVALID_CARD_READ_RESULT_ERROR);
+  }
+
+  return allowedEmptySidecarFields;
+}
+
+function assertEmptyCardListRow(row, options = {}) {
   assertObjectHasOwnFields(row, CARD_READ_FIELDS, INVALID_CARD_READ_RESULT_ERROR);
+  const allowedEmptySidecarFields = normalizeAllowedEmptySidecarFields(options);
+  const allowedFields = [
+    ...EMPTY_CARD_LIST_ROW_ALLOWED_FIELDS,
+    ...allowedEmptySidecarFields,
+  ];
 
   if (
     Reflect.ownKeys(row).some(
-      (field) => !EMPTY_CARD_LIST_ROW_ALLOWED_FIELDS.includes(field)
+      (field) => !allowedFields.includes(field)
     )
   ) {
     throw new TypeError(INVALID_CARD_READ_RESULT_ERROR);
@@ -767,6 +803,12 @@ function assertEmptyCardListRow(row) {
   if (
     Object.hasOwn(row, '__cursor_created_at')
     && row.__cursor_created_at !== null
+  ) {
+    throw new TypeError(INVALID_CARD_READ_RESULT_ERROR);
+  }
+
+  if (
+    allowedEmptySidecarFields.some((field) => Object.hasOwn(row, field) && row[field] !== null)
   ) {
     throw new TypeError(INVALID_CARD_READ_RESULT_ERROR);
   }
@@ -1195,7 +1237,12 @@ async function getDueCardsByDeck(req, res, db) {
 
     const result = await db.query(
       `SELECT ${CARD_READ_SELECT_LIST},
-              d.id AS "__owned_deck_id"
+              d.id AS "__owned_deck_id",
+              -- Keep this proof expression coupled to the LEFT JOIN due predicate below.
+              CASE
+                WHEN c.id IS NULL THEN NULL
+                ELSE ${getDueCardPredicate('c')}
+              END AS "__is_due"
        FROM decks d
        LEFT JOIN cards c
          ON c.deck_id = d.id
@@ -1217,7 +1264,7 @@ async function getDueCardsByDeck(req, res, db) {
     }
 
     for (const row of rows) {
-      assertCardListRowAnchoredToDeck(row, deckId);
+      assertDueCardListRow(row, deckId);
     }
 
     const dueCards = rows
