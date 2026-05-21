@@ -4,6 +4,7 @@ const AUTH_TOKEN_MAX_LENGTH = 4096;
 const AUTH_TOKEN_ALGORITHM = 'HS256';
 const AUTH_TOKEN_TYPE = 'JWT';
 const AUTH_TOKEN_COMPACT_PART_PATTERN = /^[A-Za-z0-9_-]+$/;
+const AUTH_TOKEN_HEADER_FIELDS = Object.freeze(['alg', 'typ']);
 const AUTH_TOKEN_PAYLOAD_FIELDS = Object.freeze(['userId', 'iat', 'exp']);
 
 function decodeBase64UrlToUtf8(value) {
@@ -76,8 +77,8 @@ function isValidJwtCompactPart(part) {
   );
 }
 
-function hasUnsupportedCriticalHeader(header) {
-  return Object.prototype.hasOwnProperty.call(header, 'crit');
+function hasOnlyAuthTokenHeaderFields(header) {
+  return Object.keys(header).every((field) => AUTH_TOKEN_HEADER_FIELDS.includes(field));
 }
 
 function hasOnlyAuthTokenPayloadFields(payload) {
@@ -97,9 +98,9 @@ function hasUsableJwtEnvelope(token) {
   const header = parseBase64UrlJsonObject(encodedHeader);
   if (
     header === null
+    || !hasOnlyAuthTokenHeaderFields(header)
     || header.alg !== AUTH_TOKEN_ALGORITHM
     || header.typ !== AUTH_TOKEN_TYPE
-    || hasUnsupportedCriticalHeader(header)
   ) {
     return false;
   }
@@ -115,8 +116,8 @@ function hasUsableJwtEnvelope(token) {
   );
 }
 
-// Client-side normalization only validates the compact JWT envelope shape and
-// app claims expected from API-issued tokens. Signature verification and
+// Client-side normalization only validates the compact JWT envelope shape,
+// strict API-issued header contract, and app claims. Signature verification and
 // chronological expiry enforcement remain owned by the API/auth boundary.
 function normalizeAuthToken(value) {
   if (typeof value !== 'string') {

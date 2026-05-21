@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const { buildAuthHeaders } = require('../authHeaders');
 const {
+  base64UrlJson,
   createCompactJwt,
   createMaxLengthCompactJwt,
 } = require('./authTokenTestHelpers');
@@ -29,6 +30,21 @@ test('buildAuthHeaders accepts a max-length compact JWT token', () => {
   assert.deepEqual(buildAuthHeaders(token), {
     Authorization: `Bearer ${token}`,
   });
+});
+
+test('buildAuthHeaders does not send tokens with unsupported JWT header fields', () => {
+  assert.deepEqual(buildAuthHeaders(createCompactJwt({ header: { kid: 'active-key' } })), {});
+  assert.deepEqual(buildAuthHeaders(createCompactJwt({ header: { crit: ['exp'] } })), {});
+});
+
+test('buildAuthHeaders does not send compact JWTs with alg-only headers missing typ', () => {
+  const token = [
+    base64UrlJson({ alg: 'HS256' }),
+    base64UrlJson({ userId: 42, iat: 1000, exp: 2000 }),
+    'signature0',
+  ].join('.');
+
+  assert.deepEqual(buildAuthHeaders(token), {});
 });
 
 test('buildAuthHeaders returns empty headers for missing and blank tokens', () => {
