@@ -15,15 +15,27 @@ function assertMalformed(payload, options) {
   );
 }
 
+function createValidDeckPayload(overrides = {}) {
+  return {
+    id: 7,
+    user_id: 1,
+    name: 'Biology',
+    description: null,
+    created_at: '2026-05-10T12:00:00.000Z',
+    ...overrides,
+  };
+}
+
 test('parseDeckMutationResponsePayload preserves valid deck rows and extra fields', () => {
-  const payload = {
+  const payload = createValidDeckPayload({
     id: '42',
+    user_id: '1',
     name: 'Spanish',
+    description: 'Language study',
     totalCards: 12,
     dueCards: 3,
-    created_at: '2026-05-10T12:00:00.000Z',
     updated_at: '2026-05-10T12:30:00.000Z',
-  };
+  });
 
   const parsed = parseDeckMutationResponsePayload(payload);
 
@@ -33,10 +45,10 @@ test('parseDeckMutationResponsePayload preserves valid deck rows and extra field
 });
 
 test('parseDeckMutationResponsePayload accepts numeric ids', () => {
-  const payload = {
+  const payload = createValidDeckPayload({
     id: 7,
     name: 'Biology',
-  };
+  });
 
   assert.equal(parseDeckMutationResponsePayload(payload), payload);
   assert.equal(parseDeckMutationResponsePayload(payload, { expectedId: '7' }), payload);
@@ -46,10 +58,10 @@ test('parseDeckMutationResponsePayload accepts numeric ids', () => {
 
 test('parseDeckMutationResponsePayload compares expected ids with route-safe normalization', () => {
   [7, '7'].forEach((id) => {
-    const payload = {
+    const payload = createValidDeckPayload({
       id,
       name: 'Biology',
-    };
+    });
 
     ['7', ' 7 ', '0007', '\t0007\n', 7].forEach((expectedId) => {
       assert.equal(parseDeckMutationResponsePayload(payload, { expectedId }), payload);
@@ -63,10 +75,10 @@ test('parseDeckMutationResponsePayload compares expected ids with route-safe nor
 
 test('parseDeckMutationResponsePayload accepts positive numeric id boundaries', () => {
   [1, 2147483647].forEach((id) => {
-    const payload = {
+    const payload = createValidDeckPayload({
       id,
       name: `Deck ${id}`,
-    };
+    });
 
     assert.equal(parseDeckMutationResponsePayload(payload), payload);
     assert.equal(parseDeckMutationResponsePayload(payload, { expectedId: String(id) }), payload);
@@ -77,16 +89,25 @@ test('parseDeckMutationResponsePayload accepts positive numeric id boundaries', 
 
 test('parseDeckMutationResponsePayload accepts PostgreSQL SERIAL string id boundaries', () => {
   ['1', '2147483647'].forEach((id) => {
-    const payload = {
+    const payload = createValidDeckPayload({
       id,
       name: 'Boundary deck',
-    };
+    });
 
     assert.equal(parseDeckMutationResponsePayload(payload), payload);
     assert.equal(parseDeckMutationResponsePayload(payload, { expectedId: Number(id) }), payload);
     assert.equal(hasDeckMutationResponsePayload(payload), true);
     assert.equal(hasDeckMutationResponsePayload(payload, { expectedId: id }), true);
   });
+});
+
+test('parseDeckMutationResponsePayload accepts ISO timestamps without fractional seconds', () => {
+  const payload = createValidDeckPayload({
+    created_at: '2026-05-10T12:00:00Z',
+  });
+
+  assert.equal(parseDeckMutationResponsePayload(payload), payload);
+  assert.equal(hasDeckMutationResponsePayload(payload), true);
 });
 
 test('parseDeckMutationResponsePayload rejects malformed top-level payloads', () => {
@@ -148,12 +169,70 @@ test('parseDeckMutationResponsePayload rejects unsafe numeric response ids', () 
 
 test('parseDeckMutationResponsePayload rejects missing or unusable names', () => {
   [
-    { id: 1 },
-    { id: 1, name: null },
-    { id: 1, name: '' },
-    { id: 1, name: '  ' },
-    { id: 1, name: 7 },
-    { id: 1, name: [] },
+    createValidDeckPayload({ name: undefined }),
+    createValidDeckPayload({ name: null }),
+    createValidDeckPayload({ name: '' }),
+    createValidDeckPayload({ name: '  ' }),
+    createValidDeckPayload({ name: 7 }),
+    createValidDeckPayload({ name: [] }),
+  ].forEach((payload) => {
+    assertMalformed(payload);
+    assert.equal(hasDeckMutationResponsePayload(payload), false);
+  });
+});
+
+test('parseDeckMutationResponsePayload rejects missing or unusable owner ids', () => {
+  [
+    createValidDeckPayload({ user_id: undefined }),
+    createValidDeckPayload({ user_id: null }),
+    createValidDeckPayload({ user_id: '' }),
+    createValidDeckPayload({ user_id: '  ' }),
+    createValidDeckPayload({ user_id: 'user-1' }),
+    createValidDeckPayload({ user_id: '0' }),
+    createValidDeckPayload({ user_id: '-1' }),
+    createValidDeckPayload({ user_id: '1.5' }),
+    createValidDeckPayload({ user_id: '00042' }),
+    createValidDeckPayload({ user_id: '2147483648' }),
+    createValidDeckPayload({ user_id: 0 }),
+    createValidDeckPayload({ user_id: -1 }),
+    createValidDeckPayload({ user_id: 1.5 }),
+    createValidDeckPayload({ user_id: Number.NaN }),
+    createValidDeckPayload({ user_id: Number.POSITIVE_INFINITY }),
+    createValidDeckPayload({ user_id: 2147483648 }),
+    createValidDeckPayload({ user_id: {} }),
+  ].forEach((payload) => {
+    assertMalformed(payload);
+    assert.equal(hasDeckMutationResponsePayload(payload), false);
+  });
+});
+
+test('parseDeckMutationResponsePayload rejects malformed description fields', () => {
+  [
+    createValidDeckPayload({ description: undefined }),
+    createValidDeckPayload({ description: 7 }),
+    createValidDeckPayload({ description: [] }),
+    createValidDeckPayload({ description: {} }),
+    createValidDeckPayload({ description: false }),
+  ].forEach((payload) => {
+    assertMalformed(payload);
+    assert.equal(hasDeckMutationResponsePayload(payload), false);
+  });
+});
+
+test('parseDeckMutationResponsePayload rejects missing or invalid created timestamps', () => {
+  [
+    createValidDeckPayload({ created_at: undefined }),
+    createValidDeckPayload({ created_at: null }),
+    createValidDeckPayload({ created_at: '' }),
+    createValidDeckPayload({ created_at: '  ' }),
+    createValidDeckPayload({ created_at: 'not-a-date' }),
+    createValidDeckPayload({ created_at: '2026-05-10' }),
+    createValidDeckPayload({ created_at: '2026-05-10T12:00:00' }),
+    createValidDeckPayload({ created_at: '2026-05-10T12:00:00.000Z ' }),
+    createValidDeckPayload({ created_at: '2026-02-31T12:00:00.000Z' }),
+    createValidDeckPayload({ created_at: 0 }),
+    createValidDeckPayload({ created_at: new Date('2026-05-10T12:00:00.000Z') }),
+    createValidDeckPayload({ created_at: ['2026-05-10T12:00:00.000Z'] }),
   ].forEach((payload) => {
     assertMalformed(payload);
     assert.equal(hasDeckMutationResponsePayload(payload), false);
@@ -161,10 +240,10 @@ test('parseDeckMutationResponsePayload rejects missing or unusable names', () =>
 });
 
 test('parseDeckMutationResponsePayload rejects rows for a different expected deck id', () => {
-  const payload = {
+  const payload = createValidDeckPayload({
     id: 8,
     name: 'History',
-  };
+  });
 
   assertMalformed(payload, { expectedId: 7 });
   assert.equal(hasDeckMutationResponsePayload(payload, { expectedId: 7 }), false);

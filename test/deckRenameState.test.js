@@ -226,7 +226,10 @@ test('rename-deck response completion validates successful deck rows against the
 test('rename-deck response completion accepts route-normalized requested deck ids', () => {
   const renamedDeck = {
     id: 7,
+    user_id: 1,
     name: 'Organic Chemistry',
+    description: null,
+    created_at: '2026-05-10T12:00:00.000Z',
   };
 
   assert.deepEqual(
@@ -251,7 +254,10 @@ test('rename-deck response completion rejects route-normalized stale successful 
     responseOk: true,
     payload: {
       id: 7,
+      user_id: 1,
       name: 'Organic Chemistry',
+      description: null,
+      created_at: '2026-05-10T12:00:00.000Z',
     },
   });
 
@@ -270,7 +276,10 @@ test('rename-deck response completion rejects malformed 2xx payloads before loca
     responseOk: true,
     payload: {
       id: 8,
+      user_id: 1,
       name: 'Wrong deck',
+      description: null,
+      created_at: '2026-05-10T12:00:00.000Z',
     },
   });
 

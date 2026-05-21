@@ -135,7 +135,10 @@ test('create-deck response completion preserves non-OK server error behavior', (
 test('create-deck response completion exposes only validated successful deck rows', () => {
   const createdDeck = {
     id: 8,
+    user_id: 1,
     name: 'Biology',
+    description: null,
+    created_at: '2026-05-10T12:00:00.000Z',
     totalCards: 0,
     dueCards: 0,
   };

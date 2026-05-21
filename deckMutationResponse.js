@@ -3,6 +3,7 @@ const {
   MAX_POSTGRES_SERIAL_ID,
   normalizeRouteSafeId,
 } = require('./cardIdentifier');
+const { isValidIsoTimestamp } = require('./isoTimestampValidation');
 const MAX_POSTGRES_SERIAL_ID_STRING = String(MAX_POSTGRES_SERIAL_ID);
 
 function isObjectRecord(value) {
@@ -11,6 +12,10 @@ function isObjectRecord(value) {
 
 function isNonBlankString(value) {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+function hasOwn(value, key) {
+  return Object.prototype.hasOwnProperty.call(value, key);
 }
 
 function normalizeDeckResponseId(value) {
@@ -43,6 +48,12 @@ function hasUsableDeckId(value) {
   return normalizeDeckResponseId(value) !== null;
 }
 
+function hasUsableUserId(value) {
+  // user_id intentionally reuses deck id bounds: both are PostgreSQL SERIAL-backed
+  // backend integer identifiers in this API contract.
+  return normalizeDeckResponseId(value) !== null;
+}
+
 function hasSameDeckId(responseId, expectedId) {
   const normalizedResponseId = normalizeDeckResponseId(responseId);
   const normalizedExpectedId = normalizeRouteSafeId(expectedId);
@@ -60,7 +71,13 @@ function hasDeckMutationResponsePayload(payload, options = {}) {
   return (
     isObjectRecord(payload)
     && hasUsableDeckId(payload.id)
+    && hasOwn(payload, 'user_id')
+    && hasUsableUserId(payload.user_id)
     && isNonBlankString(payload.name)
+    && hasOwn(payload, 'description')
+    && (payload.description === null || typeof payload.description === 'string')
+    && hasOwn(payload, 'created_at')
+    && isValidIsoTimestamp(payload.created_at)
     && (!hasExpectedId || hasSameDeckId(payload.id, expectedId))
   );
 }
