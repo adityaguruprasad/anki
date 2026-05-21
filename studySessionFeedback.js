@@ -15,6 +15,8 @@ const STUDY_SESSION_SUBMISSION_RECOVERY_ACTIONS = Object.freeze({
 });
 
 const STALE_CARD_CONFLICT_MESSAGE = 'This card was already rescheduled and is no longer due. Moving to the next due card.';
+// Keep aligned with the backend 409 API payload for not-due study submissions.
+const STALE_CARD_CONFLICT_API_ERROR = 'Card is not due';
 // Mirrors the backend scheduler/response contract; keep aligned with spacedRepetition/apiHandlers.
 const MIN_STUDY_SESSION_EASE_FACTOR = 1.3;
 const MAX_STUDY_SESSION_INTERVAL_DAYS = 36500;
@@ -152,8 +154,19 @@ function getStudySessionSubmissionFeedback(options = {}) {
   };
 }
 
-function getStudySessionSubmissionRecovery(response) {
-  if (!response || response.status !== 409) {
+function getStudySessionSubmissionRecovery(response, payload) {
+  let status;
+  try {
+    status = response?.status;
+  } catch {
+    return null;
+  }
+
+  if (
+    status !== 409
+    || !isObjectRecord(payload)
+    || payload.error !== STALE_CARD_CONFLICT_API_ERROR
+  ) {
     return null;
   }
 

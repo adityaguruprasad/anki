@@ -89,24 +89,40 @@ test('getStudySessionSubmissionFeedback ignores parseable timestamps outside the
   });
 });
 
-test('getStudySessionSubmissionRecovery maps stale-card conflicts to next-card recovery', () => {
-  assert.deepEqual(getStudySessionSubmissionRecovery({ status: 409 }), {
+test('getStudySessionSubmissionRecovery maps validated stale-card conflicts to next-card recovery', () => {
+  assert.deepEqual(getStudySessionSubmissionRecovery({ status: 409 }, { error: 'Card is not due' }), {
     action: STUDY_SESSION_SUBMISSION_RECOVERY_ACTIONS.LOAD_NEXT_DUE_CARD,
     message: 'This card was already rescheduled and is no longer due. Moving to the next due card.',
   });
 });
 
-test('getStudySessionSubmissionRecovery ignores non-conflict submission responses', () => {
+test('getStudySessionSubmissionRecovery ignores non-conflict or malformed submission responses', () => {
+  const throwingStatusResponse = {};
+  Object.defineProperty(throwingStatusResponse, 'status', {
+    get() {
+      throw new Error('status unavailable');
+    },
+  });
+
   [
-    null,
-    undefined,
-    {},
-    { status: 200 },
-    { status: 400 },
-    { status: 500 },
-    { status: '409' },
-  ].forEach((response) => {
-    assert.equal(getStudySessionSubmissionRecovery(response), null);
+    [null, { error: 'Card is not due' }],
+    [undefined, { error: 'Card is not due' }],
+    [{}, { error: 'Card is not due' }],
+    [throwingStatusResponse, { error: 'Card is not due' }],
+    [{ status: 200 }, { error: 'Card is not due' }],
+    [{ status: 400 }, { error: 'Card is not due' }],
+    [{ status: 500 }, { error: 'Card is not due' }],
+    [{ status: '409' }, { error: 'Card is not due' }],
+    [{ status: 409 }, null],
+    [{ status: 409 }, undefined],
+    [{ status: 409 }, {}],
+    [{ status: 409 }, []],
+    [{ status: 409 }, { error: null }],
+    [{ status: 409 }, { error: 409 }],
+    [{ status: 409 }, { error: 'Deck name already exists for this user' }],
+    [{ status: 409 }, { error: 'card is not due' }],
+  ].forEach(([response, payload]) => {
+    assert.equal(getStudySessionSubmissionRecovery(response, payload), null);
   });
 });
 

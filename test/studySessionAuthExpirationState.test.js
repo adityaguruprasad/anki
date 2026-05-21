@@ -129,7 +129,7 @@ test('handleAnswer clears submit state on current auth-expired submit responses'
   );
   const recoveryIndex = requiredIndex(
     body,
-    'const submissionRecovery = getStudySessionSubmissionRecovery(response);',
+    'const submissionRecovery = getStudySessionSubmissionRecovery(',
     'Expected submit responses to keep stale-card conflict recovery',
     authExpiredIndex,
   );

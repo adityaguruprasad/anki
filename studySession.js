@@ -282,7 +282,26 @@ const StudySession = ({ env, onAuthExpired }) => {
         return;
       }
 
-      const submissionRecovery = getStudySessionSubmissionRecovery(response);
+      let parsedSubmissionResponse = null;
+      if (response.ok || response.status === 409) {
+        let responseText = '';
+        try {
+          responseText = await response.text();
+        } catch {
+          responseText = '';
+        }
+
+        if (!isCurrentSubmitRequest()) {
+          return;
+        }
+
+        parsedSubmissionResponse = parseStudySessionSubmissionResponse(responseText);
+      }
+
+      const submissionRecovery = getStudySessionSubmissionRecovery(
+        response,
+        parsedSubmissionResponse,
+      );
       if (submissionRecovery?.action === STUDY_SESSION_SUBMISSION_RECOVERY_ACTIONS.LOAD_NEXT_DUE_CARD) {
         setCurrentCard(null);
         setShowAnswer(false);
@@ -295,18 +314,6 @@ const StudySession = ({ env, onAuthExpired }) => {
         throw new Error('Unable to submit answer');
       }
 
-      let responseText = '';
-      try {
-        responseText = await response.text();
-      } catch {
-        responseText = '';
-      }
-
-      if (!isCurrentSubmitRequest()) {
-        return;
-      }
-
-      const parsedSubmissionResponse = parseStudySessionSubmissionResponse(responseText);
       const submissionResponse = getValidatedStudySessionSubmissionResponse(
         parsedSubmissionResponse,
         { expectedId: currentCard.id },

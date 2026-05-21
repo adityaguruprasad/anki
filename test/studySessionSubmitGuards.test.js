@@ -109,7 +109,7 @@ test('handleAnswer preserves current submit success behavior behind lifecycle gu
   const responseTextIndex = requiredIndex(
     body,
     "let responseText = '';",
-    'Expected successful answer submission to parse response text',
+    'Expected answer submission to parse response text',
   );
   const currentGuardAfterTextIndex = requiredIndex(
     body,
@@ -119,7 +119,7 @@ test('handleAnswer preserves current submit success behavior behind lifecycle gu
   );
   const parseIndex = requiredIndex(
     body,
-    'const parsedSubmissionResponse = parseStudySessionSubmissionResponse(responseText);',
+    'parsedSubmissionResponse = parseStudySessionSubmissionResponse(responseText);',
     'Expected successful answer submission to parse response text through the helper',
   );
   const validationIndex = requiredIndex(
@@ -146,13 +146,14 @@ test('handleAnswer preserves current submit success behavior behind lifecycle gu
   );
 
   assert.ok(authExpiredIndex < responseOkIndex, 'Expected auth handling before generic failures');
-  assert.ok(responseOkIndex < responseTextIndex, 'Expected response text parsing only after OK');
+  assert.ok(authExpiredIndex < responseTextIndex, 'Expected response text parsing after auth handling');
   assert.ok(
     responseTextIndex < currentGuardAfterTextIndex,
     'Expected route changes or unmounts during response text parsing to stay guarded',
   );
   assert.ok(currentGuardAfterTextIndex < parseIndex, 'Expected lifecycle guard before parsing success data');
   assert.ok(parseIndex < validationIndex, 'Expected parsed success data before validation');
+  assert.ok(responseOkIndex < validationIndex, 'Expected generic failures before success validation');
   assert.ok(validationIndex < expectedIdIndex, 'Expected submitted card id to be part of validation');
   assert.ok(validationIndex < feedbackIndex, 'Expected validated success data before feedback');
   assert.ok(feedbackIndex < nextCardIndex, 'Expected feedback before next-card fetch');
@@ -221,11 +222,23 @@ test('handleAnswer recovers stale-card submit conflicts without the generic retr
     authResponseCheck,
     'Expected answer submission to keep auth-expiration handling',
   );
+  const parseIndex = requiredIndex(
+    body,
+    'parsedSubmissionResponse = parseStudySessionSubmissionResponse(responseText);',
+    'Expected answer submission to parse the conflict body before classifying recovery',
+    authExpiredIndex,
+  );
   const recoveryIndex = requiredIndex(
     body,
-    'const submissionRecovery = getStudySessionSubmissionRecovery(response);',
-    'Expected answer submission to classify stale-card conflict responses',
-    authExpiredIndex,
+    'const submissionRecovery = getStudySessionSubmissionRecovery(',
+    'Expected answer submission to classify stale-card conflict responses using the parsed body',
+    parseIndex,
+  );
+  const recoveryPayloadIndex = requiredIndex(
+    body,
+    'parsedSubmissionResponse,',
+    'Expected stale-card conflict recovery to require the parsed API error payload',
+    recoveryIndex,
   );
   const recoveryBranchIndex = requiredIndex(
     body,
@@ -275,6 +288,8 @@ test('handleAnswer recovers stale-card submit conflicts without the generic retr
   );
 
   assert.ok(authExpiredIndex < recoveryIndex, 'Expected auth handling before conflict recovery');
+  assert.ok(parseIndex < recoveryIndex, 'Expected conflict recovery to use parsed response payloads');
+  assert.ok(recoveryIndex < recoveryPayloadIndex, 'Expected parsed payload to be passed into recovery classification');
   assert.ok(recoveryIndex < recoveryBranchIndex, 'Expected conflict classification before recovery branching');
   assert.ok(
     recoveryBranchIndex < responseOkIndex,
