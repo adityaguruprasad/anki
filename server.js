@@ -6,7 +6,7 @@ const { handleApiError } = require('./apiErrorBoundary');
 const { handleApiNotFound } = require('./apiNotFound');
 const { buildCorsOptions, handleCorsError } = require('./corsPolicy');
 const { buildDatabasePoolConfig } = require('./databaseConfig');
-const { createJsonBodyParser, handleJsonBodyError } = require('./jsonBodyError');
+const { createJsonBodyParser, handleJsonBodyError, rejectJsonArrayBody } = require('./jsonBodyError');
 const { createSecurityHeadersMiddleware } = require('./securityHeaders');
 const { calculateNextReview } = require('./spacedRepetition');
 const { createCard, createDeck, deleteCard, deleteDeck, getCardsByDeck, getDecks, getDueCardsByDeck, getStats, getSchedulingInsights, renameDeck, submitStudySession, updateCard } = require('./apiHandlers');
@@ -19,6 +19,7 @@ app.use(cors(buildCorsOptions()));
 app.use(handleCorsError);
 app.use(createJsonBodyParser(express));
 app.use(handleJsonBodyError);
+app.use(rejectJsonArrayBody);
 
 const pool = new Pool(buildDatabasePoolConfig());
 const { register, login, authenticateToken } = createAuthHandlers(pool);

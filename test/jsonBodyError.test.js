@@ -6,6 +6,7 @@ const test = require('node:test');
 const {
   INVALID_JSON_REQUEST_BODY_ERROR,
   JSON_BODY_LIMIT,
+  JSON_REQUEST_BODY_ARRAY_ERROR,
   JSON_REQUEST_BODY_TOO_LARGE_ERROR,
   JSON_REQUEST_BODY_UNSUPPORTED_ENCODING_ERROR,
   createJsonBodyParser,
@@ -13,6 +14,7 @@ const {
   isJsonBodyTooLargeError,
   isJsonBodyUnsupportedEncodingError,
   isMalformedJsonBodyError,
+  rejectJsonArrayBody,
 } = require('../jsonBodyError');
 
 function createRes() {
@@ -67,6 +69,11 @@ test('createJsonBodyParser configures an explicit JSON request budget', () => {
   assert.equal(createJsonBodyParser(fakeExpress), middleware);
   assert.equal(JSON_BODY_LIMIT, '96kb');
   assert.deepEqual(receivedOptions, { inflate: false, limit: JSON_BODY_LIMIT });
+  assert.equal(
+    Object.hasOwn(receivedOptions, 'strict'),
+    false,
+    'Expected Express strict JSON parsing to keep primitive bodies as parser errors',
+  );
 });
 
 test('createJsonBodyParser rejects invalid Express modules', () => {
@@ -74,6 +81,43 @@ test('createJsonBodyParser rejects invalid Express modules', () => {
     () => createJsonBodyParser({}),
     { name: 'TypeError', message: 'createJsonBodyParser requires an Express module with a json method' },
   );
+});
+
+test('rejectJsonArrayBody rejects top-level JSON array bodies before route handling', () => {
+  const res = createRes();
+  let nextCalls = 0;
+
+  rejectJsonArrayBody({
+    body: [{ password: 'secret', deckId: 1 }],
+  }, res, () => {
+    nextCalls += 1;
+  });
+
+  assert.equal(nextCalls, 0);
+  assert.equal(res.statusCode, 400);
+  assert.deepEqual(res.body, { error: JSON_REQUEST_BODY_ARRAY_ERROR });
+  assert.doesNotMatch(JSON.stringify(res.body), /secret|deckId|password/i);
+});
+
+test('rejectJsonArrayBody passes through parsed object and absent body requests', () => {
+  const cases = [
+    ['parsed object body', { name: 'Biology' }],
+    ['empty parsed object body', {}],
+    ['absent body', undefined],
+  ];
+
+  for (const [label, body] of cases) {
+    const res = createRes();
+    let nextCalls = 0;
+
+    rejectJsonArrayBody({ body }, res, () => {
+      nextCalls += 1;
+    });
+
+    assert.equal(nextCalls, 1, `${label} should continue to route handling`);
+    assert.equal(res.statusCode, 200, `${label} should not set an error status`);
+    assert.equal(res.body, null, `${label} should not write a response body`);
+  }
 });
 
 test('handleJsonBodyError returns the API JSON error shape for invalid JSON bodies', () => {
@@ -251,6 +295,7 @@ test('server mounts bounded JSON body parsing immediately before JSON body error
   const serverSource = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
   const jsonParserIndex = serverSource.indexOf('app.use(createJsonBodyParser(express));');
   const jsonBodyErrorHandlerIndex = serverSource.indexOf('app.use(handleJsonBodyError);');
+  const jsonArrayBodyGuardIndex = serverSource.indexOf('app.use(rejectJsonArrayBody);');
   const registerRouteIndex = serverSource.indexOf("app.post('/api/register', register);");
   const loginRouteIndex = serverSource.indexOf("app.post('/api/login', login);");
   const protectedAuthIndex = serverSource.indexOf('app.use(authenticateToken);');
@@ -262,17 +307,21 @@ test('server mounts bounded JSON body parsing immediately before JSON body error
   );
   assert.match(
     serverSource,
-    /const\s+\{\s*createJsonBodyParser,\s*handleJsonBodyError\s*\}\s*=\s*require\(['"]\.\/jsonBodyError['"]\);/,
+    /const\s+\{\s*createJsonBodyParser,\s*handleJsonBodyError,\s*rejectJsonArrayBody\s*\}\s*=\s*require\(['"]\.\/jsonBodyError['"]\);/,
     'Expected server.js to import the bounded JSON parser helper',
   );
   assert.ok(jsonParserIndex >= 0, 'Expected server.js to mount bounded JSON parsing');
   assert.ok(jsonBodyErrorHandlerIndex > jsonParserIndex, 'Expected handler after bounded JSON parsing');
   assert.ok(
-    registerRouteIndex > jsonBodyErrorHandlerIndex && loginRouteIndex > jsonBodyErrorHandlerIndex,
-    'Expected public auth routes to run after JSON body error handling',
+    jsonArrayBodyGuardIndex > jsonBodyErrorHandlerIndex,
+    'Expected top-level JSON array rejection after parser error handling',
   );
   assert.ok(
-    protectedAuthIndex > jsonBodyErrorHandlerIndex,
-    'Expected protected auth middleware to run after JSON body error handling',
+    registerRouteIndex > jsonArrayBodyGuardIndex && loginRouteIndex > jsonArrayBodyGuardIndex,
+    'Expected public auth routes to run after JSON body shape enforcement',
+  );
+  assert.ok(
+    protectedAuthIndex > jsonArrayBodyGuardIndex,
+    'Expected protected auth middleware to run after JSON body shape enforcement',
   );
 });

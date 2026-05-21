@@ -1,4 +1,5 @@
 const INVALID_JSON_REQUEST_BODY_ERROR = 'Invalid JSON request body';
+const JSON_REQUEST_BODY_ARRAY_ERROR = 'JSON request body must be an object';
 const JSON_REQUEST_BODY_TOO_LARGE_ERROR = 'JSON request body too large';
 const JSON_REQUEST_BODY_UNSUPPORTED_ENCODING_ERROR = 'Unsupported JSON request body encoding';
 // Above the current largest intended card payload, below Express' broad default.
@@ -52,9 +53,20 @@ function handleJsonBodyError(error, req, res, next) {
   return next(error);
 }
 
+function rejectJsonArrayBody(req, res, next) {
+  // Express' JSON parser keeps strict parsing enabled by default, so primitive
+  // JSON bodies are rejected as malformed before this parsed-body shape guard.
+  if (Array.isArray(req?.body)) {
+    return res.status(400).json({ error: JSON_REQUEST_BODY_ARRAY_ERROR });
+  }
+
+  return next();
+}
+
 module.exports = {
   INVALID_JSON_REQUEST_BODY_ERROR,
   JSON_BODY_LIMIT,
+  JSON_REQUEST_BODY_ARRAY_ERROR,
   JSON_REQUEST_BODY_TOO_LARGE_ERROR,
   JSON_REQUEST_BODY_UNSUPPORTED_ENCODING_ERROR,
   createJsonBodyParser,
@@ -63,4 +75,5 @@ module.exports = {
   isJsonBodyTooLargeError,
   isJsonBodyUnsupportedEncodingError,
   isMalformedJsonBodyError,
+  rejectJsonArrayBody,
 };
