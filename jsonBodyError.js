@@ -9,7 +9,7 @@ function createJsonBodyParser(expressModule) {
     throw new TypeError('createJsonBodyParser requires an Express module with a json method');
   }
 
-  return expressModule.json({ limit: JSON_BODY_LIMIT });
+  return expressModule.json({ inflate: false, limit: JSON_BODY_LIMIT });
 }
 
 function isMalformedJsonBodyError(error) {

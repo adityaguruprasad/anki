@@ -45,12 +45,12 @@ function createJsonTooLargeError() {
   return error;
 }
 
-function createJsonUnsupportedEncodingError(type = 'encoding.unsupported') {
+function createJsonUnsupportedEncodingError(type = 'encoding.unsupported', encoding = 'br') {
   const error = new Error('unsupported request encoding');
   error.status = 415;
   error.statusCode = 415;
   error.type = type;
-  error.encoding = 'br';
+  error.encoding = encoding;
   return error;
 }
 
@@ -66,7 +66,7 @@ test('createJsonBodyParser configures an explicit JSON request budget', () => {
 
   assert.equal(createJsonBodyParser(fakeExpress), middleware);
   assert.equal(JSON_BODY_LIMIT, '96kb');
-  assert.deepEqual(receivedOptions, { limit: JSON_BODY_LIMIT });
+  assert.deepEqual(receivedOptions, { inflate: false, limit: JSON_BODY_LIMIT });
 });
 
 test('createJsonBodyParser rejects invalid Express modules', () => {
@@ -126,6 +126,50 @@ test('handleJsonBodyError returns a sanitized API JSON error for unsupported JSO
   assert.deepEqual(res.body, { error: JSON_REQUEST_BODY_UNSUPPORTED_ENCODING_ERROR });
   assert.equal(isJsonBodyUnsupportedEncodingError(error), true);
   assert.doesNotMatch(JSON.stringify(res.body), /br|unsupported request encoding/i);
+});
+
+test('bounded JSON parser disables body inflation before route handling', () => {
+  const unsupportedEncodingError = createJsonUnsupportedEncodingError(
+    'encoding.unsupported',
+    'gzip'
+  );
+  let receivedOptions = null;
+  let routeReached = false;
+  const fakeExpress = {
+    json(options) {
+      receivedOptions = options;
+      return (req, res, next) => {
+        if (req.headers?.['content-encoding'] && options.inflate === false) {
+          next(unsupportedEncodingError);
+          return;
+        }
+
+        routeReached = true;
+        res.json({ parsed: true });
+      };
+    },
+  };
+  const req = {
+    headers: {
+      'content-encoding': 'gzip',
+    },
+  };
+  const res = createRes();
+  const parser = createJsonBodyParser(fakeExpress);
+  let nextCall = null;
+
+  parser(req, res, (error) => {
+    handleJsonBodyError(error, req, res, (nextError) => {
+      nextCall = nextError;
+    });
+  });
+
+  assert.deepEqual(receivedOptions, { inflate: false, limit: JSON_BODY_LIMIT });
+  assert.equal(routeReached, false);
+  assert.equal(nextCall, null);
+  assert.equal(res.statusCode, 415);
+  assert.deepEqual(res.body, { error: JSON_REQUEST_BODY_UNSUPPORTED_ENCODING_ERROR });
+  assert.doesNotMatch(JSON.stringify(res.body), /gzip|unsupported request encoding/i);
 });
 
 test('isJsonBodyUnsupportedEncodingError recognizes unsupported JSON charsets and statusCode-only errors', () => {
