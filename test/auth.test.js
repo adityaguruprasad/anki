@@ -1027,6 +1027,35 @@ test('login fails closed when the lookup row email does not match the normalized
   assert.deepEqual(db.calls[0].params, ['ada@example.com']);
 });
 
+test('login fails closed when lookup row identity fields are inherited', async () => {
+  const inheritedRowFields = {
+    id: 79,
+    email: 'ada@example.com',
+    password_hash: 'stored-user-hash',
+  };
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [Object.create(inheritedRowFields)],
+    },
+  ]);
+  const passwordHasher = createPasswordHasher({ compareResult: true });
+  const { login } = createAuthHandlers(db, {
+    jwtSecret: 'inherited-login-row-secret',
+    passwordHasher,
+  });
+  const res = createRes();
+
+  await login({ body: { email: 'ada@example.com', password: 'stored-password' } }, res);
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Error logging in' });
+  assert.equal(res.body.token, undefined);
+  assert.deepEqual(passwordHasher.compareCalls, []);
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, ['ada@example.com']);
+});
+
 test('login fails closed when the lookup result rows shape is invalid', async (t) => {
   const invalidResults = [
     { name: 'missing rows', result: { rowCount: 1 } },
@@ -1619,6 +1648,57 @@ test('login ignores inherited body fields before querying or comparing', async (
   assert.deepEqual(res.body, { error: 'Valid email is required' });
   assert.deepEqual(db.calls, []);
   assert.deepEqual(passwordHasher.compareCalls, []);
+});
+
+test('login treats inherited password hashes as invalid stored hashes', async () => {
+  const row = Object.assign(Object.create({
+    password_hash: 'stored-user-hash',
+  }), {
+    id: 80,
+    email: 'ada@example.com',
+  });
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [row],
+    },
+  ]);
+  const passwordHasher = createPasswordHasher({ compareResult: true });
+  const { login } = createAuthHandlers(db, {
+    jwtSecret: 'inherited-login-hash-secret',
+    passwordHasher,
+    loginRateLimit: {
+      maxFailures: 1,
+      windowMs: 60000,
+      now: () => 1250,
+    },
+  });
+  const req = {
+    ip: '203.0.113.41',
+    body: { email: 'ada@example.com', password: 'candidate-password' },
+  };
+  const res = createRes();
+
+  await login(req, res);
+
+  assert.equal(res.statusCode, 401);
+  assert.deepEqual(res.body, { error: 'Invalid credentials' });
+  assert.equal(res.body.token, undefined);
+  assert.deepEqual(passwordHasher.compareCalls, [
+    {
+      password: 'candidate-password',
+      passwordHash: MISSING_ACCOUNT_DUMMY_PASSWORD_HASH,
+    },
+  ]);
+
+  const blockedRes = createRes();
+  await login(req, blockedRes);
+
+  assert.equal(blockedRes.statusCode, 429);
+  assert.deepEqual(blockedRes.body, { error: LOGIN_RATE_LIMIT_ERROR });
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, ['ada@example.com']);
+  assert.equal(passwordHasher.compareCalls.length, 1);
 });
 
 test('login trims surrounding email whitespace before credential lookup', async () => {

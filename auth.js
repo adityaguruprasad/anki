@@ -383,6 +383,10 @@ function normalizeLoginUserRow(row, normalizedEmail) {
     throw new Error(INVALID_LOGIN_USER_LOOKUP_RESULT_ERROR);
   }
 
+  if (!Object.hasOwn(row, 'id') || !Object.hasOwn(row, 'email')) {
+    throw new Error(INVALID_LOGIN_USER_LOOKUP_RESULT_ERROR);
+  }
+
   const normalizedUserId = normalizeTokenUserId(row.id);
   if (normalizedUserId == null || row.email !== normalizedEmail) {
     throw new Error(INVALID_LOGIN_USER_LOOKUP_RESULT_ERROR);
@@ -390,8 +394,8 @@ function normalizeLoginUserRow(row, normalizedEmail) {
 
   return {
     id: normalizedUserId,
-    email: row.email,
-    password_hash: row.password_hash,
+    email: normalizedEmail,
+    password_hash: Object.hasOwn(row, 'password_hash') ? row.password_hash : undefined,
   };
 }
 
