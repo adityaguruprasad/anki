@@ -1098,6 +1098,15 @@ function getOwnRequestQueryValue(query, fieldName) {
   return Object.hasOwn(query, fieldName) ? query[fieldName] : undefined;
 }
 
+function getRequestParamsObject(req) {
+  const params = req?.params;
+  return params !== null && typeof params === 'object' && !Array.isArray(params) ? params : {};
+}
+
+function getOwnRequestParamValue(params, fieldName) {
+  return Object.hasOwn(params, fieldName) ? params[fieldName] : undefined;
+}
+
 function getRequestBodyObject(req) {
   const body = req?.body;
   return body !== null && typeof body === 'object' && !Array.isArray(body) ? body : {};
@@ -1227,7 +1236,11 @@ function getSchedulingInsightDateBoundaries(now = new Date()) {
 
 async function getDueCardsByDeck(req, res, db) {
   try {
-    const deckIdValidation = validatePositiveIntegerIdentifier(req.params?.deckId, 'deckId');
+    const routeParams = getRequestParamsObject(req);
+    const deckIdValidation = validatePositiveIntegerIdentifier(
+      getOwnRequestParamValue(routeParams, 'deckId'),
+      'deckId'
+    );
     if (!deckIdValidation.ok) {
       return res.status(400).json({ error: deckIdValidation.error });
     }
@@ -1290,7 +1303,11 @@ async function getDueCardsByDeck(req, res, db) {
 
 async function getCardsByDeck(req, res, db) {
   try {
-    const deckIdValidation = validatePositiveIntegerIdentifier(req.params?.deckId, 'deckId');
+    const routeParams = getRequestParamsObject(req);
+    const deckIdValidation = validatePositiveIntegerIdentifier(
+      getOwnRequestParamValue(routeParams, 'deckId'),
+      'deckId'
+    );
     if (!deckIdValidation.ok) {
       return res.status(400).json({ error: deckIdValidation.error });
     }
@@ -1505,7 +1522,11 @@ async function createCard(req, res, db) {
 
 async function updateCard(req, res, db) {
   try {
-    const cardIdValidation = validatePositiveIntegerIdentifier(req.params?.cardId, 'cardId');
+    const routeParams = getRequestParamsObject(req);
+    const cardIdValidation = validatePositiveIntegerIdentifier(
+      getOwnRequestParamValue(routeParams, 'cardId'),
+      'cardId'
+    );
     if (!cardIdValidation.ok) {
       return res.status(400).json({ error: cardIdValidation.error });
     }
@@ -1573,7 +1594,11 @@ async function updateCard(req, res, db) {
 
 async function deleteCard(req, res, db) {
   try {
-    const cardIdValidation = validatePositiveIntegerIdentifier(req.params?.cardId, 'cardId');
+    const routeParams = getRequestParamsObject(req);
+    const cardIdValidation = validatePositiveIntegerIdentifier(
+      getOwnRequestParamValue(routeParams, 'cardId'),
+      'cardId'
+    );
     if (!cardIdValidation.ok) {
       return res.status(400).json({ error: cardIdValidation.error });
     }
@@ -1811,7 +1836,11 @@ async function createDeck(req, res, db) {
 
 async function renameDeck(req, res, db) {
   try {
-    const deckIdValidation = validatePositiveIntegerIdentifier(req.params?.deckId, 'deckId');
+    const routeParams = getRequestParamsObject(req);
+    const deckIdValidation = validatePositiveIntegerIdentifier(
+      getOwnRequestParamValue(routeParams, 'deckId'),
+      'deckId'
+    );
     if (!deckIdValidation.ok) {
       return res.status(400).json({ error: deckIdValidation.error });
     }
@@ -1916,7 +1945,11 @@ async function getDecks(req, res, db) {
 }
 
 async function deleteDeck(req, res, db) {
-  const deckIdValidation = validatePositiveIntegerIdentifier(req.params?.deckId, 'deckId');
+  const routeParams = getRequestParamsObject(req);
+  const deckIdValidation = validatePositiveIntegerIdentifier(
+    getOwnRequestParamValue(routeParams, 'deckId'),
+    'deckId'
+  );
   if (!deckIdValidation.ok) {
     return res.status(400).json({ error: deckIdValidation.error });
   }

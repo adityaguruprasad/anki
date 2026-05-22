@@ -100,6 +100,10 @@ function createBodyWithInheritedFields(inheritedFields, ownFields = {}) {
   return Object.assign(Object.create(inheritedFields), ownFields);
 }
 
+function createParamsWithInheritedFields(inheritedFields, ownFields = {}) {
+  return Object.assign(Object.create(inheritedFields), ownFields);
+}
+
 const EXPECTED_PUBLIC_CARD_READ_FIELDS = Object.freeze([
   'id',
   'deck_id',
@@ -1200,6 +1204,118 @@ test('protected API handlers reject missing auth principal before db, transactio
     assert.equal(db.connectCalls, 0, testCase.name);
     assert.equal(schedulerCalled, false, testCase.name);
   }
+});
+
+test('API route params must be own properties before validation or SQL use', async () => {
+  const cases = [
+    {
+      name: 'due cards by deck deckId',
+      handler: getDueCardsByDeck,
+      req: {
+        params: createParamsWithInheritedFields({ deckId: '42' }),
+        user: { userId: 1 },
+      },
+      expectedError: 'Invalid deckId: must be a positive integer',
+    },
+    {
+      name: 'browse cards by deck deckId',
+      handler: getCardsByDeck,
+      req: {
+        params: createParamsWithInheritedFields({ deckId: '42' }),
+        query: {},
+        user: { userId: 1 },
+      },
+      expectedError: 'Invalid deckId: must be a positive integer',
+    },
+    {
+      name: 'update card cardId',
+      handler: updateCard,
+      req: {
+        params: createParamsWithInheritedFields({ cardId: '77' }),
+        body: { frontContent: 'Front', backContent: 'Back' },
+        user: { userId: 1 },
+      },
+      expectedError: 'Invalid cardId: must be a positive integer',
+    },
+    {
+      name: 'delete card cardId',
+      handler: deleteCard,
+      req: {
+        params: createParamsWithInheritedFields({ cardId: '77' }),
+        user: { userId: 1 },
+      },
+      expectedError: 'Invalid cardId: must be a positive integer',
+    },
+    {
+      name: 'rename deck deckId',
+      handler: renameDeck,
+      req: {
+        params: createParamsWithInheritedFields({ deckId: '42' }),
+        body: { name: 'Renamed' },
+        user: { userId: 1 },
+      },
+      expectedError: 'Invalid deckId: must be a positive integer',
+    },
+    {
+      name: 'delete deck deckId',
+      handler: deleteDeck,
+      req: {
+        params: createParamsWithInheritedFields({ deckId: '42' }),
+        user: { userId: 1 },
+      },
+      expectedError: 'Invalid deckId: must be a positive integer',
+    },
+  ];
+
+  for (const testCase of cases) {
+    const db = addUnexpectedConnect(createDb([]));
+    const res = createRes();
+
+    await testCase.handler(testCase.req, res, db);
+
+    assert.equal(res.statusCode, 400, testCase.name);
+    assert.deepEqual(res.body, { error: testCase.expectedError }, testCase.name);
+    assert.deepEqual(Object.keys(testCase.req.params), [], testCase.name);
+    assert.equal(db.calls.length, 0, testCase.name);
+    assert.equal(db.connectCalls, 0, testCase.name);
+  }
+});
+
+test('API route params use own properties for SQL parameters', async () => {
+  const params = createParamsWithInheritedFields({ deckId: '99' }, { deckId: '42' });
+  const db = addUnexpectedConnect(createDb([
+    {
+      rowCount: 1,
+      rows: [createEmptyDueCardQueryRow()],
+    },
+  ]));
+  const req = { params, user: { userId: 1 } };
+  const res = createRes();
+
+  await getDueCardsByDeck(req, res, db);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, []);
+  assert.deepEqual(Object.keys(params), ['deckId']);
+  assert.equal(db.calls.length, 1);
+  assert.equal(db.connectCalls, 0);
+  assert.deepEqual(db.calls[0].params, [42, 1, 100]);
+});
+
+test('API route params arrays are ignored before validation or SQL use', async () => {
+  const params = [];
+  params.deckId = '42';
+  const db = addUnexpectedConnect(createDb([]));
+  const req = { params, user: { userId: 1 } };
+  const res = createRes();
+
+  await getDueCardsByDeck(req, res, db);
+
+  assert.equal(res.statusCode, 400);
+  assert.deepEqual(res.body, { error: 'Invalid deckId: must be a positive integer' });
+  assert.deepEqual(Object.keys(params), ['deckId']);
+  assert.equal(db.calls.length, 0);
+  assert.equal(db.connectCalls, 0);
 });
 
 test('GET /api/decks fails closed when a deck-list row is missing or cannot use required response fields', async (t) => {
