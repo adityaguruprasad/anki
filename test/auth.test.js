@@ -69,6 +69,14 @@ function createDb(results) {
   };
 }
 
+function createQueryResultWithInheritedShape(rowCount, rows) {
+  return Object.create({ rowCount, rows });
+}
+
+function createArrayShapedQueryResult(rowCount, rows) {
+  return Object.assign([], { rowCount, rows });
+}
+
 function createBodyWithInheritedFields(inheritedFields, ownFields = {}) {
   return Object.assign(Object.create(inheritedFields), ownFields);
 }
@@ -329,6 +337,14 @@ test('register fails closed when the insert result cardinality is malformed', as
     {
       name: 'string rowCount with one returned id',
       result: { rowCount: '1', rows: [createRegistrationRow(42)] },
+    },
+    {
+      name: 'inherited rows and rowCount',
+      result: createQueryResultWithInheritedShape(1, [createRegistrationRow(42)]),
+    },
+    {
+      name: 'array-shaped result with returned id',
+      result: createArrayShapedQueryResult(1, [createRegistrationRow(42)]),
     },
     {
       name: 'multiple returned rows',
@@ -976,6 +992,20 @@ test('login fails closed when the lookup result cardinality is malformed', async
         rowCount: 1.5,
         rows: [{ id: 79, email: 'ada@example.com', password_hash: 'stored-user-hash' }],
       },
+    },
+    {
+      name: 'inherited rows and rowCount',
+      result: createQueryResultWithInheritedShape(
+        1,
+        [{ id: 79, email: 'ada@example.com', password_hash: 'stored-user-hash' }]
+      ),
+    },
+    {
+      name: 'array-shaped result with returned user',
+      result: createArrayShapedQueryResult(
+        1,
+        [{ id: 79, email: 'ada@example.com', password_hash: 'stored-user-hash' }]
+      ),
     },
   ];
 

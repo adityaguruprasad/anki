@@ -410,9 +410,14 @@ function normalizeLoginUserRow(row, normalizedEmail) {
 function getOptionalSingleAuthQueryRow(result, errorMessage) {
   // Auth queries use node-postgres result objects; require rowCount to agree
   // with rows before trusting a row for password checks or token issuance.
+  // The array and own-property checks intentionally reject prototype-polluted
+  // or array-shaped query result objects before trusting rows/rowCount.
   if (
     result === null
     || typeof result !== 'object'
+    || Array.isArray(result)
+    || !Object.hasOwn(result, 'rows')
+    || !Object.hasOwn(result, 'rowCount')
     || !Array.isArray(result.rows)
     || !Number.isSafeInteger(result.rowCount)
     || result.rowCount < 0
