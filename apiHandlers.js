@@ -641,11 +641,13 @@ function assertDeckReadResult(row, errorMessage, options = {}) {
   assertObjectHasOwnFields(row, DECK_READ_FIELDS, errorMessage);
 
   const deckIdValidation = validatePositiveIntegerIdentifier(row.id, 'deckId');
+  const deckNameValidation = validateDeckName(row.name);
   if (
     !deckIdValidation.ok
     || !matchesExpectedIdentifier(deckIdValidation, options.expectedDeckId, 'deckId')
-    || typeof row.name !== 'string'
-    || row.name.trim() === ''
+    || !deckNameValidation.ok
+    // Response rows must already be canonical persisted names, not merely normalizable input.
+    || deckNameValidation.value !== row.name
     || !isValidPersistedDeckDescription(row.description)
     || !isValidRequiredDatabaseTimestamp(row.created_at)
   ) {
