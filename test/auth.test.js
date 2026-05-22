@@ -130,6 +130,45 @@ function decodeJwtPayload(token) {
   return JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8'));
 }
 
+function withObjectPrototypeProperties(properties, callback) {
+  const previousDescriptors = new Map();
+  const modifiedKeys = [];
+
+  // Synchronous-only: cleanup runs as soon as the callback returns.
+  try {
+    for (const [key, value] of Object.entries(properties)) {
+      previousDescriptors.set(key, Object.getOwnPropertyDescriptor(Object.prototype, key));
+      Object.defineProperty(Object.prototype, key, {
+        configurable: true,
+        enumerable: true,
+        writable: true,
+        value,
+      });
+      modifiedKeys.push(key);
+    }
+
+    const result = callback();
+    if (
+      result !== null
+      && (typeof result === 'object' || typeof result === 'function')
+      && typeof result.then === 'function'
+    ) {
+      throw new TypeError('withObjectPrototypeProperties callback must be synchronous');
+    }
+
+    return result;
+  } finally {
+    for (const key of modifiedKeys.reverse()) {
+      const descriptor = previousDescriptors.get(key);
+      if (descriptor === undefined) {
+        delete Object.prototype[key];
+      } else {
+        Object.defineProperty(Object.prototype, key, descriptor);
+      }
+    }
+  }
+}
+
 test('register uses injected db and returns a signed token with inserted user id', async () => {
   const db = createDb([{ rowCount: 1, rows: [createRegistrationRow(42)] }]);
   const passwordHasher = createPasswordHasher();
@@ -1957,6 +1996,51 @@ test('verifyToken requires the API-issued JWT header contract', () => {
   );
 });
 
+test('verifyToken requires JWT header claims as own properties', () => {
+  const payload = { userId: 105, iat: 1000, exp: 2000 };
+
+  withObjectPrototypeProperties({ alg: 'HS256', typ: 'JWT' }, () => {
+    const tokenWithoutAlgorithm = signRawJwt(
+      { typ: 'JWT' },
+      payload,
+      'own-header-secret'
+    );
+    const tokenWithoutType = signRawJwt(
+      { alg: 'HS256' },
+      payload,
+      'own-header-secret'
+    );
+
+    assert.throws(
+      () => verifyToken(tokenWithoutAlgorithm, 'own-header-secret', { now: 1000 }),
+      /Invalid token algorithm/
+    );
+    assert.throws(
+      () => verifyToken(tokenWithoutType, 'own-header-secret', { now: 1000 }),
+      /Invalid token type/
+    );
+  });
+});
+
+test('verifyToken accepts signed own claims when Object.prototype has JWT claim pollution', () => {
+  const payload = { userId: 106, iat: 1000, exp: 2000 };
+  const token = signRawJwt(
+    { alg: 'HS256', typ: 'JWT' },
+    payload,
+    'polluted-own-claims-secret'
+  );
+
+  withObjectPrototypeProperties(
+    { alg: 'HS512', typ: 'JWS', userId: 999, iat: 9999, exp: 9999 },
+    () => {
+      assert.deepEqual(
+        verifyToken(token, 'polluted-own-claims-secret', { now: 1000 }),
+        payload
+      );
+    }
+  );
+});
+
 test('verifyToken accepts signed tokens with exactly the allowed JWT header fields', () => {
   const payload = { userId: 106, iat: 1000, exp: 2000 };
   const token = signRawJwt(
@@ -2137,6 +2221,39 @@ test('verifyToken rejects signed tokens without a usable userId claim', () => {
       label
     );
   }
+});
+
+test('verifyToken requires JWT payload claims as own properties', () => {
+  withObjectPrototypeProperties({ userId: 108, iat: 1000, exp: 2000 }, () => {
+    const tokenWithoutUserId = signRawJwt(
+      { alg: 'HS256', typ: 'JWT' },
+      { iat: 1000, exp: 2000 },
+      'own-payload-secret'
+    );
+    const tokenWithoutIssuedAt = signRawJwt(
+      { alg: 'HS256', typ: 'JWT' },
+      { userId: 108, exp: 2000 },
+      'own-payload-secret'
+    );
+    const tokenWithoutExpiration = signRawJwt(
+      { alg: 'HS256', typ: 'JWT' },
+      { userId: 108, iat: 1000 },
+      'own-payload-secret'
+    );
+
+    assert.throws(
+      () => verifyToken(tokenWithoutUserId, 'own-payload-secret', { now: 1000 }),
+      /Token userId is required/
+    );
+    assert.throws(
+      () => verifyToken(tokenWithoutIssuedAt, 'own-payload-secret', { now: 1000 }),
+      /Token issued-at is required/
+    );
+    assert.throws(
+      () => verifyToken(tokenWithoutExpiration, 'own-payload-secret', { now: 1000 }),
+      /Token expiration is required/
+    );
+  });
 });
 
 test('extractBearerToken accepts only a single bearer credential', () => {

@@ -217,11 +217,11 @@ function validateJwtHeader(header) {
     throw new Error('Unsupported token header');
   }
 
-  if (header.alg !== JWT_TOKEN_ALGORITHM) {
+  if (!Object.hasOwn(header, 'alg') || header.alg !== JWT_TOKEN_ALGORITHM) {
     throw new Error('Invalid token algorithm');
   }
 
-  if (header.typ !== JWT_TOKEN_TYPE) {
+  if (!Object.hasOwn(header, 'typ') || header.typ !== JWT_TOKEN_TYPE) {
     throw new Error('Invalid token type');
   }
 }
@@ -270,12 +270,12 @@ function verifyToken(token, secret = resolveJwtSecret(), options = {}) {
   }
   validateJwtPayloadFields(payload);
 
-  if (payload.exp == null) {
+  if (!Object.hasOwn(payload, 'exp') || payload.exp == null) {
     throw new Error('Token expiration is required');
   }
   const exp = validateJwtExpirationTimestamp(payload.exp);
 
-  if (payload.iat == null) {
+  if (!Object.hasOwn(payload, 'iat') || payload.iat == null) {
     throw new Error('Token issued-at is required');
   }
   const iat = validateJwtIssuedAtTimestamp(payload.iat);
@@ -283,7 +283,9 @@ function verifyToken(token, secret = resolveJwtSecret(), options = {}) {
     throw new Error('Token issued-at must be before expiration');
   }
 
-  const normalizedUserId = normalizeVerifiedTokenUserId(payload.userId);
+  const normalizedUserId = Object.hasOwn(payload, 'userId')
+    ? normalizeVerifiedTokenUserId(payload.userId)
+    : null;
   if (normalizedUserId == null) {
     throw new Error('Token userId is required');
   }
