@@ -98,6 +98,8 @@ const SCHEDULING_INSIGHTS_RESPONSE_FIELDS = Object.freeze([
   ...SCHEDULING_INSIGHTS_COUNT_FIELDS,
   'averageEaseFactor',
 ]);
+const RECOMMENDED_DAILY_REVIEW_TARGET_NUMERATOR = 6;
+const RECOMMENDED_DAILY_REVIEW_TARGET_DENOMINATOR = 5;
 const INVALID_SCHEDULER_OUTPUT_ERROR = 'Invalid scheduler output';
 const INVALID_STUDY_SESSION_CARD_READ_RESULT_ERROR = 'Invalid study-session card read result';
 const INVALID_STUDY_SESSION_UPDATE_RESULT_ERROR = 'Invalid study-session update result';
@@ -884,6 +886,40 @@ function assertSchedulingInsightsCountInvariants(counts) {
   ) {
     throw new TypeError(INVALID_SCHEDULING_INSIGHTS_RESULT_ERROR);
   }
+}
+
+function toSafeCeilScaledInteger(value, numerator, denominator, errorMessage) {
+  if (
+    !Number.isSafeInteger(value)
+    || value < 0
+    || !Number.isSafeInteger(numerator)
+    || numerator <= 0
+    || !Number.isSafeInteger(denominator)
+    || denominator <= 0
+  ) {
+    throw new TypeError(errorMessage);
+  }
+
+  const result = (
+    BigInt(value) * BigInt(numerator) + BigInt(denominator - 1)
+  ) / BigInt(denominator);
+  if (result > MAX_SAFE_INTEGER_BIGINT) {
+    throw new TypeError(errorMessage);
+  }
+
+  return Number(result);
+}
+
+function toRecommendedDailyReviewTarget(focusLoad) {
+  return Math.max(
+    10,
+    toSafeCeilScaledInteger(
+      focusLoad,
+      RECOMMENDED_DAILY_REVIEW_TARGET_NUMERATOR,
+      RECOMMENDED_DAILY_REVIEW_TARGET_DENOMINATOR,
+      INVALID_SCHEDULING_INSIGHTS_RESULT_ERROR
+    )
+  );
 }
 
 function assertSingleAggregateQueryResult(result, errorMessage) {
@@ -2138,7 +2174,7 @@ async function getSchedulingInsights(req, res, db, now = new Date()) {
       dueNext7Days: counts.dueNext7Days,
       leechCandidates: counts.leechCandidates,
       averageEaseFactor,
-      recommendedDailyReviewTarget: Math.max(10, Math.ceil(focusLoad * 1.2)),
+      recommendedDailyReviewTarget: toRecommendedDailyReviewTarget(focusLoad),
       suggestedNewCards: Math.max(0, 20 - focusLoad),
     });
   } catch (err) {

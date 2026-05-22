@@ -4990,6 +4990,101 @@ test('GET /api/scheduling-insights accepts aggregate equality boundaries', async
   assert.equal(db.calls.length, 1);
 });
 
+test('GET /api/scheduling-insights keeps review target floor when focus load is zero', async () => {
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [
+        {
+          totalCards: '0',
+          overdue: '0',
+          dueToday: '0',
+          dueTomorrow: '0',
+          dueNext7Days: '0',
+          leechCandidates: '0',
+          averageEaseFactor: null,
+        },
+      ],
+    },
+  ]);
+  const req = { user: { userId: 1 } };
+  const res = createRes();
+
+  await getSchedulingInsights(req, res, db, new Date(2026, 4, 8, 15, 45, 12, 345));
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.recommendedDailyReviewTarget, 10);
+  assert.equal(db.calls.length, 1);
+});
+
+test('GET /api/scheduling-insights preserves safe derived review target boundaries', async () => {
+  const safeFocusLoad = '7505999378950825';
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [
+        {
+          totalCards: safeFocusLoad,
+          overdue: safeFocusLoad,
+          dueToday: '0',
+          dueTomorrow: '0',
+          dueNext7Days: '0',
+          leechCandidates: '0',
+          averageEaseFactor: null,
+        },
+      ],
+    },
+  ]);
+  const req = { user: { userId: 1 } };
+  const res = createRes();
+
+  await getSchedulingInsights(req, res, db, new Date(2026, 4, 8, 15, 45, 12, 345));
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, {
+    totalCards: 7505999378950825,
+    overdue: 7505999378950825,
+    dueToday: 0,
+    dueTomorrow: 0,
+    dueNext7Days: 0,
+    leechCandidates: 0,
+    averageEaseFactor: null,
+    recommendedDailyReviewTarget: 9007199254740990,
+    suggestedNewCards: 0,
+  });
+  assert.equal(Number.isSafeInteger(res.body.recommendedDailyReviewTarget), true);
+  assert.equal(db.calls.length, 1);
+});
+
+test('GET /api/scheduling-insights fails closed when derived review target is unsafe', async (t) => {
+  const unsafeFocusLoad = '7505999378950826';
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [
+        {
+          totalCards: unsafeFocusLoad,
+          overdue: unsafeFocusLoad,
+          dueToday: '0',
+          dueTomorrow: '0',
+          dueNext7Days: '0',
+          leechCandidates: '0',
+          averageEaseFactor: null,
+        },
+      ],
+    },
+  ]);
+  const req = { user: { userId: 1 } };
+  const res = createRes();
+  t.mock.method(console, 'error', () => {});
+
+  await getSchedulingInsights(req, res, db, new Date(2026, 4, 8, 15, 45, 12, 345));
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Internal server error' });
+  assert.equal(db.calls.length, 1);
+});
+
 test('GET /api/scheduling-insights fails closed for missing or malformed aggregate counts', async (t) => {
   const validInsights = {
     totalCards: '30',
