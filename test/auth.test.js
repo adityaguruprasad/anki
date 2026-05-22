@@ -81,6 +81,10 @@ function createBodyWithInheritedFields(inheritedFields, ownFields = {}) {
   return Object.assign(Object.create(inheritedFields), ownFields);
 }
 
+function createRequestWithInheritedFields(inheritedFields, ownFields = {}) {
+  return Object.assign(Object.create(inheritedFields), ownFields);
+}
+
 function createRegistrationRow(id, email = 'ada@example.com') {
   return { id, email };
 }
@@ -117,6 +121,15 @@ function createSequencePasswordHasher(compareResults) {
   };
 
   return passwordHasher;
+}
+
+async function loginMissingAccount(login, req, email, password = 'candidate-password') {
+  const res = createRes();
+  Object.assign(req, { body: { email, password } });
+
+  await login(req, res);
+
+  return res;
 }
 
 function base64UrlJson(value) {
@@ -1398,6 +1411,251 @@ test('login throttles unknown source password spraying before extra work', async
     { password, passwordHash: MISSING_ACCOUNT_DUMMY_PASSWORD_HASH },
     { password, passwordHash: MISSING_ACCOUNT_DUMMY_PASSWORD_HASH },
   ]);
+});
+
+test('login ignores inherited request ip so missing sources share the unknown throttle key', async () => {
+  const db = createDb([
+    { rowCount: 0, rows: [] },
+    { rowCount: 0, rows: [] },
+  ]);
+  const passwordHasher = createPasswordHasher({ compareResult: true });
+  const { login } = createAuthHandlers(db, {
+    jwtSecret: 'inherited-request-ip-rate-limit-secret',
+    passwordHasher,
+    loginSourceRateLimit: {
+      maxFailures: 2,
+      windowMs: 60000,
+      now: () => 1810,
+    },
+  });
+
+  const firstRes = await loginMissingAccount(
+    login,
+    createRequestWithInheritedFields({ ip: '198.51.100.10' }),
+    'first@example.com'
+  );
+  const secondRes = await loginMissingAccount(
+    login,
+    createRequestWithInheritedFields({ ip: '198.51.100.11' }),
+    'second@example.com'
+  );
+  const blockedRes = await loginMissingAccount(
+    login,
+    createRequestWithInheritedFields({ ip: '198.51.100.12' }),
+    'third@example.com'
+  );
+
+  assert.equal(firstRes.statusCode, 401);
+  assert.equal(secondRes.statusCode, 401);
+  assert.equal(blockedRes.statusCode, 429);
+  assert.deepEqual(blockedRes.body, { error: LOGIN_RATE_LIMIT_ERROR });
+  assert.equal(db.calls.length, 2);
+  assert.deepEqual(db.calls.map((call) => call.params), [
+    ['first@example.com'],
+    ['second@example.com'],
+  ]);
+  assert.equal(passwordHasher.compareCalls.length, 2);
+});
+
+test('login uses own request ip ahead of inherited forged ip values', async () => {
+  const db = createDb([
+    { rowCount: 0, rows: [] },
+    { rowCount: 0, rows: [] },
+  ]);
+  const passwordHasher = createPasswordHasher({ compareResult: true });
+  const { login } = createAuthHandlers(db, {
+    jwtSecret: 'own-request-ip-rate-limit-secret',
+    passwordHasher,
+    loginSourceRateLimit: {
+      maxFailures: 1,
+      windowMs: 60000,
+      now: () => 1820,
+    },
+  });
+  const sourceIp = '203.0.113.60';
+
+  const firstRes = await loginMissingAccount(
+    login,
+    createRequestWithInheritedFields(
+      { ip: '198.51.100.20' },
+      {
+        ip: sourceIp,
+        socket: { remoteAddress: '198.51.100.22' },
+        connection: { remoteAddress: '198.51.100.23' },
+      }
+    ),
+    'first@example.com'
+  );
+  const unknownRes = await loginMissingAccount(login, {}, 'unknown@example.com');
+  const blockedRes = await loginMissingAccount(
+    login,
+    createRequestWithInheritedFields(
+      { ip: '198.51.100.21' },
+      {
+        ip: sourceIp,
+        socket: { remoteAddress: '198.51.100.24' },
+        connection: { remoteAddress: '198.51.100.25' },
+      }
+    ),
+    'second@example.com'
+  );
+
+  assert.equal(firstRes.statusCode, 401);
+  assert.equal(unknownRes.statusCode, 401);
+  assert.equal(blockedRes.statusCode, 429);
+  assert.deepEqual(blockedRes.body, { error: LOGIN_RATE_LIMIT_ERROR });
+  assert.equal(db.calls.length, 2);
+  assert.deepEqual(db.calls.map((call) => call.params), [
+    ['first@example.com'],
+    ['unknown@example.com'],
+  ]);
+  assert.equal(passwordHasher.compareCalls.length, 2);
+});
+
+test('login ignores inherited socket and connection remote addresses for source throttling', async () => {
+  const db = createDb([
+    { rowCount: 0, rows: [] },
+    { rowCount: 0, rows: [] },
+  ]);
+  const passwordHasher = createPasswordHasher({ compareResult: true });
+  const { login } = createAuthHandlers(db, {
+    jwtSecret: 'inherited-socket-rate-limit-secret',
+    passwordHasher,
+    loginSourceRateLimit: {
+      maxFailures: 2,
+      windowMs: 60000,
+      now: () => 1830,
+    },
+  });
+  const requestWithInheritedContainers = createRequestWithInheritedFields({
+    socket: { remoteAddress: '198.51.100.30' },
+    connection: { remoteAddress: '198.51.100.31' },
+  });
+  const requestWithInheritedRemoteAddresses = {
+    socket: Object.create({ remoteAddress: '198.51.100.32' }),
+    connection: Object.create({ remoteAddress: '198.51.100.33' }),
+  };
+
+  const firstRes = await loginMissingAccount(
+    login,
+    requestWithInheritedContainers,
+    'first@example.com'
+  );
+  const secondRes = await loginMissingAccount(
+    login,
+    requestWithInheritedRemoteAddresses,
+    'second@example.com'
+  );
+  const blockedRes = await loginMissingAccount(login, {}, 'third@example.com');
+
+  assert.equal(firstRes.statusCode, 401);
+  assert.equal(secondRes.statusCode, 401);
+  assert.equal(blockedRes.statusCode, 429);
+  assert.deepEqual(blockedRes.body, { error: LOGIN_RATE_LIMIT_ERROR });
+  assert.equal(db.calls.length, 2);
+  assert.deepEqual(db.calls.map((call) => call.params), [
+    ['first@example.com'],
+    ['second@example.com'],
+  ]);
+  assert.equal(passwordHasher.compareCalls.length, 2);
+});
+
+test('login uses own socket and connection remote addresses with socket preferred', async () => {
+  const db = createDb([
+    { rowCount: 0, rows: [] },
+    { rowCount: 0, rows: [] },
+  ]);
+  const passwordHasher = createPasswordHasher({ compareResult: true });
+  const { login } = createAuthHandlers(db, {
+    jwtSecret: 'own-socket-rate-limit-secret',
+    passwordHasher,
+    loginSourceRateLimit: {
+      maxFailures: 1,
+      windowMs: 60000,
+      now: () => 1840,
+    },
+  });
+  const socketIp = '203.0.113.70';
+  const connectionIp = '203.0.113.71';
+
+  const socketPreferredRes = await loginMissingAccount(
+    login,
+    {
+      socket: { remoteAddress: socketIp },
+      connection: { remoteAddress: connectionIp },
+    },
+    'socket-preferred@example.com'
+  );
+  const connectionRes = await loginMissingAccount(
+    login,
+    { connection: { remoteAddress: connectionIp } },
+    'connection@example.com'
+  );
+  const blockedSocketRes = await loginMissingAccount(
+    login,
+    { socket: { remoteAddress: socketIp } },
+    'socket-blocked@example.com'
+  );
+  const blockedConnectionRes = await loginMissingAccount(
+    login,
+    { connection: { remoteAddress: connectionIp } },
+    'connection-blocked@example.com'
+  );
+
+  assert.equal(socketPreferredRes.statusCode, 401);
+  assert.equal(connectionRes.statusCode, 401);
+  assert.equal(blockedSocketRes.statusCode, 429);
+  assert.deepEqual(blockedSocketRes.body, { error: LOGIN_RATE_LIMIT_ERROR });
+  assert.equal(blockedConnectionRes.statusCode, 429);
+  assert.deepEqual(blockedConnectionRes.body, { error: LOGIN_RATE_LIMIT_ERROR });
+  assert.equal(db.calls.length, 2);
+  assert.deepEqual(db.calls.map((call) => call.params), [
+    ['socket-preferred@example.com'],
+    ['connection@example.com'],
+  ]);
+  assert.equal(passwordHasher.compareCalls.length, 2);
+});
+
+test('login ignores array-shaped and primitive socket or connection sources', async () => {
+  const db = createDb([
+    { rowCount: 0, rows: [] },
+    { rowCount: 0, rows: [] },
+  ]);
+  const passwordHasher = createPasswordHasher({ compareResult: true });
+  const { login } = createAuthHandlers(db, {
+    jwtSecret: 'malformed-socket-rate-limit-secret',
+    passwordHasher,
+    loginSourceRateLimit: {
+      maxFailures: 2,
+      windowMs: 60000,
+      now: () => 1850,
+    },
+  });
+  const arraySocket = Object.assign([], { remoteAddress: '203.0.113.80' });
+  const arrayConnection = Object.assign([], { remoteAddress: '203.0.113.81' });
+
+  const arrayRes = await loginMissingAccount(
+    login,
+    { socket: arraySocket, connection: arrayConnection },
+    'array@example.com'
+  );
+  const primitiveRes = await loginMissingAccount(
+    login,
+    { socket: '203.0.113.82', connection: 12345 },
+    'primitive@example.com'
+  );
+  const blockedRes = await loginMissingAccount(login, {}, 'unknown@example.com');
+
+  assert.equal(arrayRes.statusCode, 401);
+  assert.equal(primitiveRes.statusCode, 401);
+  assert.equal(blockedRes.statusCode, 429);
+  assert.deepEqual(blockedRes.body, { error: LOGIN_RATE_LIMIT_ERROR });
+  assert.equal(db.calls.length, 2);
+  assert.deepEqual(db.calls.map((call) => call.params), [
+    ['array@example.com'],
+    ['primitive@example.com'],
+  ]);
+  assert.equal(passwordHasher.compareCalls.length, 2);
 });
 
 test('login success does not clear source IP failures from rotated emails', async () => {

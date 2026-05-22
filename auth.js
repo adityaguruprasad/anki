@@ -603,11 +603,21 @@ function resolveRegistrationRateLimitOptions(registrationRateLimitOptions) {
   };
 }
 
+function getOwnNonArrayObjectValue(value, fieldName) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+
+  return Object.hasOwn(value, fieldName) ? value[fieldName] : undefined;
+}
+
 function getRequestIp(req = {}) {
+  const socket = getOwnNonArrayObjectValue(req, 'socket');
+  const connection = getOwnNonArrayObjectValue(req, 'connection');
   const candidates = [
-    req.ip,
-    req.socket?.remoteAddress,
-    req.connection?.remoteAddress,
+    getOwnNonArrayObjectValue(req, 'ip'),
+    getOwnNonArrayObjectValue(socket, 'remoteAddress'),
+    getOwnNonArrayObjectValue(connection, 'remoteAddress'),
   ];
 
   for (const candidate of candidates) {
