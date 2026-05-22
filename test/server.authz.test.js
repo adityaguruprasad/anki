@@ -2166,6 +2166,31 @@ test('GET /api/decks/:deckId/cards treats whitespace q like an omitted q', async
   assert.match(db.calls[0].sql, /\bLIMIT \$3/);
 });
 
+test('GET /api/decks/:deckId/cards ignores inherited query fields before SQL construction', async () => {
+  const inheritedQueryFields = {
+    limit: '1',
+    q: 'inherited search',
+  };
+  const query = Object.create(inheritedQueryFields);
+  const db = createDb([{ rowCount: 1, rows: [createEmptyCardReadSentinel()] }]);
+  const req = {
+    params: { deckId: '42' },
+    query,
+    user: { userId: 1 },
+  };
+  const res = createRes();
+
+  await getCardsByDeck(req, res, db);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, { cards: [], nextCursor: null });
+  assert.equal(Object.keys(query).length, 0);
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [42, 1, 51]);
+  assert.doesNotMatch(db.calls[0].sql, /POSITION\(/i);
+  assert.match(db.calls[0].sql, /\bLIMIT \$3/);
+});
+
 test('GET /api/decks/:deckId/cards returns 400 for over-length q and skips db query', async () => {
   const db = createDb([]);
   const req = {
@@ -2697,6 +2722,31 @@ test('GET /api/cards/:deckId returns 400 for duplicate limit params and skips db
   assert.equal(res.statusCode, 400);
   assert.deepEqual(res.body, { error: 'Invalid limit: must be a positive integer no greater than 100' });
   assert.equal(db.calls.length, 0);
+});
+
+test('GET /api/cards/:deckId ignores inherited limit before SQL construction', async () => {
+  const query = Object.create({ limit: '1' });
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [createEmptyDueCardQueryRow()],
+    },
+  ]);
+  const req = {
+    params: { deckId: '42' },
+    query,
+    user: { userId: 1 },
+  };
+  const res = createRes();
+
+  await getDueCardsByDeck(req, res, db);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, []);
+  assert.equal(Object.keys(query).length, 0);
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [42, 1, 100]);
+  assert.match(db.calls[0].sql, /ORDER BY c\.next_review ASC NULLS FIRST,\s*c\.id ASC\s+LIMIT \$3/);
 });
 
 test('GET /api/cards/:deckId returns 404 when deck is not owned by user', async () => {

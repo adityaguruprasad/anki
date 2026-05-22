@@ -1089,6 +1089,15 @@ function validateDueCardsLimit(value) {
   return validation;
 }
 
+function getRequestQueryObject(req) {
+  const query = req?.query;
+  return query !== null && typeof query === 'object' ? query : {};
+}
+
+function getOwnRequestQueryValue(query, fieldName) {
+  return Object.hasOwn(query, fieldName) ? query[fieldName] : undefined;
+}
+
 function validateBrowseCardsCursor(query = {}) {
   const hasBeforeCreatedAtParam = Object.hasOwn(query, 'beforeCreatedAt');
   const hasBeforeIdParam = Object.hasOwn(query, 'beforeId');
@@ -1214,7 +1223,8 @@ async function getDueCardsByDeck(req, res, db) {
       return res.status(400).json({ error: deckIdValidation.error });
     }
 
-    const limitValidation = validateDueCardsLimit(req.query?.limit);
+    const query = getRequestQueryObject(req);
+    const limitValidation = validateDueCardsLimit(getOwnRequestQueryValue(query, 'limit'));
     if (!limitValidation.ok) {
       return res.status(400).json({ error: limitValidation.error });
     }
@@ -1276,17 +1286,18 @@ async function getCardsByDeck(req, res, db) {
       return res.status(400).json({ error: deckIdValidation.error });
     }
 
-    const limitValidation = validateBrowseCardsLimit(req.query?.limit);
+    const query = getRequestQueryObject(req);
+    const limitValidation = validateBrowseCardsLimit(getOwnRequestQueryValue(query, 'limit'));
     if (!limitValidation.ok) {
       return res.status(400).json({ error: limitValidation.error });
     }
 
-    const cursorValidation = validateBrowseCardsCursor(req.query);
+    const cursorValidation = validateBrowseCardsCursor(query);
     if (!cursorValidation.ok) {
       return res.status(400).json({ error: cursorValidation.error });
     }
 
-    const searchValidation = validateBrowseCardsSearch(req.query?.q);
+    const searchValidation = validateBrowseCardsSearch(getOwnRequestQueryValue(query, 'q'));
     if (!searchValidation.ok) {
       return res.status(400).json({ error: searchValidation.error });
     }
