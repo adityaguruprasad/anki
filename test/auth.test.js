@@ -69,6 +69,10 @@ function createDb(results) {
   };
 }
 
+function createBodyWithInheritedFields(inheritedFields, ownFields = {}) {
+  return Object.assign(Object.create(inheritedFields), ownFields);
+}
+
 function createRegistrationRow(id, email = 'ada@example.com') {
   return { id, email };
 }
@@ -431,6 +435,29 @@ test('register rejects invalid input before hashing or querying', async (t) => {
       assert.deepEqual(db.calls, []);
     });
   }
+});
+
+test('register ignores inherited body fields before hashing or querying', async () => {
+  const db = createDb([]);
+  const passwordHasher = createPasswordHasher();
+  const { register } = createAuthHandlers(db, {
+    jwtSecret: 'inherited-register-secret',
+    passwordHasher,
+  });
+  const res = createRes();
+
+  await register({
+    body: createBodyWithInheritedFields({
+      username: 'ada',
+      email: 'ada@example.com',
+      password: 'valid-pass',
+    }),
+  }, res);
+
+  assert.equal(res.statusCode, 400);
+  assert.deepEqual(res.body, { error: 'Username is required' });
+  assert.deepEqual(passwordHasher.hashCalls, []);
+  assert.deepEqual(db.calls, []);
 });
 
 test('register accepts a password exactly at the bcrypt byte limit', async () => {
@@ -1531,6 +1558,28 @@ test('login rejects invalid input before querying or comparing', async (t) => {
       assert.deepEqual(passwordHasher.compareCalls, []);
     });
   }
+});
+
+test('login ignores inherited body fields before querying or comparing', async () => {
+  const db = createDb([]);
+  const passwordHasher = createPasswordHasher();
+  const { login } = createAuthHandlers(db, {
+    jwtSecret: 'inherited-login-secret',
+    passwordHasher,
+  });
+  const res = createRes();
+
+  await login({
+    body: createBodyWithInheritedFields({
+      email: 'grace@example.com',
+      password: 's3cret',
+    }),
+  }, res);
+
+  assert.equal(res.statusCode, 400);
+  assert.deepEqual(res.body, { error: 'Valid email is required' });
+  assert.deepEqual(db.calls, []);
+  assert.deepEqual(passwordHasher.compareCalls, []);
 });
 
 test('login trims surrounding email whitespace before credential lookup', async () => {

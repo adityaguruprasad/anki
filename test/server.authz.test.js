@@ -96,6 +96,10 @@ function addUnexpectedConnect(db) {
   return db;
 }
 
+function createBodyWithInheritedFields(inheritedFields, ownFields = {}) {
+  return Object.assign(Object.create(inheritedFields), ownFields);
+}
+
 const EXPECTED_PUBLIC_CARD_READ_FIELDS = Object.freeze([
   'id',
   'deck_id',
@@ -4908,6 +4912,127 @@ test('GET /api/scheduling-insights fails closed for malformed averageEaseFactor 
     assert.equal(res.statusCode, 500);
     assert.deepEqual(res.body, { error: 'Internal server error' });
     assert.equal(db.calls.length, 1);
+  }
+});
+
+test('API mutation body fields must be own properties before validation or SQL use', async () => {
+  const cases = [
+    {
+      name: 'create deck name',
+      handler: createDeck,
+      req: {
+        body: createBodyWithInheritedFields({ name: 'Biology' }),
+        user: { userId: 1 },
+      },
+      expectedError: 'Invalid deck name: must be a string',
+    },
+    {
+      name: 'rename deck name',
+      handler: renameDeck,
+      req: {
+        params: { deckId: '42' },
+        body: createBodyWithInheritedFields({ name: 'Biology' }),
+        user: { userId: 1 },
+      },
+      expectedError: 'Invalid deck name: must be a string',
+    },
+    {
+      name: 'create card deckId',
+      handler: createCard,
+      req: {
+        body: createBodyWithInheritedFields(
+          { deckId: 42 },
+          { frontContent: 'Front', backContent: 'Back' }
+        ),
+        user: { userId: 1 },
+      },
+      expectedError: 'Invalid deckId: must be a positive integer',
+    },
+    {
+      name: 'create card frontContent',
+      handler: createCard,
+      req: {
+        body: createBodyWithInheritedFields(
+          { frontContent: 'Front' },
+          { deckId: 42, backContent: 'Back' }
+        ),
+        user: { userId: 1 },
+      },
+      expectedError: 'Invalid frontContent: must be a non-empty string',
+    },
+    {
+      name: 'create card backContent',
+      handler: createCard,
+      req: {
+        body: createBodyWithInheritedFields(
+          { backContent: 'Back' },
+          { deckId: 42, frontContent: 'Front' }
+        ),
+        user: { userId: 1 },
+      },
+      expectedError: 'Invalid backContent: must be a non-empty string',
+    },
+    {
+      name: 'update card frontContent',
+      handler: updateCard,
+      req: {
+        params: { cardId: '77' },
+        body: createBodyWithInheritedFields(
+          { frontContent: 'Front' },
+          { backContent: 'Back' }
+        ),
+        user: { userId: 1 },
+      },
+      expectedError: 'Invalid frontContent: must be a non-empty string',
+    },
+    {
+      name: 'update card backContent',
+      handler: updateCard,
+      req: {
+        params: { cardId: '77' },
+        body: createBodyWithInheritedFields(
+          { backContent: 'Back' },
+          { frontContent: 'Front' }
+        ),
+        user: { userId: 1 },
+      },
+      expectedError: 'Invalid backContent: must be a non-empty string',
+    },
+    {
+      name: 'study-session cardId',
+      handler: submitStudySession,
+      req: {
+        body: createBodyWithInheritedFields({ cardId: 77 }, { quality: 3 }),
+        user: { userId: 1 },
+      },
+      expectedError: 'Invalid cardId: must be a positive integer',
+    },
+    {
+      name: 'study-session quality',
+      handler: submitStudySession,
+      req: {
+        body: createBodyWithInheritedFields({ quality: 3 }, { cardId: 77 }),
+        user: { userId: 1 },
+      },
+      expectedError: 'Invalid quality: must be an integer between 0 and 5',
+    },
+  ];
+
+  for (const testCase of cases) {
+    const db = addUnexpectedConnect(createDb([]));
+    const res = createRes();
+    let schedulerCalled = false;
+
+    await testCase.handler(testCase.req, res, db, () => {
+      schedulerCalled = true;
+      return {};
+    });
+
+    assert.equal(res.statusCode, 400, testCase.name);
+    assert.deepEqual(res.body, { error: testCase.expectedError }, testCase.name);
+    assert.equal(db.calls.length, 0, testCase.name);
+    assert.equal(db.connectCalls, 0, testCase.name);
+    assert.equal(schedulerCalled, false, testCase.name);
   }
 });
 

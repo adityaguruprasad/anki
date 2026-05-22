@@ -1098,6 +1098,15 @@ function getOwnRequestQueryValue(query, fieldName) {
   return Object.hasOwn(query, fieldName) ? query[fieldName] : undefined;
 }
 
+function getRequestBodyObject(req) {
+  const body = req?.body;
+  return body !== null && typeof body === 'object' && !Array.isArray(body) ? body : {};
+}
+
+function getOwnRequestBodyValue(body, fieldName) {
+  return Object.hasOwn(body, fieldName) ? body[fieldName] : undefined;
+}
+
 function validateBrowseCardsCursor(query = {}) {
   const hasBeforeCreatedAtParam = Object.hasOwn(query, 'beforeCreatedAt');
   const hasBeforeIdParam = Object.hasOwn(query, 'beforeId');
@@ -1396,17 +1405,27 @@ async function getCardsByDeck(req, res, db) {
 
 async function createCard(req, res, db) {
   try {
-    const deckIdValidation = validatePositiveIntegerIdentifier(req.body?.deckId, 'deckId');
+    const body = getRequestBodyObject(req);
+    const deckIdValidation = validatePositiveIntegerIdentifier(
+      getOwnRequestBodyValue(body, 'deckId'),
+      'deckId'
+    );
     if (!deckIdValidation.ok) {
       return res.status(400).json({ error: deckIdValidation.error });
     }
 
-    const frontContentValidation = validateCardContent(req.body?.frontContent, 'frontContent');
+    const frontContentValidation = validateCardContent(
+      getOwnRequestBodyValue(body, 'frontContent'),
+      'frontContent'
+    );
     if (!frontContentValidation.ok) {
       return res.status(400).json({ error: frontContentValidation.error });
     }
 
-    const backContentValidation = validateCardContent(req.body?.backContent, 'backContent');
+    const backContentValidation = validateCardContent(
+      getOwnRequestBodyValue(body, 'backContent'),
+      'backContent'
+    );
     if (!backContentValidation.ok) {
       return res.status(400).json({ error: backContentValidation.error });
     }
@@ -1491,12 +1510,19 @@ async function updateCard(req, res, db) {
       return res.status(400).json({ error: cardIdValidation.error });
     }
 
-    const frontContentValidation = validateCardContent(req.body?.frontContent, 'frontContent');
+    const body = getRequestBodyObject(req);
+    const frontContentValidation = validateCardContent(
+      getOwnRequestBodyValue(body, 'frontContent'),
+      'frontContent'
+    );
     if (!frontContentValidation.ok) {
       return res.status(400).json({ error: frontContentValidation.error });
     }
 
-    const backContentValidation = validateCardContent(req.body?.backContent, 'backContent');
+    const backContentValidation = validateCardContent(
+      getOwnRequestBodyValue(body, 'backContent'),
+      'backContent'
+    );
     if (!backContentValidation.ok) {
       return res.status(400).json({ error: backContentValidation.error });
     }
@@ -1602,13 +1628,17 @@ async function submitStudySession(req, res, db, calculateNextReview) {
       }
     };
 
-    const { cardId, quality } = req.body ?? {};
-    const cardIdValidation = validatePositiveIntegerIdentifier(cardId, 'cardId');
+    const body = getRequestBodyObject(req);
+    const cardIdValidation = validatePositiveIntegerIdentifier(
+      getOwnRequestBodyValue(body, 'cardId'),
+      'cardId'
+    );
     if (!cardIdValidation.ok) {
       return res.status(400).json({ error: cardIdValidation.error });
     }
 
     const validCardId = cardIdValidation.value;
+    const quality = getOwnRequestBodyValue(body, 'quality');
     if (!isValidQuality(quality)) {
       return res.status(400).json({ error: 'Invalid quality: must be an integer between 0 and 5' });
     }
@@ -1746,7 +1776,8 @@ async function submitStudySession(req, res, db, calculateNextReview) {
 
 async function createDeck(req, res, db) {
   try {
-    const validationResult = validateDeckName(req.body?.name);
+    const body = getRequestBodyObject(req);
+    const validationResult = validateDeckName(getOwnRequestBodyValue(body, 'name'));
     if (!validationResult.ok) {
       return res.status(400).json({ error: validationResult.error });
     }
@@ -1785,7 +1816,8 @@ async function renameDeck(req, res, db) {
       return res.status(400).json({ error: deckIdValidation.error });
     }
 
-    const validationResult = validateDeckName(req.body?.name);
+    const body = getRequestBodyObject(req);
+    const validationResult = validateDeckName(getOwnRequestBodyValue(body, 'name'));
     if (!validationResult.ok) {
       return res.status(400).json({ error: validationResult.error });
     }

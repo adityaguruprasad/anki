@@ -630,6 +630,15 @@ function resolveAuthHandlerJwtSecret(options = {}) {
   return resolveJwtSecret(options.env);
 }
 
+function getRequestBodyObject(req) {
+  const body = req?.body;
+  return body !== null && typeof body === 'object' && !Array.isArray(body) ? body : {};
+}
+
+function getOwnRequestBodyValue(body, fieldName) {
+  return Object.hasOwn(body, fieldName) ? body[fieldName] : undefined;
+}
+
 function createAuthHandlers(db, options = {}) {
   if (!db || typeof db.query !== 'function') {
     throw new TypeError('createAuthHandlers requires a database object with a query method');
@@ -654,7 +663,10 @@ function createAuthHandlers(db, options = {}) {
   );
 
   const register = async (req, res) => {
-    const { username, email, password } = req.body || {};
+    const body = getRequestBodyObject(req);
+    const username = getOwnRequestBodyValue(body, 'username');
+    const email = getOwnRequestBodyValue(body, 'email');
+    const password = getOwnRequestBodyValue(body, 'password');
     const trimmedUsername = typeof username === 'string' ? username.trim() : '';
     const normalizedEmail = normalizeEmail(email);
     if (trimmedUsername === '') {
@@ -716,7 +728,9 @@ function createAuthHandlers(db, options = {}) {
   };
 
   const login = async (req, res) => {
-    const { email, password } = req.body || {};
+    const body = getRequestBodyObject(req);
+    const email = getOwnRequestBodyValue(body, 'email');
+    const password = getOwnRequestBodyValue(body, 'password');
     const normalizedEmail = normalizeEmail(email);
     if (normalizedEmail == null) {
       return res.status(400).json({ error: 'Valid email is required' });
