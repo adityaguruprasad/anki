@@ -147,7 +147,16 @@ function toAuthenticatedUserId(value) {
 }
 
 function getAuthenticatedUserId(req) {
-  const user = req?.user;
+  if (
+    req === null
+    || typeof req !== 'object'
+    || Array.isArray(req)
+    || !Object.hasOwn(req, 'user')
+  ) {
+    throw new TypeError(INVALID_AUTH_PRINCIPAL_ERROR);
+  }
+
+  const user = req.user;
   if (
     user === null
     || typeof user !== 'object'

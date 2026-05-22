@@ -945,6 +945,26 @@ test('GET /api/decks returns decks with one user-scoped aggregate query', async 
   assert.match(db.calls[0].sql, /AS "dueCards"/);
 });
 
+test('GET /api/decks trusts own auth principal over inherited forged principal', async () => {
+  const db = createDb([
+    {
+      rowCount: 0,
+      rows: [],
+    },
+  ]);
+  const req = Object.assign(Object.create({ user: { userId: 999 } }), {
+    user: { userId: '42' },
+  });
+  const res = createRes();
+
+  await getDecks(req, res, db);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, []);
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [42]);
+});
+
 test('GET /api/decks preserves empty decks with zero counts', async () => {
   const db = createDb([
     {
@@ -1054,6 +1074,58 @@ test('GET /api/decks fails closed when the deck-list query result shape is malfo
     assert.deepEqual(res.body, { error: 'Internal server error' });
     assert.equal(db.calls.length, 1);
     assert.deepEqual(db.calls[0].params, [1]);
+  }
+});
+
+test('GET /api/decks ignores inherited-only auth principal before db access', async (t) => {
+  const req = Object.create({ user: { userId: 1 } });
+  const db = addUnexpectedConnect(createDb([]));
+  const res = createRes();
+  t.mock.method(console, 'error', () => {});
+
+  await getDecks(req, res, db);
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Internal server error' });
+  assert.equal(db.calls.length, 0);
+  assert.equal(db.connectCalls, 0);
+});
+
+test('GET /api/decks rejects inherited-only userId on own auth principal before db access', async (t) => {
+  const req = { user: Object.create({ userId: 1 }) };
+  const db = addUnexpectedConnect(createDb([]));
+  const res = createRes();
+  t.mock.method(console, 'error', () => {});
+
+  await getDecks(req, res, db);
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Internal server error' });
+  assert.equal(db.calls.length, 0);
+  assert.equal(db.connectCalls, 0);
+});
+
+test('GET /api/decks rejects array-shaped and non-object auth principals before db access', async (t) => {
+  const malformedRequests = [
+    { user: null },
+    { user: [] },
+    { user: '1' },
+    { user: 1 },
+    { user: false },
+    { user: Symbol('user') },
+  ];
+  t.mock.method(console, 'error', () => {});
+
+  for (const req of malformedRequests) {
+    const db = addUnexpectedConnect(createDb([]));
+    const res = createRes();
+
+    await getDecks(req, res, db);
+
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.body, { error: 'Internal server error' });
+    assert.equal(db.calls.length, 0);
+    assert.equal(db.connectCalls, 0);
   }
 });
 
