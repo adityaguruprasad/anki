@@ -2081,6 +2081,7 @@ test('GET /api/decks/:deckId/cards returns default-limited owned deck cards newe
       front_content: 'Future card',
       back_content: 'Answer',
       created_at: '2026-05-08T13:00:00.000Z',
+      last_reviewed: '2026-05-19T12:00:00.000Z',
       next_review: '2026-05-20T12:00:00.000Z',
     }),
     createCardReadRow({
@@ -2089,6 +2090,7 @@ test('GET /api/decks/:deckId/cards returns default-limited owned deck cards newe
       front_content: 'Due card',
       back_content: 'Answer',
       created_at: '2026-05-08T12:00:00.000Z',
+      last_reviewed: '2026-05-01T12:00:00.000Z',
       next_review: '2026-05-07T12:00:00.000Z',
     }),
   ];
@@ -2119,6 +2121,40 @@ test('GET /api/decks/:deckId/cards returns default-limited owned deck cards newe
   assert.deepEqual(db.calls[0].params, [42, 1, 51]);
 });
 
+test('GET /api/decks/:deckId/cards allows scheduled cards that have never been reviewed', async () => {
+  const card = createCardReadRow({
+    id: 3,
+    deck_id: 42,
+    front_content: 'Future card',
+    back_content: 'Answer',
+    created_at: '2026-05-08T13:00:00.000Z',
+    last_reviewed: null,
+    next_review: '2026-05-20T12:00:00.000Z',
+  });
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [
+        {
+          ...card,
+          __cursor_created_at: '2026-05-08T13:00:00.000000Z',
+          __owned_deck_id: 42,
+          __owned_user_id: 1,
+        },
+      ],
+    },
+  ]);
+  const req = { params: { deckId: '42' }, user: { userId: 1 } };
+  const res = createRes();
+
+  await getCardsByDeck(req, res, db);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, { cards: [card], nextCursor: null });
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [42, 1, 51]);
+});
+
 test('GET /api/decks/:deckId/cards fails closed when a card row violates read response invariants', async (t) => {
   const validCard = createCardReadRow({
     id: 3,
@@ -2132,6 +2168,14 @@ test('GET /api/decks/:deckId/cards fails closed when a card row violates read re
   delete rowWithoutFrontContent.front_content;
   const rowWithoutCreatedAt = { ...validCard };
   delete rowWithoutCreatedAt.created_at;
+  const cardWithNextReviewEqualToLastReviewed = {
+    ...validCard,
+    last_reviewed: validCard.next_review,
+  };
+  const cardWithNextReviewBeforeLastReviewed = {
+    ...validCard,
+    last_reviewed: '2026-05-21T12:00:00.000Z',
+  };
   const malformedRows = [
     { ...validCard, id: 'card-3' },
     { ...validCard, deck_id: 'deck-42' },
@@ -2141,6 +2185,8 @@ test('GET /api/decks/:deckId/cards fails closed when a card row violates read re
     { ...validCard, created_at: null },
     { ...validCard, created_at: 'not-a-date' },
     { ...validCard, next_review: 'not-a-date' },
+    cardWithNextReviewEqualToLastReviewed,
+    cardWithNextReviewBeforeLastReviewed,
     { ...validCard, interval: 0 },
     { ...validCard, ease_factor: 1.29 },
     { ...validCard, review_count: -1 },
@@ -5667,6 +5713,14 @@ test('POST /api/study-session rolls back before scheduling when the locked card 
     { name: 'invalid created timestamp', row: { ...validSourceCard, created_at: 'not-a-date' } },
     { name: 'missing next review field', row: rowMissingNextReview },
     { name: 'invalid next review timestamp', row: { ...validSourceCard, next_review: 'not-a-date' } },
+    {
+      name: 'next review equal to last reviewed',
+      row: { ...validSourceCard, last_reviewed: validSourceCard.next_review },
+    },
+    {
+      name: 'next review before last reviewed',
+      row: { ...validSourceCard, last_reviewed: '2026-05-09T12:00:00.000Z' },
+    },
     { name: 'invalid interval', row: { ...validSourceCard, interval: 0 } },
     { name: 'invalid ease factor', row: { ...validSourceCard, ease_factor: Number.NaN } },
     { name: 'invalid review count', row: { ...validSourceCard, review_count: -1 } },

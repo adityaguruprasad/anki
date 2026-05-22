@@ -632,6 +632,14 @@ function assertCardReadResult(row, errorMessage = INVALID_CARD_READ_RESULT_ERROR
     }
   }
 
+  if (
+    row.last_reviewed !== null
+    && row.next_review !== null
+    && !isLaterDatabaseTimestamp(row.next_review, row.last_reviewed)
+  ) {
+    throw new TypeError(errorMessage);
+  }
+
   if (!isValidPersistedCardInterval(row.interval)) {
     throw new TypeError(errorMessage);
   }
