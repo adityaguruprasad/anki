@@ -3232,6 +3232,48 @@ test('POST /api/cards fails closed when the inserted row violates card mutation 
   }
 });
 
+test('POST /api/cards fails closed when the inserted scheduling seed contract drifts', async (t) => {
+  const validInsertedCard = {
+    id: 77,
+    deck_id: 42,
+    front_content: 'Capital of France?',
+    back_content: 'Paris',
+    next_review: '2026-05-08T12:00:00.000Z',
+    interval: 1,
+    ease_factor: 2.5,
+    review_count: 0,
+    __owned_user_id: 1,
+    __owned_deck_id: 42,
+  };
+  const malformedRows = [
+    { ...validInsertedCard, next_review: null },
+    { ...validInsertedCard, interval: 2 },
+    { ...validInsertedCard, ease_factor: 2.6 },
+    { ...validInsertedCard, review_count: 1 },
+  ];
+  t.mock.method(console, 'error', () => {});
+
+  for (const row of malformedRows) {
+    const db = createDb([{ rowCount: 1, rows: [row] }]);
+    const req = {
+      body: {
+        deckId: '42',
+        frontContent: 'Capital of France?',
+        backContent: 'Paris',
+      },
+      user: { userId: 1 },
+    };
+    const res = createRes();
+
+    await createCard(req, res, db);
+
+    assert.equal(res.statusCode, 500);
+    assert.deepEqual(res.body, { error: 'Internal server error' });
+    assert.equal(db.calls.length, 1);
+    assert.deepEqual(db.calls[0].params, [42, 1, 'Capital of France?', 'Paris']);
+  }
+});
+
 test('POST /api/cards fails closed when the inserted row deck anchor is missing or mismatched', async (t) => {
   const validInsertedCard = {
     id: 77,

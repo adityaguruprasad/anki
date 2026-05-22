@@ -9,6 +9,11 @@ const BROWSE_CARDS_MAX_LIMIT = 100;
 // changing the explicit limit contract.
 const DUE_CARDS_DEFAULT_LIMIT = BROWSE_CARDS_MAX_LIMIT;
 const BROWSE_CARDS_MAX_SEARCH_LENGTH = 200;
+const CREATE_CARD_NEXT_REVIEW_SQL_EXPRESSION = 'NOW()';
+const CREATE_CARD_REQUIRE_NEXT_REVIEW = true;
+const CREATE_CARD_INITIAL_INTERVAL = 1;
+const CREATE_CARD_INITIAL_EASE_FACTOR = 2.5;
+const CREATE_CARD_INITIAL_REVIEW_COUNT = 0;
 // anki.db uses PostgreSQL SERIAL/INTEGER ids; reject impossible ids before
 // they reach hot API queries where PostgreSQL would raise int4 range errors.
 const MAX_POSTGRES_SERIAL_ID = 2147483647;
@@ -538,6 +543,15 @@ function assertCardMutationResult(row, options = {}) {
     || !isValidPersistedCardInterval(row.interval)
     || !isValidPersistedEaseFactor(row.ease_factor)
     || !isValidPersistedReviewCount(row.review_count)
+  ) {
+    throw new TypeError(INVALID_CARD_MUTATION_RESULT_ERROR);
+  }
+
+  if (
+    (options.requireNextReview && !isValidRequiredDatabaseTimestamp(row.next_review))
+    || (Object.hasOwn(options, 'expectedInterval') && row.interval !== options.expectedInterval)
+    || (Object.hasOwn(options, 'expectedEaseFactor') && row.ease_factor !== options.expectedEaseFactor)
+    || (Object.hasOwn(options, 'expectedReviewCount') && row.review_count !== options.expectedReviewCount)
   ) {
     throw new TypeError(INVALID_CARD_MUTATION_RESULT_ERROR);
   }
@@ -1398,7 +1412,13 @@ async function createCard(req, res, db) {
            ease_factor,
            review_count
          )
-         SELECT d.id, $3, $4, NOW(), 1, 2.5, 0
+         SELECT d.id,
+                $3,
+                $4,
+                ${CREATE_CARD_NEXT_REVIEW_SQL_EXPRESSION},
+                ${CREATE_CARD_INITIAL_INTERVAL},
+                ${CREATE_CARD_INITIAL_EASE_FACTOR},
+                ${CREATE_CARD_INITIAL_REVIEW_COUNT}
          FROM decks d
          WHERE d.id = $1 AND d.user_id = $2
          RETURNING id,
@@ -1439,6 +1459,12 @@ async function createCard(req, res, db) {
       expectedDeckId: deckIdValidation.value,
       expectedUserId: userId,
       requireDeckOwnershipProof: true,
+      // INSERT uses server-side NOW(), so require a valid timestamp without
+      // comparing it to a process-local fixed value.
+      requireNextReview: CREATE_CARD_REQUIRE_NEXT_REVIEW,
+      expectedInterval: CREATE_CARD_INITIAL_INTERVAL,
+      expectedEaseFactor: CREATE_CARD_INITIAL_EASE_FACTOR,
+      expectedReviewCount: CREATE_CARD_INITIAL_REVIEW_COUNT,
     });
     return res.status(201).json(toCardMutationPayload(createdCard));
   } catch (err) {

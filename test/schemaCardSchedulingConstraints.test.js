@@ -105,10 +105,6 @@ test('anki.db constrains persisted card scheduling state to app invariants', () 
   // anki.db is the canonical bootstrap schema for new databases. Existing
   // deployments must run the data-normalizing migration before relying on
   // these checks.
-  assert.match(cardsTable, /\binterval\s+INTEGER\s+NOT\s+NULL\s+DEFAULT\s+1\b/i);
-  assert.match(cardsTable, /\breview_count\s+INTEGER\s+NOT\s+NULL\s+DEFAULT\s+0\b/i);
-  assert.match(cardsTable, /\bease_factor\s+FLOAT\s+NOT\s+NULL\s+DEFAULT\s+2\.5\b/i);
-
   assert.match(
     cardsTable,
     /\bCONSTRAINT\s+cards_interval_min_check\s+CHECK\s*\(\s*interval\s*>=\s*1\s*\)/i,
@@ -129,6 +125,12 @@ test('anki.db constrains persisted card scheduling state to app invariants', () 
     cardsTable,
     /\bCONSTRAINT\s+cards_review_temporal_order_check\s+CHECK\s*\(\s*next_review\s+IS\s+NULL\s+OR\s+last_reviewed\s+IS\s+NULL\s+OR\s+next_review\s+>\s+last_reviewed\s*\)/i,
   );
+});
+
+test('anki.db declares create-card scheduling seed columns with driver numeric types', () => {
+  assert.match(cardsTable, /\binterval\s+INTEGER\s+NOT\s+NULL\s+DEFAULT\s+1\b/i);
+  assert.match(cardsTable, /\breview_count\s+INTEGER\s+NOT\s+NULL\s+DEFAULT\s+0\b/i);
+  assert.match(cardsTable, /\bease_factor\s+FLOAT\s+NOT\s+NULL\s+DEFAULT\s+2\.5\b/i);
 });
 
 test('card scheduling migration normalizes legacy rows before enforcing constraints', () => {
