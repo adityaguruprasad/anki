@@ -189,9 +189,11 @@ function isValidSchedulerNextReview(value) {
 }
 
 function assertValidSchedulingUpdate(schedule) {
-  if (schedule === null || typeof schedule !== 'object' || Array.isArray(schedule)) {
-    throw new TypeError(INVALID_SCHEDULER_OUTPUT_ERROR);
-  }
+  assertObjectHasOwnFields(
+    schedule,
+    ['interval', 'ease_factor', 'next_review'],
+    INVALID_SCHEDULER_OUTPUT_ERROR
+  );
 
   const { interval, ease_factor, next_review } = schedule;
 

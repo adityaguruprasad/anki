@@ -5747,6 +5747,47 @@ test('POST /api/study-session rolls back before scheduling when the locked card 
   assert.doesNotMatch(db.calls.map(({ sql }) => sql).join('\n'), /\bUPDATE\s+cards\b|\bCOMMIT\b/i);
 });
 
+test('POST /api/study-session rejects inherited scheduler fields before persistence', async (t) => {
+  const db = createTransactionDb([
+    {
+      rowCount: 1,
+      rows: [createStudySessionCardReadRow({
+        id: 7,
+        deck_id: 1,
+        next_review: '2026-05-08T12:00:00.000Z',
+        ease_factor: 2.5,
+        interval: 2,
+        review_count: 2,
+        __is_due: true,
+      })],
+    },
+  ]);
+  const req = { body: { cardId: 7, quality: 4 }, user: { userId: 1 } };
+  const res = createRes();
+  let schedulerCalled = false;
+  t.mock.method(console, 'error', () => {});
+
+  await submitStudySession(req, res, db, () => {
+    schedulerCalled = true;
+    return Object.create({
+      ease_factor: 2.6,
+      interval: 3,
+      next_review: '2026-05-11T12:05:00.000Z',
+    });
+  });
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Internal server error' });
+  assert.equal(schedulerCalled, true);
+  assert.equal(db.connectCalls, 1);
+  assert.equal(db.client.released, true);
+  assert.equal(db.calls.length, 3);
+  assert.match(db.calls[0].sql, /^\s*BEGIN\s*$/i);
+  assertStudySessionCardReadSql(db.calls[1].sql);
+  assert.match(db.calls[2].sql, /^\s*ROLLBACK\s*$/i);
+  assert.doesNotMatch(db.calls.map(({ sql }) => sql).join('\n'), /\bUPDATE\s+cards\b|\bCOMMIT\b/i);
+});
+
 test('POST /api/study-session locks an owned due card before scheduling and updating', async () => {
   const nextReview = '2026-05-11T12:05:00.000Z';
   const sourceCard = {
