@@ -381,13 +381,13 @@ function toSafeAggregateCount(value, errorMessage) {
   return toNormalizedAggregateCount(value, errorMessage);
 }
 
-function toRequiredNullablePositiveAggregateNumber(value, errorMessage) {
+function toRequiredNullableAverageEaseFactor(value, errorMessage) {
   if (value === null) {
     return null;
   }
 
   if (typeof value === 'number') {
-    if (Number.isFinite(value) && value > 0) {
+    if (Number.isFinite(value) && value >= MIN_EASE_FACTOR) {
       return value;
     }
 
@@ -401,7 +401,7 @@ function toRequiredNullablePositiveAggregateNumber(value, errorMessage) {
     }
 
     const number = Number(trimmed);
-    if (Number.isFinite(number) && number > 0) {
+    if (Number.isFinite(number) && number >= MIN_EASE_FACTOR) {
       return number;
     }
   }
@@ -2171,7 +2171,7 @@ async function getSchedulingInsights(req, res, db, now = new Date()) {
     const overdue = counts.overdue;
     const dueToday = counts.dueToday;
     const focusLoad = overdue + dueToday;
-    const averageEaseFactor = toRequiredNullablePositiveAggregateNumber(
+    const averageEaseFactor = toRequiredNullableAverageEaseFactor(
       stats.averageEaseFactor,
       INVALID_SCHEDULING_INSIGHTS_RESULT_ERROR
     );

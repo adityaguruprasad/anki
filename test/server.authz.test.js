@@ -5294,6 +5294,8 @@ test('GET /api/scheduling-insights keeps null averageEaseFactor when no positive
 
 test('GET /api/scheduling-insights preserves positive averageEaseFactor values', async () => {
   const validAverageEaseFactors = [
+    ['1.3', 1.3],
+    [1.3, 1.3],
     ['2.35', 2.35],
     [2.5, 2.5],
   ];
@@ -5332,6 +5334,8 @@ test('GET /api/scheduling-insights fails closed for malformed averageEaseFactor 
     '   ',
     '0',
     0,
+    '1.29',
+    1.29,
     '-1',
     -1,
     '1e3',
