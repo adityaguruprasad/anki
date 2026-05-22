@@ -932,12 +932,26 @@ function toRecommendedDailyReviewTarget(focusLoad) {
   );
 }
 
-function assertSingleAggregateQueryResult(result, errorMessage) {
+function assertQueryResultShape(result, errorMessage) {
   if (
     result === null
     || typeof result !== 'object'
+    || Array.isArray(result)
+    || !Object.hasOwn(result, 'rows')
+    || !Object.hasOwn(result, 'rowCount')
     || !Array.isArray(result.rows)
-    || result.rows.length !== 1
+    || !Number.isSafeInteger(result.rowCount)
+    || result.rowCount < 0
+  ) {
+    throw new TypeError(errorMessage);
+  }
+}
+
+function assertSingleAggregateQueryResult(result, errorMessage) {
+  assertQueryResultShape(result, errorMessage);
+
+  if (
+    result.rows.length !== 1
     || result.rowCount !== 1
   ) {
     throw new TypeError(errorMessage);
@@ -950,14 +964,9 @@ function getRequiredSingleAggregateQueryRow(result, errorMessage) {
 }
 
 function assertListQueryResult(result, errorMessage) {
-  if (
-    result === null
-    || typeof result !== 'object'
-    || !Array.isArray(result.rows)
-    || !Number.isSafeInteger(result.rowCount)
-    || result.rowCount < 0
-    || result.rowCount !== result.rows.length
-  ) {
+  assertQueryResultShape(result, errorMessage);
+
+  if (result.rowCount !== result.rows.length) {
     throw new TypeError(errorMessage);
   }
 }
@@ -975,13 +984,7 @@ function assertBoundedListQueryResult(result, errorMessage, maxRows) {
 }
 
 function getOptionalSingleQueryRow(result, errorMessage) {
-  if (
-    result === null
-    || typeof result !== 'object'
-    || !Array.isArray(result.rows)
-  ) {
-    throw new TypeError(errorMessage);
-  }
+  assertQueryResultShape(result, errorMessage);
 
   if (result.rowCount === 0 && result.rows.length === 0) {
     return null;

@@ -54,6 +54,10 @@ function createDb(results) {
   };
 }
 
+function createQueryResultWithInheritedShape(rowCount, rows) {
+  return Object.create({ rowCount, rows });
+}
+
 function createUniqueViolation(constraint) {
   const error = new Error('duplicate key value violates unique constraint');
   error.code = '23505';
@@ -628,6 +632,63 @@ test('POST /api/decks fails closed when the insert result cardinality is malform
     assert.deepEqual(res.body, { error: 'Internal server error' });
     assert.equal(db.calls.length, 1);
     assert.deepEqual(db.calls[0].params, [1, 'Biology']);
+  }
+});
+
+test('API query result helpers fail closed when rows and rowCount are inherited', async (t) => {
+  const deck = {
+    id: 12,
+    user_id: 1,
+    name: 'Biology',
+    description: null,
+    created_at: '2026-05-08T00:00:00.000Z',
+  };
+  const deckListRow = {
+    ...deck,
+    totalCards: '3',
+    dueCards: '1',
+  };
+  const stats = {
+    totalCards: '12',
+    totalDecks: '3',
+    todayReviews: '4',
+    weekReviews: '7',
+    monthReviews: '10',
+  };
+  const cases = [
+    {
+      name: 'optional single result',
+      result: createQueryResultWithInheritedShape(1, [deck]),
+      run: (db, res) => createDeck(
+        { body: { name: 'Biology' }, user: { userId: 1 } },
+        res,
+        db
+      ),
+    },
+    {
+      name: 'list result',
+      result: createQueryResultWithInheritedShape(1, [deckListRow]),
+      run: (db, res) => getDecks({ user: { userId: 1 } }, res, db),
+    },
+    {
+      name: 'aggregate result',
+      result: createQueryResultWithInheritedShape(1, [stats]),
+      run: (db, res) => getStats({ user: { userId: 1 } }, res, db),
+    },
+  ];
+  t.mock.method(console, 'error', () => {});
+
+  for (const testCase of cases) {
+    await t.test(testCase.name, async () => {
+      const db = createDb([testCase.result]);
+      const res = createRes();
+
+      await testCase.run(db, res);
+
+      assert.equal(res.statusCode, 500);
+      assert.deepEqual(res.body, { error: 'Internal server error' });
+      assert.equal(db.calls.length, 1);
+    });
   }
 });
 
