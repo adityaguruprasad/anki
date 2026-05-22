@@ -339,6 +339,14 @@ function extractBearerToken(authHeader) {
   return match ? match[1] : null;
 }
 
+function getOwnAuthorizationHeader(headers) {
+  if (headers === null || typeof headers !== 'object' || Array.isArray(headers)) {
+    return undefined;
+  }
+
+  return Object.hasOwn(headers, 'authorization') ? headers.authorization : undefined;
+}
+
 function getDefaultPasswordHasher() {
   try {
     return require('bcrypt');
@@ -805,7 +813,7 @@ function createAuthHandlers(db, options = {}) {
   };
 
   const authenticateToken = (req, res, next) => {
-    const token = extractBearerToken(req.headers?.authorization);
+    const token = extractBearerToken(getOwnAuthorizationHeader(req?.headers));
     if (token == null) return res.sendStatus(401);
 
     try {

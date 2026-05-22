@@ -2594,6 +2594,88 @@ test('authenticateToken rejects malformed authorization headers before token ver
   }
 });
 
+test('authenticateToken ignores inherited-only authorization headers', () => {
+  const signedToken = signToken({ userId: 305 }, 'inherited-header-secret');
+  const { authenticateToken } = createAuthHandlers(createDb([]), {
+    jwtSecret: 'inherited-header-secret',
+    passwordHasher: createPasswordHasher(),
+  });
+  const req = {
+    headers: Object.create({ authorization: `Bearer ${signedToken}` }),
+  };
+  const res = createRes();
+  let nextCalled = false;
+
+  authenticateToken(req, res, () => {
+    nextCalled = true;
+  });
+
+  assert.equal(res.statusCode, 401);
+  assert.equal(nextCalled, false);
+  assert.equal(req.user, undefined);
+});
+
+test('authenticateToken accepts own authorization over an inherited forged header', () => {
+  const signedToken = signToken({ userId: 306 }, 'own-header-secret');
+  const { authenticateToken } = createAuthHandlers(createDb([]), {
+    jwtSecret: 'own-header-secret',
+    passwordHasher: createPasswordHasher(),
+  });
+  const req = {
+    headers: Object.assign(Object.create({ authorization: 'Bearer forged-token' }), {
+      authorization: `Bearer ${signedToken}`,
+    }),
+  };
+  const res = createRes();
+  let nextCalled = false;
+
+  authenticateToken(req, res, () => {
+    nextCalled = true;
+  });
+
+  assert.equal(nextCalled, true);
+  assert.equal(req.user.userId, 306);
+});
+
+test('authenticateToken ignores array-shaped headers with an authorization property', () => {
+  const signedToken = signToken({ userId: 307 }, 'array-header-secret');
+  const { authenticateToken } = createAuthHandlers(createDb([]), {
+    jwtSecret: 'array-header-secret',
+    passwordHasher: createPasswordHasher(),
+  });
+  const headers = [];
+  headers.authorization = `Bearer ${signedToken}`;
+  const req = { headers };
+  const res = createRes();
+  let nextCalled = false;
+
+  authenticateToken(req, res, () => {
+    nextCalled = true;
+  });
+
+  assert.equal(res.statusCode, 401);
+  assert.equal(nextCalled, false);
+  assert.equal(req.user, undefined);
+});
+
+test('authenticateToken accepts a valid own authorization header', () => {
+  const signedToken = signToken({ userId: 308 }, 'valid-own-header-secret');
+  const { authenticateToken } = createAuthHandlers(createDb([]), {
+    jwtSecret: 'valid-own-header-secret',
+    passwordHasher: createPasswordHasher(),
+  });
+  const req = { headers: { authorization: `Bearer ${signedToken}` } };
+  const res = createRes();
+  let nextCalled = false;
+
+  authenticateToken(req, res, () => {
+    nextCalled = true;
+  });
+
+  assert.equal(nextCalled, true);
+  assert.equal(req.user.userId, 308);
+});
+
 test('authenticateToken returns 403 for signed tokens without a usable userId claim', () => {
   const token = signRawJwt(
     { alg: 'HS256', typ: 'JWT' },
