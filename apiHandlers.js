@@ -112,6 +112,10 @@ const INVALID_CARD_BROWSE_CURSOR_RESULT_ERROR = 'Invalid card browse cursor resu
 const INVALID_STATS_RESULT_ERROR = 'Invalid stats result';
 const INVALID_SCHEDULING_INSIGHTS_RESULT_ERROR = 'Invalid scheduling-insights result';
 const INVALID_AUTH_PRINCIPAL_ERROR = 'Invalid authenticated user principal';
+// Keep in sync with the schema/migration-defined decks_user_id_normalized_name_unique_idx.
+const DUPLICATE_DECK_NAME_CONSTRAINTS = new Set([
+  'decks_user_id_normalized_name_unique_idx',
+]);
 
 function isValidQuality(quality) {
   return Number.isInteger(quality) && quality >= 0 && quality <= 5;
@@ -1245,6 +1249,13 @@ function getSchedulingInsightDateBoundaries(now = new Date()) {
   };
 }
 
+function isDuplicateDeckNameError(error) {
+  return (
+    error?.code === '23505'
+    && DUPLICATE_DECK_NAME_CONSTRAINTS.has(error.constraint)
+  );
+}
+
 async function getDueCardsByDeck(req, res, db) {
   try {
     const routeParams = getRequestParamsObject(req);
@@ -1921,7 +1932,7 @@ async function renameDeck(req, res, db) {
 
     return res.json(toDeckReadPayload(result.deck));
   } catch (err) {
-    if (err?.code === '23505') {
+    if (isDuplicateDeckNameError(err)) {
       return res.status(409).json({ error: 'Deck name already exists for this user' });
     }
 

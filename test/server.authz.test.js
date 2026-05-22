@@ -54,6 +54,13 @@ function createDb(results) {
   };
 }
 
+function createUniqueViolation(constraint) {
+  const error = new Error('duplicate key value violates unique constraint');
+  error.code = '23505';
+  error.constraint = constraint;
+  return error;
+}
+
 function createTransactionDb(results) {
   let index = 0;
   const calls = [];
@@ -912,6 +919,42 @@ test('PATCH /api/decks/:deckId returns 409 for duplicate normalized deck name', 
   assert.match(db.calls[0].sql, /user_id\s+=\s+\$2/i);
   assert.match(db.calls[0].sql, /id\s+<>\s+\$1/i);
   assert.match(db.calls[0].sql, /LOWER\(TRIM\(name\)\)\s+=\s+LOWER\(TRIM\(\$3\)\)/i);
+});
+
+test('PATCH /api/decks/:deckId maps deck-name unique races to 409', async () => {
+  const db = createDb([
+    createUniqueViolation('decks_user_id_normalized_name_unique_idx'),
+  ]);
+  const req = { params: { deckId: '42' }, body: { name: ' biology ' }, user: { userId: 1 } };
+  const res = createRes();
+
+  await renameDeck(req, res, db);
+
+  assert.equal(res.statusCode, 409);
+  assert.deepEqual(res.body, { error: 'Deck name already exists for this user' });
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [42, 1, 'biology']);
+  assert.match(db.calls[0].sql, /WITH\s+target\s+AS/i);
+});
+
+test('PATCH /api/decks/:deckId fails closed for unrelated unique violations', async (t) => {
+  const uniqueViolation = createUniqueViolation('decks_future_unique_idx');
+  const db = createDb([
+    uniqueViolation,
+  ]);
+  const req = { params: { deckId: '42' }, body: { name: 'Biology' }, user: { userId: 1 } };
+  const res = createRes();
+  const consoleError = t.mock.method(console, 'error', () => {});
+
+  await renameDeck(req, res, db);
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Internal server error' });
+  assert.doesNotMatch(JSON.stringify(res.body), /future|unique|constraint|duplicate/i);
+  assert.equal(consoleError.mock.callCount(), 1);
+  assert.deepEqual(consoleError.mock.calls[0].arguments, [uniqueViolation]);
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [42, 1, 'Biology']);
 });
 
 test('anki.db enforces unique normalized deck names per user', () => {
