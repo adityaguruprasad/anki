@@ -2311,6 +2311,76 @@ test('GET /api/decks/:deckId/cards ignores inherited query fields before SQL con
   assert.match(db.calls[0].sql, /\bLIMIT \$3/);
 });
 
+test('GET /api/decks/:deckId/cards applies own query fields before SQL construction', async () => {
+  const card = createCardReadRow({
+    id: 3,
+    deck_id: 42,
+    front_content: 'Cell division',
+    back_content: 'Mitosis',
+    created_at: '2026-05-08T13:00:00.000Z',
+    next_review: '2026-05-20T12:00:00.000Z',
+  });
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [{ ...card, __cursor_created_at: '2026-05-08T13:00:00.000000Z', __owned_deck_id: 42, __owned_user_id: 1 }],
+    },
+  ]);
+  const req = {
+    params: { deckId: '42' },
+    query: { limit: '1', q: '  Mito  ' },
+    user: { userId: 1 },
+  };
+  const res = createRes();
+
+  await getCardsByDeck(req, res, db);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, { cards: [card], nextCursor: null });
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [42, 1, 'Mito', 2]);
+  assertBrowseSearchPredicateSql(db.calls[0].sql);
+  assert.match(db.calls[0].sql, /ORDER BY c\.created_at DESC,\s*c\.id DESC\s+LIMIT \$4/);
+});
+
+test('GET /api/decks/:deckId/cards ignores array-shaped query before validation and SQL construction', async () => {
+  const query = Object.assign(['ignored element'], {
+    limit: '0',
+    q: ['Mito'],
+    cursorCreatedAt: 'not-a-date',
+    cursorId: '0',
+  });
+  const db = createDb([{ rowCount: 1, rows: [createEmptyCardReadSentinel()] }]);
+  const req = {
+    params: { deckId: '42' },
+    query,
+    user: { userId: 1 },
+  };
+  const res = createRes();
+
+  await getCardsByDeck(req, res, db);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, { cards: [], nextCursor: null });
+  assert.equal(Array.isArray(query), true);
+  assert.equal(Object.hasOwn(query, 'limit'), true);
+  assert.equal(Object.hasOwn(query, 'q'), true);
+  assert.equal(Object.hasOwn(query, 'cursorCreatedAt'), true);
+  assert.equal(Object.hasOwn(query, 'cursorId'), true);
+  assert.equal(db.calls.length, 1);
+  // Array-shaped req.query is normalized away before cursor handling, so its
+  // cursor fields must not add keyset params or predicates.
+  assert.deepEqual(db.calls[0].params, [42, 1, 51]);
+  assert.doesNotMatch(db.calls[0].sql, /POSITION\(LOWER\(/i);
+  assert.doesNotMatch(
+    db.calls[0].sql,
+    /\bc\.created_at\s*(?:<|=)\s*\(\$\d+::timestamptz\s+AT\s+TIME\s+ZONE\s+'UTC'\)/i,
+  );
+  assert.doesNotMatch(db.calls[0].sql, /\bc\.id\s+<\s+\$\d+/i);
+  assert.doesNotMatch(db.calls[0].sql, /AT\s+TIME\s+ZONE\s+'UTC'/i);
+  assert.match(db.calls[0].sql, /\bLIMIT \$3/);
+});
+
 test('GET /api/decks/:deckId/cards returns 400 for over-length q and skips db query', async () => {
   const db = createDb([]);
   const req = {

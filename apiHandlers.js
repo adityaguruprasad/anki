@@ -1091,7 +1091,7 @@ function validateDueCardsLimit(value) {
 
 function getRequestQueryObject(req) {
   const query = req?.query;
-  return query !== null && typeof query === 'object' ? query : {};
+  return query !== null && typeof query === 'object' && !Array.isArray(query) ? query : {};
 }
 
 function getOwnRequestQueryValue(query, fieldName) {
