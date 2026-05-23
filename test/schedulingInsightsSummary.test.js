@@ -9,6 +9,14 @@ const {
 } = require('../schedulingInsightsSummary');
 
 const MALFORMED_PAYLOAD_ERROR = /Malformed scheduling insights payload/;
+const SCHEDULING_INSIGHTS_SUMMARY_FIELD_NAMES = Object.freeze([
+  'dueToday',
+  'overdue',
+  'dueTomorrow',
+  'dueNext7Days',
+  'recommendedDailyReviewTarget',
+  'averageEaseFactor',
+]);
 
 function createSchedulingInsightsPayload(overrides = {}) {
   return {
@@ -23,6 +31,19 @@ function createSchedulingInsightsPayload(overrides = {}) {
     suggestedNewCards: 15,
     ...overrides,
   };
+}
+
+function createNullPrototypeSchedulingInsightsPayload(overrides = {}) {
+  return Object.assign(Object.create(null), createSchedulingInsightsPayload(), overrides);
+}
+
+function defineThrowingGetter(object, fieldName) {
+  Object.defineProperty(object, fieldName, {
+    get() {
+      throw new Error(`${fieldName} getter should not run`);
+    },
+    configurable: true,
+  });
 }
 
 test('toCount accepts only non-negative safe integers', () => {
@@ -109,6 +130,51 @@ test('hasSchedulingInsightsSummaryPayload validates every field required by the 
       `Expected ${JSON.stringify(payload)} to be rejected`,
     );
   });
+});
+
+test('scheduling insights summary accepts null-prototype payloads with own data fields', () => {
+  const payload = createNullPrototypeSchedulingInsightsPayload();
+
+  assert.equal(hasSchedulingInsightsSummaryPayload(payload), true);
+  assert.deepEqual(buildSchedulingInsightsSummary(payload), {
+    dueToday: 2,
+    overdue: 3,
+    recommendedDailyReviewTarget: 10,
+    averageEaseFactorLabel: '2.35',
+    upcomingBuckets: [
+      { key: 'dueToday', label: 'Today', value: 2 },
+      { key: 'dueTomorrow', label: 'Tomorrow', value: 4 },
+      { key: 'dueNext7Days', label: 'Next 7 days', value: 12 },
+    ],
+  });
+});
+
+test('scheduling insights summary rejects prototype-backed fields without invoking inherited accessors', () => {
+  assert.equal(
+    hasSchedulingInsightsSummaryPayload(Object.create(createSchedulingInsightsPayload())),
+    false,
+  );
+
+  for (const fieldName of SCHEDULING_INSIGHTS_SUMMARY_FIELD_NAMES) {
+    const prototype = {};
+    defineThrowingGetter(prototype, fieldName);
+    const payload = createSchedulingInsightsPayload();
+    Object.setPrototypeOf(payload, prototype);
+    delete payload[fieldName];
+
+    assert.equal(hasSchedulingInsightsSummaryPayload(payload), false);
+    assert.throws(() => buildSchedulingInsightsSummary(payload), MALFORMED_PAYLOAD_ERROR);
+  }
+});
+
+test('scheduling insights summary rejects accessor-backed fields without invoking getters', () => {
+  for (const fieldName of SCHEDULING_INSIGHTS_SUMMARY_FIELD_NAMES) {
+    const payload = createSchedulingInsightsPayload();
+    defineThrowingGetter(payload, fieldName);
+
+    assert.equal(hasSchedulingInsightsSummaryPayload(payload), false);
+    assert.throws(() => buildSchedulingInsightsSummary(payload), MALFORMED_PAYLOAD_ERROR);
+  }
 });
 
 test('buildSchedulingInsightsSummary rejects impossible upcoming bucket relationships', () => {

@@ -36,8 +36,23 @@ const SCHEDULING_INSIGHTS_ENDPOINT_COUNT_KEYS = Object.freeze([
   'suggestedNewCards',
 ]);
 
-function hasOwn(object, key) {
-  return Object.prototype.hasOwnProperty.call(object, key);
+function isObjectRecord(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function descriptorHasValue(descriptor) {
+  return (
+    descriptor !== undefined
+    && Object.prototype.hasOwnProperty.call(descriptor, 'value')
+  );
+}
+
+function getOwnDataPropertyValue(value, key) {
+  const descriptor = isObjectRecord(value)
+    ? Object.getOwnPropertyDescriptor(value, key)
+    : undefined;
+
+  return descriptorHasValue(descriptor) ? descriptor.value : undefined;
 }
 
 function isNonNegativeSafeInteger(value) {
@@ -45,14 +60,12 @@ function isNonNegativeSafeInteger(value) {
 }
 
 function hasSchedulingInsightsEndpointCountInvariants(schedulingInsights) {
-  const {
-    totalCards,
-    overdue,
-    dueToday,
-    dueTomorrow,
-    dueNext7Days,
-    leechCandidates,
-  } = schedulingInsights;
+  const totalCards = getOwnDataPropertyValue(schedulingInsights, 'totalCards');
+  const overdue = getOwnDataPropertyValue(schedulingInsights, 'overdue');
+  const dueToday = getOwnDataPropertyValue(schedulingInsights, 'dueToday');
+  const dueTomorrow = getOwnDataPropertyValue(schedulingInsights, 'dueTomorrow');
+  const dueNext7Days = getOwnDataPropertyValue(schedulingInsights, 'dueNext7Days');
+  const leechCandidates = getOwnDataPropertyValue(schedulingInsights, 'leechCandidates');
 
   // Overdue and next-7-days are disjoint; today and tomorrow sit inside next-7-days.
   return (
@@ -107,8 +120,7 @@ function buildDeckAvailabilityDisplayState({
 function hasSchedulingInsightsPayload(schedulingInsights) {
   return hasSchedulingInsightsSummaryPayload(schedulingInsights)
     && SCHEDULING_INSIGHTS_ENDPOINT_COUNT_KEYS.every((key) => (
-      hasOwn(schedulingInsights, key)
-      && isNonNegativeSafeInteger(schedulingInsights[key])
+      isNonNegativeSafeInteger(getOwnDataPropertyValue(schedulingInsights, key))
     ))
     && hasSchedulingInsightsEndpointCountInvariants(schedulingInsights);
 }

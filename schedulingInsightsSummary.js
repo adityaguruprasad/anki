@@ -8,8 +8,23 @@ const SCHEDULING_INSIGHTS_SUMMARY_COUNT_KEYS = Object.freeze([
   'recommendedDailyReviewTarget',
 ]);
 
-function hasOwn(object, key) {
-  return Object.prototype.hasOwnProperty.call(object, key);
+function isObjectRecord(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function descriptorHasValue(descriptor) {
+  return (
+    descriptor !== undefined
+    && Object.prototype.hasOwnProperty.call(descriptor, 'value')
+  );
+}
+
+function getOwnDataPropertyValue(value, key) {
+  const descriptor = isObjectRecord(value)
+    ? Object.getOwnPropertyDescriptor(value, key)
+    : undefined;
+
+  return descriptorHasValue(descriptor) ? descriptor.value : undefined;
 }
 
 function isNonNegativeSafeInteger(value) {
@@ -21,7 +36,9 @@ function hasSchedulingInsightsAverageEaseFactor(value) {
 }
 
 function hasSchedulingInsightsSummaryCountInvariants(insights) {
-  const { dueToday, dueTomorrow, dueNext7Days } = insights;
+  const dueToday = getOwnDataPropertyValue(insights, 'dueToday');
+  const dueTomorrow = getOwnDataPropertyValue(insights, 'dueTomorrow');
+  const dueNext7Days = getOwnDataPropertyValue(insights, 'dueNext7Days');
 
   // Today and tomorrow are disjoint subsets of the next-7-days bucket.
   return (
@@ -52,15 +69,14 @@ function formatDecimal(value, digits = 2) {
 }
 
 function hasSchedulingInsightsSummaryPayload(insights) {
-  return Boolean(insights)
-    && typeof insights === 'object'
-    && !Array.isArray(insights)
+  return isObjectRecord(insights)
     && SCHEDULING_INSIGHTS_SUMMARY_COUNT_KEYS.every((key) => (
-      hasOwn(insights, key) && isNonNegativeSafeInteger(insights[key])
+      isNonNegativeSafeInteger(getOwnDataPropertyValue(insights, key))
     ))
     && hasSchedulingInsightsSummaryCountInvariants(insights)
-    && hasOwn(insights, 'averageEaseFactor')
-    && hasSchedulingInsightsAverageEaseFactor(insights.averageEaseFactor);
+    && hasSchedulingInsightsAverageEaseFactor(
+      getOwnDataPropertyValue(insights, 'averageEaseFactor'),
+    );
 }
 
 function buildSchedulingInsightsSummary(insights) {
@@ -68,16 +84,18 @@ function buildSchedulingInsightsSummary(insights) {
     throw new Error(MALFORMED_SCHEDULING_INSIGHTS_PAYLOAD);
   }
 
-  const dueToday = toCount(insights.dueToday);
-  const overdue = toCount(insights.overdue);
-  const dueTomorrow = toCount(insights.dueTomorrow);
-  const dueNext7Days = toCount(insights.dueNext7Days);
+  const dueToday = toCount(getOwnDataPropertyValue(insights, 'dueToday'));
+  const overdue = toCount(getOwnDataPropertyValue(insights, 'overdue'));
+  const dueTomorrow = toCount(getOwnDataPropertyValue(insights, 'dueTomorrow'));
+  const dueNext7Days = toCount(getOwnDataPropertyValue(insights, 'dueNext7Days'));
 
   return {
     dueToday,
     overdue,
-    recommendedDailyReviewTarget: toCount(insights.recommendedDailyReviewTarget),
-    averageEaseFactorLabel: formatDecimal(insights.averageEaseFactor),
+    recommendedDailyReviewTarget: toCount(
+      getOwnDataPropertyValue(insights, 'recommendedDailyReviewTarget'),
+    ),
+    averageEaseFactorLabel: formatDecimal(getOwnDataPropertyValue(insights, 'averageEaseFactor')),
     upcomingBuckets: [
       {
         key: 'dueToday',
