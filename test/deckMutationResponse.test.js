@@ -26,6 +26,46 @@ function createValidDeckPayload(overrides = {}) {
   };
 }
 
+function createPayloadWithAccessorField(fieldName) {
+  const payload = createValidDeckPayload();
+  let getterCalls = 0;
+
+  Object.defineProperty(payload, fieldName, {
+    configurable: true,
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      throw new Error(`${fieldName} getter should not run`);
+    },
+  });
+
+  return {
+    payload,
+    getGetterCalls: () => getterCalls,
+  };
+}
+
+function createPayloadWithPrototypeField(fieldName) {
+  const prototype = {};
+  let getterCalls = 0;
+
+  Object.defineProperty(prototype, fieldName, {
+    get() {
+      getterCalls += 1;
+      throw new Error(`prototype ${fieldName} getter should not run`);
+    },
+  });
+
+  const payload = { ...createValidDeckPayload() };
+  Object.setPrototypeOf(payload, prototype);
+  delete payload[fieldName];
+
+  return {
+    payload,
+    getGetterCalls: () => getterCalls,
+  };
+}
+
 test('parseDeckMutationResponsePayload preserves valid deck rows and extra fields', () => {
   const payload = createValidDeckPayload({
     id: '42',
@@ -41,6 +81,18 @@ test('parseDeckMutationResponsePayload preserves valid deck rows and extra field
 
   assert.equal(parsed, payload);
   assert.deepEqual(parsed, payload);
+  assert.equal(hasDeckMutationResponsePayload(payload), true);
+});
+
+test('parseDeckMutationResponsePayload accepts null-prototype responses with own data fields', () => {
+  const payload = Object.assign(Object.create(null), createValidDeckPayload({
+    id: '42',
+    user_id: '1',
+    name: 'Spanish',
+    description: 'Language study',
+  }));
+
+  assert.equal(parseDeckMutationResponsePayload(payload), payload);
   assert.equal(hasDeckMutationResponsePayload(payload), true);
 });
 
@@ -236,6 +288,38 @@ test('parseDeckMutationResponsePayload rejects missing or invalid created timest
   ].forEach((payload) => {
     assertMalformed(payload);
     assert.equal(hasDeckMutationResponsePayload(payload), false);
+  });
+});
+
+test('parseDeckMutationResponsePayload rejects accessor-backed fields without invoking getters', () => {
+  [
+    'id',
+    'user_id',
+    'name',
+    'description',
+    'created_at',
+  ].forEach((fieldName) => {
+    const { payload, getGetterCalls } = createPayloadWithAccessorField(fieldName);
+
+    assert.equal(hasDeckMutationResponsePayload(payload), false);
+    assertMalformed(payload);
+    assert.equal(getGetterCalls(), 0);
+  });
+});
+
+test('parseDeckMutationResponsePayload rejects prototype-backed fields without invoking getters', () => {
+  [
+    'id',
+    'user_id',
+    'name',
+    'description',
+    'created_at',
+  ].forEach((fieldName) => {
+    const { payload, getGetterCalls } = createPayloadWithPrototypeField(fieldName);
+
+    assert.equal(hasDeckMutationResponsePayload(payload), false);
+    assertMalformed(payload);
+    assert.equal(getGetterCalls(), 0);
   });
 });
 

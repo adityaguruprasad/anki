@@ -14,8 +14,19 @@ function isNonBlankString(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
-function hasOwn(value, key) {
-  return Object.prototype.hasOwnProperty.call(value, key);
+function descriptorHasValue(descriptor) {
+  return (
+    descriptor !== undefined
+    && Object.prototype.hasOwnProperty.call(descriptor, 'value')
+  );
+}
+
+function getOwnDataPropertyValue(value, key) {
+  // API response fields are untrusted: ignore inherited or accessor-backed
+  // properties without invoking getters.
+  const descriptor = Object.getOwnPropertyDescriptor(value, key);
+
+  return descriptorHasValue(descriptor) ? descriptor.value : undefined;
 }
 
 function normalizeDeckResponseId(value) {
@@ -66,19 +77,25 @@ function hasSameDeckId(responseId, expectedId) {
 }
 
 function hasDeckMutationResponsePayload(payload, options = {}) {
+  if (!isObjectRecord(payload)) {
+    return false;
+  }
+
   const { expectedId } = options;
   const hasExpectedId = expectedId !== undefined;
+  const id = getOwnDataPropertyValue(payload, 'id');
+  const userId = getOwnDataPropertyValue(payload, 'user_id');
+  const name = getOwnDataPropertyValue(payload, 'name');
+  const description = getOwnDataPropertyValue(payload, 'description');
+  const createdAt = getOwnDataPropertyValue(payload, 'created_at');
+
   return (
-    isObjectRecord(payload)
-    && hasUsableDeckId(payload.id)
-    && hasOwn(payload, 'user_id')
-    && hasUsableUserId(payload.user_id)
-    && isNonBlankString(payload.name)
-    && hasOwn(payload, 'description')
-    && (payload.description === null || typeof payload.description === 'string')
-    && hasOwn(payload, 'created_at')
-    && isValidIsoTimestamp(payload.created_at)
-    && (!hasExpectedId || hasSameDeckId(payload.id, expectedId))
+    hasUsableDeckId(id)
+    && hasUsableUserId(userId)
+    && isNonBlankString(name)
+    && (description === null || typeof description === 'string')
+    && isValidIsoTimestamp(createdAt)
+    && (!hasExpectedId || hasSameDeckId(id, expectedId))
   );
 }
 
