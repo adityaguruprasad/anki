@@ -13,8 +13,24 @@ function isObjectRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function hasOwn(value, key) {
-  return Object.prototype.hasOwnProperty.call(value, key);
+function descriptorHasValue(descriptor) {
+  return (
+    descriptor !== undefined
+    && Object.prototype.hasOwnProperty.call(descriptor, 'value')
+  );
+}
+
+function getOwnFieldDescriptor(value, key) {
+  return isObjectRecord(value) ? Object.getOwnPropertyDescriptor(value, key) : undefined;
+}
+
+function hasOwnDataProperty(value, key) {
+  return descriptorHasValue(getOwnFieldDescriptor(value, key));
+}
+
+function getOwnDataPropertyValue(value, key) {
+  const descriptor = getOwnFieldDescriptor(value, key);
+  return descriptorHasValue(descriptor) ? descriptor.value : undefined;
 }
 
 function hasUsableId(value) {
@@ -28,65 +44,82 @@ function hasSameDeckId(leftId, rightId) {
   return normalizedLeftId !== null && normalizedLeftId === normalizedRightId;
 }
 
-function hasExpectedDeckAnchor(card, expectedDeckId) {
+function hasExpectedDeckAnchor(cardDeckId, expectedDeckId) {
   if (expectedDeckId === undefined) {
     return true;
   }
 
   return (
     hasRouteSafeId(expectedDeckId)
-    && hasRouteSafeId(card.deck_id)
-    && hasSameDeckId(card.deck_id, expectedDeckId)
+    && hasRouteSafeId(cardDeckId)
+    && hasSameDeckId(cardDeckId, expectedDeckId)
   );
 }
 
 function hasDeckCardBrowseRowPayload(card, options = {}) {
   const { expectedDeckId } = options;
+  if (!isObjectRecord(card)) {
+    return false;
+  }
 
   return (
-    isObjectRecord(card)
-    && hasUsableId(card.id)
-    && hasExpectedDeckAnchor(card, expectedDeckId)
-    && isValidCardContent(card.front_content)
-    && isValidCardContent(card.back_content)
+    hasUsableId(getOwnDataPropertyValue(card, 'id'))
+    && hasExpectedDeckAnchor(getOwnDataPropertyValue(card, 'deck_id'), expectedDeckId)
+    && isValidCardContent(getOwnDataPropertyValue(card, 'front_content'))
+    && isValidCardContent(getOwnDataPropertyValue(card, 'back_content'))
   );
 }
 
 function hasValidCursorFamily(cursor, createdAtKey, idKey) {
+  const createdAt = getOwnDataPropertyValue(cursor, createdAtKey);
+  const id = getOwnDataPropertyValue(cursor, idKey);
+
   return (
-    hasOwn(cursor, createdAtKey)
-    && hasOwn(cursor, idKey)
-    && isValidIsoTimestamp(cursor[createdAtKey])
-    && hasRouteSafeCardId(cursor[idKey])
+    hasOwnDataProperty(cursor, createdAtKey)
+    && hasOwnDataProperty(cursor, idKey)
+    && isValidIsoTimestamp(createdAt)
+    && hasRouteSafeCardId(id)
   );
 }
 
 function hasInvalidCursorFamily(cursor, createdAtKey, idKey) {
-  const hasCreatedAt = hasOwn(cursor, createdAtKey);
-  const hasId = hasOwn(cursor, idKey);
+  const createdAtDescriptor = getOwnFieldDescriptor(cursor, createdAtKey);
+  const idDescriptor = getOwnFieldDescriptor(cursor, idKey);
+  const hasCreatedAt = createdAtDescriptor !== undefined;
+  const hasId = idDescriptor !== undefined;
 
   if (!hasCreatedAt && !hasId) {
     return false;
   }
 
   return (
-    !hasCreatedAt
-    || !hasId
-    || !isValidIsoTimestamp(cursor[createdAtKey])
-    || !hasRouteSafeCardId(cursor[idKey])
+    !descriptorHasValue(createdAtDescriptor)
+    || !descriptorHasValue(idDescriptor)
+    || !isValidIsoTimestamp(createdAtDescriptor.value)
+    || !hasRouteSafeCardId(idDescriptor.value)
   );
 }
 
 function hasMatchingCursorFamilies(cursor) {
-  const hasCursorFamily = hasOwn(cursor, 'cursorCreatedAt') && hasOwn(cursor, 'cursorId');
-  const hasBeforeFamily = hasOwn(cursor, 'beforeCreatedAt') && hasOwn(cursor, 'beforeId');
+  const cursorCreatedAt = getOwnDataPropertyValue(cursor, 'cursorCreatedAt');
+  const cursorId = getOwnDataPropertyValue(cursor, 'cursorId');
+  const beforeCreatedAt = getOwnDataPropertyValue(cursor, 'beforeCreatedAt');
+  const beforeId = getOwnDataPropertyValue(cursor, 'beforeId');
+  const hasCursorFamily = (
+    hasOwnDataProperty(cursor, 'cursorCreatedAt')
+    && hasOwnDataProperty(cursor, 'cursorId')
+  );
+  const hasBeforeFamily = (
+    hasOwnDataProperty(cursor, 'beforeCreatedAt')
+    && hasOwnDataProperty(cursor, 'beforeId')
+  );
 
   if (!hasCursorFamily || !hasBeforeFamily) {
     return true;
   }
 
-  const normalizedCursorId = normalizeRouteSafeCardId(cursor.cursorId);
-  const normalizedBeforeId = normalizeRouteSafeCardId(cursor.beforeId);
+  const normalizedCursorId = normalizeRouteSafeCardId(cursorId);
+  const normalizedBeforeId = normalizeRouteSafeCardId(beforeId);
 
   if (
     normalizedCursorId === null
@@ -96,17 +129,26 @@ function hasMatchingCursorFamilies(cursor) {
   }
 
   return (
-    cursor.cursorCreatedAt === cursor.beforeCreatedAt
+    cursorCreatedAt === beforeCreatedAt
     && normalizedCursorId === normalizedBeforeId
   );
 }
 
 function parseDeckCardBrowseNextCursor(payload) {
-  if (!hasOwn(payload, 'nextCursor') || payload.nextCursor === null) {
+  const nextCursorDescriptor = getOwnFieldDescriptor(payload, 'nextCursor');
+  if (nextCursorDescriptor === undefined) {
     return null;
   }
 
-  const { nextCursor } = payload;
+  if (!descriptorHasValue(nextCursorDescriptor)) {
+    throw new Error(MALFORMED_DECK_CARD_BROWSE_PAYLOAD_ERROR);
+  }
+
+  const nextCursor = nextCursorDescriptor.value;
+  if (nextCursor === null) {
+    return null;
+  }
+
   if (!isObjectRecord(nextCursor)) {
     throw new Error(MALFORMED_DECK_CARD_BROWSE_PAYLOAD_ERROR);
   }
@@ -130,18 +172,20 @@ function parseDeckCardBrowseNextCursor(payload) {
 }
 
 function parseDeckCardBrowseResponsePayload(payload, options = {}) {
-  if (!isObjectRecord(payload) || !Array.isArray(payload.cards)) {
+  const cardsDescriptor = getOwnFieldDescriptor(payload, 'cards');
+  if (!descriptorHasValue(cardsDescriptor) || !Array.isArray(cardsDescriptor.value)) {
     throw new Error(MALFORMED_DECK_CARD_BROWSE_PAYLOAD_ERROR);
   }
 
-  for (const card of payload.cards) {
+  const cards = cardsDescriptor.value;
+  for (const card of cards) {
     if (!hasDeckCardBrowseRowPayload(card, options)) {
       throw new Error(MALFORMED_DECK_CARD_BROWSE_PAYLOAD_ERROR);
     }
   }
 
   return {
-    cards: payload.cards,
+    cards,
     nextCursor: parseDeckCardBrowseNextCursor(payload),
   };
 }

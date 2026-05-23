@@ -17,6 +17,24 @@ function assertMalformed(payload, options) {
   );
 }
 
+function createAccessorPayload(fields) {
+  const payload = {};
+  const accessCounts = {};
+
+  for (const [fieldName, value] of Object.entries(fields)) {
+    accessCounts[fieldName] = 0;
+    Object.defineProperty(payload, fieldName, {
+      enumerable: true,
+      get() {
+        accessCounts[fieldName] += 1;
+        return value;
+      },
+    });
+  }
+
+  return { payload, accessCounts };
+}
+
 test('parseDeckCardBrowseResponsePayload accepts an empty page without a cursor', () => {
   const payload = { cards: [] };
 
@@ -174,6 +192,36 @@ test('parseDeckCardBrowseResponsePayload rejects malformed top-level payloads', 
   ].forEach(assertMalformed);
 });
 
+test('parseDeckCardBrowseResponsePayload requires cards to be an own data property', () => {
+  const validCards = [{ id: 1, front_content: 'Front', back_content: 'Back' }];
+  const inheritedPayload = Object.create({ cards: validCards });
+  const { payload: accessorPayload, accessCounts } = createAccessorPayload({
+    cards: validCards,
+  });
+
+  assertMalformed(inheritedPayload);
+  assertMalformed(accessorPayload);
+  assert.equal(accessCounts.cards, 0);
+});
+
+test('parseDeckCardBrowseResponsePayload rejects accessor-backed top-level nextCursor without invoking it', () => {
+  let getterCalls = 0;
+  const payload = {
+    cards: [{ id: 1, front_content: 'Front', back_content: 'Back' }],
+  };
+
+  Object.defineProperty(payload, 'nextCursor', {
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      return { cursorCreatedAt: '2026-05-08T13:00:00.000Z', cursorId: 3 };
+    },
+  });
+
+  assertMalformed(payload);
+  assert.equal(getterCalls, 0);
+});
+
 test('parseDeckCardBrowseResponsePayload rejects invalid card rows', () => {
   [
     null,
@@ -206,6 +254,27 @@ test('parseDeckCardBrowseResponsePayload rejects invalid card rows', () => {
     { id: 1, front_content: 'Front', back_content: 7 },
   ].forEach((card) => {
     assertMalformed({ cards: [card] });
+  });
+});
+
+test('hasDeckCardBrowseRowPayload requires required card fields to be own data properties', () => {
+  const inheritedCard = Object.create({
+    id: 1,
+    front_content: 'Front',
+    back_content: 'Back',
+  });
+  const { payload: accessorCard, accessCounts } = createAccessorPayload({
+    id: 1,
+    front_content: 'Front',
+    back_content: 'Back',
+  });
+
+  assert.equal(hasDeckCardBrowseRowPayload(inheritedCard), false);
+  assert.equal(hasDeckCardBrowseRowPayload(accessorCard), false);
+  assert.deepEqual(accessCounts, {
+    id: 0,
+    front_content: 0,
+    back_content: 0,
   });
 });
 
@@ -294,6 +363,22 @@ test('parseDeckCardBrowseResponsePayload rejects partial or blank cursor payload
       cards: [{ id: 1, front_content: 'Front', back_content: 'Back' }],
       ...payload,
     });
+  });
+});
+
+test('parseDeckCardBrowseResponsePayload rejects accessor-backed cursor fields without invoking them', () => {
+  const { payload: nextCursor, accessCounts } = createAccessorPayload({
+    cursorCreatedAt: '2026-05-08T13:00:00.000Z',
+    cursorId: 3,
+  });
+
+  assertMalformed({
+    cards: [{ id: 1, front_content: 'Front', back_content: 'Back' }],
+    nextCursor,
+  });
+  assert.deepEqual(accessCounts, {
+    cursorCreatedAt: 0,
+    cursorId: 0,
   });
 });
 
