@@ -89,6 +89,56 @@ test('getAuthReturnDestinationFromLocation normalizes unsafe location shapes', (
   );
 });
 
+test('getAuthReturnDestinationFromLocation ignores inherited and accessor-backed fields', () => {
+  const inheritedLocation = Object.create({
+    pathname: '/decks',
+    search: '?filter=due',
+    hash: '#top',
+  });
+  assert.equal(
+    getAuthReturnDestinationFromLocation(inheritedLocation),
+    DEFAULT_AUTH_RETURN_DESTINATION
+  );
+
+  const accessorLocation = {};
+  let pathnameAccessCount = 0;
+  Object.defineProperty(accessorLocation, 'pathname', {
+    enumerable: true,
+    get() {
+      pathnameAccessCount += 1;
+      return '/study';
+    },
+  });
+
+  assert.equal(
+    getAuthReturnDestinationFromLocation(accessorLocation),
+    DEFAULT_AUTH_RETURN_DESTINATION
+  );
+  assert.equal(pathnameAccessCount, 0);
+});
+
+test('auth return destinations accept non-enumerable own string data properties', () => {
+  const location = {};
+  Object.defineProperties(location, {
+    pathname: { value: '/decks' },
+    search: { value: '?filter=due' },
+    hash: { value: '#top' },
+  });
+  assert.equal(
+    getAuthReturnDestinationFromLocation(location),
+    '/decks?filter=due#top'
+  );
+
+  const state = {};
+  Object.defineProperty(state, AUTH_RETURN_DESTINATION_STATE_KEY, {
+    value: '/study?deckId=1#card-2',
+  });
+  assert.equal(
+    getAuthReturnDestinationFromState(state),
+    '/study?deckId=1#card-2'
+  );
+});
+
 test('createAuthReturnState stores the normalized return destination', () => {
   assert.deepEqual(
     createAuthReturnState({
@@ -132,4 +182,24 @@ test('getAuthReturnDestinationFromState reads only safe stored destinations', ()
     DEFAULT_AUTH_RETURN_DESTINATION
   );
   assert.equal(getAuthReturnDestinationFromState(null), DEFAULT_AUTH_RETURN_DESTINATION);
+});
+
+test('getAuthReturnDestinationFromState ignores inherited and accessor-backed return destinations', () => {
+  const inheritedState = Object.create({
+    [AUTH_RETURN_DESTINATION_STATE_KEY]: '/decks?filter=due',
+  });
+  assert.equal(getAuthReturnDestinationFromState(inheritedState), DEFAULT_AUTH_RETURN_DESTINATION);
+
+  const accessorState = {};
+  let returnToAccessCount = 0;
+  Object.defineProperty(accessorState, AUTH_RETURN_DESTINATION_STATE_KEY, {
+    enumerable: true,
+    get() {
+      returnToAccessCount += 1;
+      return '/study';
+    },
+  });
+
+  assert.equal(getAuthReturnDestinationFromState(accessorState), DEFAULT_AUTH_RETURN_DESTINATION);
+  assert.equal(returnToAccessCount, 0);
 });

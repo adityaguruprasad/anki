@@ -56,23 +56,25 @@ function normalizeAuthReturnDestination(destination) {
   return normalizedDestination || DEFAULT_AUTH_RETURN_DESTINATION;
 }
 
-function getStringProperty(value, propertyName) {
+function getOwnStringDataProperty(value, propertyName) {
   if (value === null || typeof value !== 'object') {
     return '';
   }
 
-  try {
-    const propertyValue = value[propertyName];
-    return typeof propertyValue === 'string' ? propertyValue : '';
-  } catch {
-    return '';
-  }
+  // Auth return destinations intentionally read only own data properties so
+  // prototype/accessor-provided navigation targets are ignored without invoking getters.
+  const descriptor = Object.getOwnPropertyDescriptor(value, propertyName);
+  return descriptor !== undefined
+    && Object.hasOwn(descriptor, 'value')
+    && typeof descriptor.value === 'string'
+    ? descriptor.value
+    : '';
 }
 
 function getAuthReturnDestinationFromLocation(location) {
-  const pathname = getStringProperty(location, 'pathname');
-  const search = getStringProperty(location, 'search');
-  const hash = getStringProperty(location, 'hash');
+  const pathname = getOwnStringDataProperty(location, 'pathname');
+  const search = getOwnStringDataProperty(location, 'search');
+  const hash = getOwnStringDataProperty(location, 'hash');
   const normalizedSearch = search === '' || search[0] === '?' ? search : '';
   const normalizedHash = hash === '' || hash[0] === '#' ? hash : '';
 
@@ -97,12 +99,7 @@ function getAuthReturnDestinationFromState(state) {
     return DEFAULT_AUTH_RETURN_DESTINATION;
   }
 
-  let destination;
-  try {
-    destination = state[AUTH_RETURN_DESTINATION_STATE_KEY];
-  } catch {
-    return DEFAULT_AUTH_RETURN_DESTINATION;
-  }
+  const destination = getOwnStringDataProperty(state, AUTH_RETURN_DESTINATION_STATE_KEY);
 
   return normalizeAuthReturnDestination(destination);
 }
