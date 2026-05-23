@@ -32,6 +32,44 @@ function assertMalformed(payload, options) {
   assert.equal(hasDeckCardMutationPayload(payload, options), false);
 }
 
+function createPayloadWithAccessorField(fieldName, overrides = {}) {
+  const payload = createValidCardPayload(overrides);
+  let getterCalls = 0;
+
+  Object.defineProperty(payload, fieldName, {
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      throw new Error(`${fieldName} getter should not run`);
+    },
+  });
+
+  return {
+    payload,
+    getGetterCalls: () => getterCalls,
+  };
+}
+
+function createPayloadWithPrototypeField(fieldName, overrides = {}) {
+  const prototype = {};
+  let getterCalls = 0;
+  Object.defineProperty(prototype, fieldName, {
+    get() {
+      getterCalls += 1;
+      throw new Error(`prototype ${fieldName} getter should not run`);
+    },
+  });
+
+  const payload = { ...createValidCardPayload(overrides) };
+  Object.setPrototypeOf(payload, prototype);
+  delete payload[fieldName];
+
+  return {
+    payload,
+    getGetterCalls: () => getterCalls,
+  };
+}
+
 test('parseDeckCardMutationResponsePayload preserves valid cards and extra fields', () => {
   const payload = {
     id: '0007',
@@ -224,6 +262,50 @@ test('parseDeckCardMutationResponsePayload accepts scheduling metadata boundarie
 
   assert.equal(parseDeckCardMutationResponsePayload(payload), payload);
   assert.equal(hasDeckCardMutationPayload(payload), true);
+});
+
+test('parseDeckCardMutationResponsePayload rejects accessor-backed fields without invoking getters', () => {
+  [
+    ['id'],
+    ['front_content'],
+    ['back_content'],
+    ['next_review'],
+    ['interval'],
+    ['ease_factor'],
+    ['review_count'],
+    ['deck_id', { deck_id: 42 }, { expectedDeckId: 42 }],
+  ].forEach(([fieldName, overrides = {}, options]) => {
+    const { payload, getGetterCalls } = createPayloadWithAccessorField(fieldName, overrides);
+
+    assert.equal(hasDeckCardMutationPayload(payload, options), false);
+    assert.throws(
+      () => parseDeckCardMutationResponsePayload(payload, options),
+      { message: MALFORMED_DECK_CARD_MUTATION_PAYLOAD_ERROR },
+    );
+    assert.equal(getGetterCalls(), 0);
+  });
+});
+
+test('parseDeckCardMutationResponsePayload rejects prototype-backed fields without invoking getters', () => {
+  [
+    ['id'],
+    ['front_content'],
+    ['back_content'],
+    ['next_review'],
+    ['interval'],
+    ['ease_factor'],
+    ['review_count'],
+    ['deck_id', { deck_id: 42 }, { expectedDeckId: 42 }],
+  ].forEach(([fieldName, overrides = {}, options]) => {
+    const { payload, getGetterCalls } = createPayloadWithPrototypeField(fieldName, overrides);
+
+    assert.equal(hasDeckCardMutationPayload(payload, options), false);
+    assert.throws(
+      () => parseDeckCardMutationResponsePayload(payload, options),
+      { message: MALFORMED_DECK_CARD_MUTATION_PAYLOAD_ERROR },
+    );
+    assert.equal(getGetterCalls(), 0);
+  });
 });
 
 test('hasDeckCardMutationPayload can opt out of scheduling metadata for smaller card contracts', () => {

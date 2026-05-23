@@ -28,16 +28,25 @@ function hasSameDeckId(leftId, rightId) {
   return normalizedLeftId !== null && normalizedLeftId === normalizedRightId;
 }
 
-function hasOwn(value, key) {
-  return Object.prototype.hasOwnProperty.call(value, key);
+function descriptorHasValue(descriptor) {
+  return (
+    descriptor !== undefined
+    && Object.prototype.hasOwnProperty.call(descriptor, 'value')
+  );
+}
+
+function getOwnDataPropertyValue(value, key) {
+  const descriptor = isObjectRecord(value)
+    ? Object.getOwnPropertyDescriptor(value, key)
+    : undefined;
+
+  return descriptorHasValue(descriptor) ? descriptor.value : undefined;
 }
 
 function hasValidMutationNextReview(card) {
-  if (!hasOwn(card, 'next_review')) {
-    return false;
-  }
+  const nextReview = getOwnDataPropertyValue(card, 'next_review');
 
-  return card.next_review === null || isValidIsoTimestamp(card.next_review);
+  return nextReview === null || isValidIsoTimestamp(nextReview);
 }
 
 function hasValidMutationSchedulingMetadata(card, options = {}) {
@@ -47,18 +56,19 @@ function hasValidMutationSchedulingMetadata(card, options = {}) {
     return true;
   }
 
+  const interval = getOwnDataPropertyValue(card, 'interval');
+  const easeFactor = getOwnDataPropertyValue(card, 'ease_factor');
+  const reviewCount = getOwnDataPropertyValue(card, 'review_count');
+
   return (
-    hasOwn(card, 'interval')
-    && Number.isSafeInteger(card.interval)
-    && card.interval >= 1
-    && card.interval <= MAX_INTERVAL_DAYS
-    && hasOwn(card, 'ease_factor')
-    && typeof card.ease_factor === 'number'
-    && Number.isFinite(card.ease_factor)
-    && card.ease_factor >= MIN_EASE_FACTOR
-    && hasOwn(card, 'review_count')
-    && Number.isSafeInteger(card.review_count)
-    && card.review_count >= 0
+    Number.isSafeInteger(interval)
+    && interval >= 1
+    && interval <= MAX_INTERVAL_DAYS
+    && typeof easeFactor === 'number'
+    && Number.isFinite(easeFactor)
+    && easeFactor >= MIN_EASE_FACTOR
+    && Number.isSafeInteger(reviewCount)
+    && reviewCount >= 0
   );
 }
 
@@ -66,21 +76,25 @@ function hasDeckCardMutationPayload(payload, options = {}) {
   const { expectedDeckId, expectedId } = options;
   const hasExpectedId = expectedId !== undefined;
   const hasExpectedDeckId = expectedDeckId !== undefined;
+  const id = getOwnDataPropertyValue(payload, 'id');
+  const deckId = getOwnDataPropertyValue(payload, 'deck_id');
+  const frontContent = getOwnDataPropertyValue(payload, 'front_content');
+  const backContent = getOwnDataPropertyValue(payload, 'back_content');
 
   return (
     isObjectRecord(payload)
-    && hasUsableCardId(payload.id)
-    && isValidCardContent(payload.front_content)
-    && isValidCardContent(payload.back_content)
+    && hasUsableCardId(id)
+    && isValidCardContent(frontContent)
+    && isValidCardContent(backContent)
     && hasValidMutationNextReview(payload)
     && hasValidMutationSchedulingMetadata(payload, options)
-    && (!hasExpectedId || (hasUsableCardId(expectedId) && hasSameCardId(payload.id, expectedId)))
+    && (!hasExpectedId || (hasUsableCardId(expectedId) && hasSameCardId(id, expectedId)))
     && (
       !hasExpectedDeckId
       || (
         hasRouteSafeId(expectedDeckId)
-        && hasRouteSafeId(payload.deck_id)
-        && hasSameDeckId(payload.deck_id, expectedDeckId)
+        && hasRouteSafeId(deckId)
+        && hasSameDeckId(deckId, expectedDeckId)
       )
     )
   );
