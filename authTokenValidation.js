@@ -85,6 +85,14 @@ function hasOnlyAuthTokenPayloadFields(payload) {
   return Object.keys(payload).every((field) => AUTH_TOKEN_PAYLOAD_FIELDS.includes(field));
 }
 
+function getOwnDataPropertyValue(object, fieldName) {
+  // JWT claim reads must ignore inherited accessors instead of invoking them.
+  const descriptor = Object.getOwnPropertyDescriptor(object, fieldName);
+  return descriptor !== undefined && Object.hasOwn(descriptor, 'value')
+    ? descriptor.value
+    : undefined;
+}
+
 function hasUsableJwtEnvelope(token) {
   const parts = token.split('.');
   if (
@@ -99,20 +107,23 @@ function hasUsableJwtEnvelope(token) {
   if (
     header === null
     || !hasOnlyAuthTokenHeaderFields(header)
-    || header.alg !== AUTH_TOKEN_ALGORITHM
-    || header.typ !== AUTH_TOKEN_TYPE
+    || getOwnDataPropertyValue(header, 'alg') !== AUTH_TOKEN_ALGORITHM
+    || getOwnDataPropertyValue(header, 'typ') !== AUTH_TOKEN_TYPE
   ) {
     return false;
   }
 
   const payload = parseBase64UrlJsonObject(encodedPayload);
+  const userId = payload === null ? undefined : getOwnDataPropertyValue(payload, 'userId');
+  const iat = payload === null ? undefined : getOwnDataPropertyValue(payload, 'iat');
+  const exp = payload === null ? undefined : getOwnDataPropertyValue(payload, 'exp');
   return (
     payload !== null
     && hasOnlyAuthTokenPayloadFields(payload)
-    && isJwtUserIdClaim(payload.userId)
-    && isNonNegativeSafeInteger(payload.iat)
-    && isPositiveSafeInteger(payload.exp)
-    && payload.iat < payload.exp
+    && isJwtUserIdClaim(userId)
+    && isNonNegativeSafeInteger(iat)
+    && isPositiveSafeInteger(exp)
+    && iat < exp
   );
 }
 

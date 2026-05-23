@@ -20,10 +20,106 @@ function withImpossibleBase64UrlLength(part) {
   return value;
 }
 
+function withObjectPrototypeProperties(properties, callback) {
+  const descriptors = Object.fromEntries(
+    Object.entries(properties).map(([key, value]) => [
+      key,
+      {
+        value,
+        writable: true,
+      },
+    ])
+  );
+
+  withObjectPrototypeDescriptors(descriptors, callback);
+}
+
+function withObjectPrototypeDescriptors(descriptors, callback) {
+  const previousDescriptors = new Map();
+  const modifiedKeys = [];
+
+  try {
+    for (const [key, descriptor] of Object.entries(descriptors)) {
+      previousDescriptors.set(key, Object.getOwnPropertyDescriptor(Object.prototype, key));
+      Object.defineProperty(Object.prototype, key, {
+        configurable: true,
+        enumerable: true,
+        ...descriptor,
+      });
+      modifiedKeys.push(key);
+    }
+
+    callback();
+  } finally {
+    for (const key of modifiedKeys.reverse()) {
+      const descriptor = previousDescriptors.get(key);
+      if (descriptor) {
+        Object.defineProperty(Object.prototype, key, descriptor);
+      } else {
+        delete Object.prototype[key];
+      }
+    }
+  }
+}
+
+function withThrowingObjectPrototypeClaimGetters(callback) {
+  const getterInvocations = [];
+  const descriptors = Object.fromEntries(
+    ['alg', 'typ', 'userId', 'iat', 'exp'].map((key) => [
+      key,
+      {
+        get() {
+          getterInvocations.push(key);
+          throw new Error(`Unexpected Object.prototype.${key} getter invocation`);
+        },
+      },
+    ])
+  );
+
+  withObjectPrototypeDescriptors(descriptors, () => {
+    callback(getterInvocations);
+  });
+}
+
 test('normalizeAuthToken accepts and trims compact JWTs with expected app claims', () => {
   const token = createCompactJwt();
 
   assert.equal(normalizeAuthToken(`  ${token}\n`), token);
+});
+
+test('normalizeAuthToken accepts own JWT claims when Object.prototype is polluted', () => {
+  const token = createCompactJwt();
+
+  withObjectPrototypeProperties({
+    alg: 'HS512',
+    typ: 'JWS',
+    userId: MAX_POSTGRES_SERIAL_ID + 1,
+    iat: -1,
+    exp: 0,
+  }, () => {
+    assert.equal(normalizeAuthToken(token), token);
+  });
+});
+
+test('normalizeAuthToken ignores inherited accessor-backed JWT claim getters', () => {
+  const validOwnClaimToken = createCompactJwt();
+  const inheritedOnlyToken = [
+    base64UrlJson({}),
+    base64UrlJson({}),
+    'signature0',
+  ].join('.');
+  const inheritedPayloadClaimToken = [
+    base64UrlJson({ alg: 'HS256', typ: 'JWT' }),
+    base64UrlJson({}),
+    'signature0',
+  ].join('.');
+
+  withThrowingObjectPrototypeClaimGetters((getterInvocations) => {
+    assert.equal(normalizeAuthToken(validOwnClaimToken), validOwnClaimToken);
+    assert.equal(normalizeAuthToken(inheritedOnlyToken), null);
+    assert.equal(normalizeAuthToken(inheritedPayloadClaimToken), null);
+    assert.deepEqual(getterInvocations, []);
+  });
 });
 
 test('normalizeAuthToken rejects compact JWTs with alg-only headers missing typ', () => {
@@ -34,6 +130,46 @@ test('normalizeAuthToken rejects compact JWTs with alg-only headers missing typ'
   ].join('.');
 
   assert.equal(normalizeAuthToken(token), null);
+});
+
+test('normalizeAuthToken rejects compact JWTs that rely on inherited required claims', () => {
+  withObjectPrototypeProperties({
+    alg: 'HS256',
+    typ: 'JWT',
+    userId: 42,
+    iat: 1000,
+    exp: 2000,
+  }, () => {
+    for (const token of [
+      [
+        base64UrlJson({ typ: 'JWT' }),
+        base64UrlJson({ userId: 42, iat: 1000, exp: 2000 }),
+        'signature0',
+      ].join('.'),
+      [
+        base64UrlJson({ alg: 'HS256' }),
+        base64UrlJson({ userId: 42, iat: 1000, exp: 2000 }),
+        'signature0',
+      ].join('.'),
+      [
+        base64UrlJson({ alg: 'HS256', typ: 'JWT' }),
+        base64UrlJson({ iat: 1000, exp: 2000 }),
+        'signature0',
+      ].join('.'),
+      [
+        base64UrlJson({ alg: 'HS256', typ: 'JWT' }),
+        base64UrlJson({ userId: 42, exp: 2000 }),
+        'signature0',
+      ].join('.'),
+      [
+        base64UrlJson({ alg: 'HS256', typ: 'JWT' }),
+        base64UrlJson({ userId: 42, iat: 1000 }),
+        'signature0',
+      ].join('.'),
+    ]) {
+      assert.equal(normalizeAuthToken(token), null, token);
+    }
+  });
 });
 
 test('normalizeAuthToken rejects compact JWTs with unsupported payload fields', () => {
