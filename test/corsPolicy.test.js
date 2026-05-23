@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const {
+  CORS_ALLOWED_ORIGINS_ENV,
   CORS_ORIGIN_REJECTED_ERROR,
   buildCorsOptions,
   handleCorsError,
@@ -40,6 +41,120 @@ test('buildCorsOptions preserves permissive behavior outside production when no 
   assert.deepEqual(buildCorsOptions({ CORS_ALLOWED_ORIGINS: ' , , ' }), {});
   assert.deepEqual(buildCorsOptions({ NODE_ENV: 'test' }), {});
   assert.deepEqual(buildCorsOptions({ NODE_ENV: 'development' }), {});
+});
+
+test('buildCorsOptions reads process.env when config is omitted', async () => {
+  const hadNodeEnv = Object.hasOwn(process.env, 'NODE_ENV');
+  const previousNodeEnv = process.env.NODE_ENV;
+  const hadAllowedOrigins = Object.hasOwn(process.env, CORS_ALLOWED_ORIGINS_ENV);
+  const previousAllowedOrigins = process.env[CORS_ALLOWED_ORIGINS_ENV];
+
+  try {
+    process.env.NODE_ENV = 'production';
+    delete process.env[CORS_ALLOWED_ORIGINS_ENV];
+
+    const options = buildCorsOptions();
+
+    assert.equal(typeof options.origin, 'function');
+    assert.deepEqual(
+      await runOriginDecision(options, undefined),
+      { error: null, allowed: true },
+    );
+
+    const browserOriginDecision = await runOriginDecision(options, 'https://app.example.com');
+    assert.equal(browserOriginDecision.allowed, undefined);
+    assert.equal(isCorsOriginRejectedError(browserOriginDecision.error), true);
+  } finally {
+    if (hadNodeEnv) {
+      process.env.NODE_ENV = previousNodeEnv;
+    } else {
+      delete process.env.NODE_ENV;
+    }
+
+    if (hadAllowedOrigins) {
+      process.env[CORS_ALLOWED_ORIGINS_ENV] = previousAllowedOrigins;
+    } else {
+      delete process.env[CORS_ALLOWED_ORIGINS_ENV];
+    }
+  }
+});
+
+test('buildCorsOptions treats primitive, null, undefined, and array config as absent', () => {
+  const arrayConfig = [];
+  arrayConfig.NODE_ENV = 'production';
+  arrayConfig.CORS_ALLOWED_ORIGINS = 'https://app.example.com';
+
+  for (const config of [null, undefined, 'production', 42, true, arrayConfig]) {
+    assert.deepEqual(buildCorsOptions(config), {});
+  }
+});
+
+test('buildCorsOptions ignores inherited config fields', () => {
+  const config = Object.create({
+    CORS_ALLOWED_ORIGINS: 'https://app.example.com',
+    NODE_ENV: 'production',
+  });
+
+  assert.deepEqual(buildCorsOptions(config), {});
+});
+
+test('buildCorsOptions ignores accessor-backed config fields without invoking getters', () => {
+  let getterCalls = 0;
+  const config = {};
+  Object.defineProperties(config, {
+    CORS_ALLOWED_ORIGINS: {
+      enumerable: true,
+      get() {
+        getterCalls += 1;
+        return 'https://app.example.com';
+      },
+    },
+    NODE_ENV: {
+      enumerable: true,
+      get() {
+        getterCalls += 1;
+        return 'production';
+      },
+    },
+  });
+
+  assert.deepEqual(buildCorsOptions(config), {});
+  assert.equal(getterCalls, 0);
+});
+
+test('buildCorsOptions uses own data config fields', async () => {
+  const prototype = {};
+  Object.defineProperties(prototype, {
+    CORS_ALLOWED_ORIGINS: {
+      get() {
+        throw new Error('prototype CORS getter should not run');
+      },
+    },
+    NODE_ENV: {
+      get() {
+        throw new Error('prototype NODE_ENV getter should not run');
+      },
+    },
+  });
+  const config = Object.create(prototype);
+  Object.defineProperties(config, {
+    CORS_ALLOWED_ORIGINS: {
+      enumerable: true,
+      value: 'https://app.example.com',
+    },
+    NODE_ENV: {
+      enumerable: true,
+      value: 'production',
+    },
+  });
+
+  const options = buildCorsOptions(config);
+
+  assert.equal(typeof options.origin, 'function');
+  assert.deepEqual(
+    await runOriginDecision(options, 'https://app.example.com'),
+    { error: null, allowed: true },
+  );
 });
 
 test('normalizeAllowedOrigins trims whitespace and ignores empty entries', () => {

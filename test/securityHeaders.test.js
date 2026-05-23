@@ -47,6 +47,53 @@ test('unset environment config keeps the non-production security header baseline
   assert.deepEqual(headers, EXPECTED_DEFAULT_SECURITY_HEADERS);
 });
 
+test('primitive, null, undefined, and array config values keep the non-production security header baseline', () => {
+  const arrayConfig = [];
+  arrayConfig.NODE_ENV = 'production';
+
+  for (const config of [null, undefined, 'production', 42, true, arrayConfig]) {
+    const headers = buildSecurityHeaders(undefined, config);
+
+    assert.equal(Object.hasOwn(headers, 'Strict-Transport-Security'), false);
+    assert.deepEqual(headers, EXPECTED_DEFAULT_SECURITY_HEADERS);
+  }
+});
+
+test('inherited NODE_ENV config is ignored by security header production detection', () => {
+  const config = Object.create({ NODE_ENV: 'production' });
+  const headers = buildSecurityHeaders(undefined, config);
+  const res = createRes();
+
+  createSecurityHeadersMiddleware(undefined, config)({}, res, () => {});
+
+  assert.equal(Object.hasOwn(headers, 'Strict-Transport-Security'), false);
+  assert.deepEqual(headers, EXPECTED_DEFAULT_SECURITY_HEADERS);
+  assert.equal(Object.hasOwn(res.headers, 'Strict-Transport-Security'), false);
+  assert.deepEqual(res.headers, EXPECTED_DEFAULT_SECURITY_HEADERS);
+});
+
+test('accessor-backed NODE_ENV config is ignored without invoking getters', () => {
+  let getterCalls = 0;
+  const config = {};
+  Object.defineProperty(config, 'NODE_ENV', {
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      return 'production';
+    },
+  });
+
+  const headers = buildSecurityHeaders(undefined, config);
+  const res = createRes();
+  createSecurityHeadersMiddleware(undefined, config)({}, res, () => {});
+
+  assert.equal(getterCalls, 0);
+  assert.equal(Object.hasOwn(headers, 'Strict-Transport-Security'), false);
+  assert.deepEqual(headers, EXPECTED_DEFAULT_SECURITY_HEADERS);
+  assert.equal(Object.hasOwn(res.headers, 'Strict-Transport-Security'), false);
+  assert.deepEqual(res.headers, EXPECTED_DEFAULT_SECURITY_HEADERS);
+});
+
 test('security headers middleware emits the exact default header set', () => {
   const res = createRes();
 
@@ -62,6 +109,61 @@ test('production security headers add conservative HSTS by default', () => {
   });
 
   assert.deepEqual(buildSecurityHeaders(undefined, { NODE_ENV: 'production' }), {
+    ...EXPECTED_DEFAULT_SECURITY_HEADERS,
+    'Strict-Transport-Security': STRICT_TRANSPORT_SECURITY_HEADER,
+  });
+});
+
+test('security headers read process.env when config is omitted', () => {
+  const hadNodeEnv = Object.hasOwn(process.env, 'NODE_ENV');
+  const previousNodeEnv = process.env.NODE_ENV;
+
+  try {
+    process.env.NODE_ENV = 'production';
+
+    const headers = buildSecurityHeaders();
+    const res = createRes();
+    createSecurityHeadersMiddleware()({}, res, () => {});
+
+    assert.deepEqual(headers, {
+      ...EXPECTED_DEFAULT_SECURITY_HEADERS,
+      'Strict-Transport-Security': STRICT_TRANSPORT_SECURITY_HEADER,
+    });
+    assert.deepEqual(res.headers, {
+      ...EXPECTED_DEFAULT_SECURITY_HEADERS,
+      'Strict-Transport-Security': STRICT_TRANSPORT_SECURITY_HEADER,
+    });
+  } finally {
+    if (hadNodeEnv) {
+      process.env.NODE_ENV = previousNodeEnv;
+    } else {
+      delete process.env.NODE_ENV;
+    }
+  }
+});
+
+test('own data NODE_ENV config enables production security headers', () => {
+  const prototype = {};
+  Object.defineProperty(prototype, 'NODE_ENV', {
+    get() {
+      throw new Error('prototype NODE_ENV getter should not run');
+    },
+  });
+  const config = Object.create(prototype);
+  Object.defineProperty(config, 'NODE_ENV', {
+    enumerable: true,
+    value: 'production',
+  });
+  const res = createRes();
+
+  const headers = buildSecurityHeaders(undefined, config);
+  createSecurityHeadersMiddleware(undefined, config)({}, res, () => {});
+
+  assert.deepEqual(headers, {
+    ...EXPECTED_DEFAULT_SECURITY_HEADERS,
+    'Strict-Transport-Security': STRICT_TRANSPORT_SECURITY_HEADER,
+  });
+  assert.deepEqual(res.headers, {
     ...EXPECTED_DEFAULT_SECURITY_HEADERS,
     'Strict-Transport-Security': STRICT_TRANSPORT_SECURITY_HEADER,
   });

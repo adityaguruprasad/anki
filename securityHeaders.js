@@ -44,15 +44,28 @@ function validateHeaderValue(name, value) {
   }
 }
 
-function isProductionEnvironment(config = process.env) {
-  return config?.NODE_ENV === 'production';
+function getOwnConfigValue(config, fieldName) {
+  if (config === null || typeof config !== 'object' || Array.isArray(config)) {
+    return undefined;
+  }
+
+  // Accept only own data properties; accessors are ignored without invoking getters.
+  const descriptor = Object.getOwnPropertyDescriptor(config, fieldName);
+  return descriptor !== undefined && Object.hasOwn(descriptor, 'value')
+    ? descriptor.value
+    : undefined;
 }
 
-function buildSecurityHeaders(options, config = process.env) {
+function isProductionEnvironment(config) {
+  return getOwnConfigValue(config, 'NODE_ENV') === 'production';
+}
+
+function buildSecurityHeaders(options, config) {
   validateOptions(options);
 
+  const environmentConfig = arguments.length < 2 ? process.env : config;
   const headers = { ...DEFAULT_SECURITY_HEADERS };
-  if (isProductionEnvironment(config)) {
+  if (isProductionEnvironment(environmentConfig)) {
     Object.assign(headers, PRODUCTION_SECURITY_HEADERS);
   }
 
@@ -72,8 +85,9 @@ function buildSecurityHeaders(options, config = process.env) {
   return Object.freeze(headers);
 }
 
-function createSecurityHeadersMiddleware(options, config = process.env) {
-  const headers = buildSecurityHeaders(options, config);
+function createSecurityHeadersMiddleware(options, config) {
+  const environmentConfig = arguments.length < 2 ? process.env : config;
+  const headers = buildSecurityHeaders(options, environmentConfig);
 
   return function securityHeadersMiddleware(req, res, next) {
     for (const [name, value] of Object.entries(headers)) {

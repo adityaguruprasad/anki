@@ -57,16 +57,30 @@ function isCorsOriginRejectedError(error) {
   return Boolean(error && error.code === CORS_ORIGIN_REJECTED_CODE);
 }
 
-function buildCorsOptions(config = process.env) {
+function getOwnConfigValue(config, fieldName) {
+  if (config === null || typeof config !== 'object' || Array.isArray(config)) {
+    return undefined;
+  }
+
+  // Accept only own data properties; accessors are ignored without invoking getters.
+  const descriptor = Object.getOwnPropertyDescriptor(config, fieldName);
+  return descriptor !== undefined && Object.hasOwn(descriptor, 'value')
+    ? descriptor.value
+    : undefined;
+}
+
+function buildCorsOptions(config) {
+  const environmentConfig = arguments.length === 0 ? process.env : config;
   const configuredAllowedOriginEntries = getConfiguredAllowedOriginEntries(
-    config[CORS_ALLOWED_ORIGINS_ENV]
+    getOwnConfigValue(environmentConfig, CORS_ALLOWED_ORIGINS_ENV)
   );
+  const nodeEnv = getOwnConfigValue(environmentConfig, 'NODE_ENV');
   const allowedOrigins = configuredAllowedOriginEntries
     .map(normalizeAllowedOrigin)
     .filter(Boolean);
 
   if (allowedOrigins.length === 0) {
-    if (config.NODE_ENV === 'production' || configuredAllowedOriginEntries.length > 0) {
+    if (nodeEnv === 'production' || configuredAllowedOriginEntries.length > 0) {
       return {
         origin(origin, callback) {
           if (!origin) {
