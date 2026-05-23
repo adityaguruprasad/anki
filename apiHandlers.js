@@ -436,6 +436,19 @@ function getOwnDataPropertyValue(object, fieldName) {
     : undefined;
 }
 
+function getOptionalOwnDataProperty(object, fieldName, errorMessage) {
+  const descriptor = Object.getOwnPropertyDescriptor(object, fieldName);
+  if (descriptor === undefined) {
+    return { exists: false, value: undefined };
+  }
+
+  if (!Object.hasOwn(descriptor, 'value')) {
+    throw new TypeError(errorMessage);
+  }
+
+  return { exists: true, value: descriptor.value };
+}
+
 function isValidDatabaseTimestamp(value) {
   if (value === null) {
     return true;
@@ -826,17 +839,20 @@ function assertEmptyCardListRow(row, options = {}) {
     throw new TypeError(INVALID_CARD_READ_RESULT_ERROR);
   }
 
-  if (
-    Object.hasOwn(row, '__cursor_created_at')
-    && row.__cursor_created_at !== null
-  ) {
+  const cursorCreatedAt = getOptionalOwnDataProperty(
+    row,
+    '__cursor_created_at',
+    INVALID_CARD_READ_RESULT_ERROR
+  );
+  if (cursorCreatedAt.exists && cursorCreatedAt.value !== null) {
     throw new TypeError(INVALID_CARD_READ_RESULT_ERROR);
   }
 
-  if (
-    allowedEmptySidecarFields.some((field) => Object.hasOwn(row, field) && row[field] !== null)
-  ) {
-    throw new TypeError(INVALID_CARD_READ_RESULT_ERROR);
+  for (const field of allowedEmptySidecarFields) {
+    const sidecar = getOptionalOwnDataProperty(row, field, INVALID_CARD_READ_RESULT_ERROR);
+    if (sidecar.exists && sidecar.value !== null) {
+      throw new TypeError(INVALID_CARD_READ_RESULT_ERROR);
+    }
   }
 }
 

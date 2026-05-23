@@ -2245,6 +2245,30 @@ test('GET /api/decks/:deckId/cards fails closed when empty-card sentinels are ma
   }
 });
 
+test('GET /api/decks/:deckId/cards rejects accessor-shaped empty-card cursor sidecars', async (t) => {
+  let cursorAccesses = 0;
+  const row = createEmptyCardReadSentinel();
+  Object.defineProperty(row, '__cursor_created_at', {
+    enumerable: true,
+    get() {
+      cursorAccesses += 1;
+      return null;
+    },
+  });
+  const db = createDb([{ rowCount: 1, rows: [row] }]);
+  const req = { params: { deckId: '42' }, user: { userId: 1 } };
+  const res = createRes();
+  t.mock.method(console, 'error', () => {});
+
+  await getCardsByDeck(req, res, db);
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Internal server error' });
+  assert.equal(cursorAccesses, 0);
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [42, 1, 51]);
+});
+
 test('GET /api/decks/:deckId/cards fails closed when empty-card sentinels include unexpected sidecars', async (t) => {
   const db = createDb([{
     rowCount: 1,
@@ -3715,6 +3739,30 @@ test('GET /api/cards/:deckId fails closed when empty-card sentinels are malforme
     assert.equal(db.calls.length, 1);
     assert.deepEqual(db.calls[0].params, [42, 1, 100]);
   }
+});
+
+test('GET /api/cards/:deckId rejects accessor-shaped empty-card due sidecars without reading them', async (t) => {
+  let dueProofAccesses = 0;
+  const row = createEmptyDueCardQueryRow();
+  Object.defineProperty(row, '__is_due', {
+    enumerable: true,
+    get() {
+      dueProofAccesses += 1;
+      return null;
+    },
+  });
+  const db = createDb([{ rowCount: 1, rows: [row] }]);
+  const req = { params: { deckId: '42' }, user: { userId: 1 } };
+  const res = createRes();
+  t.mock.method(console, 'error', () => {});
+
+  await getDueCardsByDeck(req, res, db);
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Internal server error' });
+  assert.equal(dueProofAccesses, 0);
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [42, 1, 100]);
 });
 
 test('GET /api/cards/:deckId fails closed when rows are not anchored to the requested deck', async (t) => {
