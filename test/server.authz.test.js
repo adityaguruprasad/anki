@@ -1349,6 +1349,41 @@ test('GET /api/decks rejects inherited-only userId on own auth principal before 
   assert.equal(db.connectCalls, 0);
 });
 
+test('GET /api/decks rejects accessor auth principal containers before db access', async (t) => {
+  const { object: req, accessCounts } = createObjectWithAccessorFields({
+    user: { userId: 1 },
+  });
+  const db = addUnexpectedConnect(createDb([]));
+  const res = createRes();
+  t.mock.method(console, 'error', () => {});
+
+  await getDecks(req, res, db);
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Internal server error' });
+  assert.equal(accessCounts.user, 0);
+  assert.equal(db.calls.length, 0);
+  assert.equal(db.connectCalls, 0);
+});
+
+test('GET /api/decks rejects accessor userId fields on auth principals before db access', async (t) => {
+  const { object: user, accessCounts } = createObjectWithAccessorFields({
+    userId: 1,
+  });
+  const req = { user };
+  const db = addUnexpectedConnect(createDb([]));
+  const res = createRes();
+  t.mock.method(console, 'error', () => {});
+
+  await getDecks(req, res, db);
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Internal server error' });
+  assert.equal(accessCounts.userId, 0);
+  assert.equal(db.calls.length, 0);
+  assert.equal(db.connectCalls, 0);
+});
+
 test('GET /api/decks rejects array-shaped and non-object auth principals before db access', async (t) => {
   const malformedRequests = [
     { user: null },

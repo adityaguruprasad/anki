@@ -162,17 +162,16 @@ function getAuthenticatedUserId(req) {
     throw new TypeError(INVALID_AUTH_PRINCIPAL_ERROR);
   }
 
-  const user = req.user;
+  const user = getOwnDataPropertyValue(req, 'user');
   if (
     user === null
     || typeof user !== 'object'
     || Array.isArray(user)
-    || !Object.hasOwn(user, 'userId')
   ) {
     throw new TypeError(INVALID_AUTH_PRINCIPAL_ERROR);
   }
 
-  const authenticatedUserId = toAuthenticatedUserId(user.userId);
+  const authenticatedUserId = toAuthenticatedUserId(getOwnDataPropertyValue(user, 'userId'));
   if (authenticatedUserId === null) {
     throw new TypeError(INVALID_AUTH_PRINCIPAL_ERROR);
   }
