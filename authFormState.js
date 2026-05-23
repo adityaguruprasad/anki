@@ -91,6 +91,17 @@ function normalizeAbsoluteApiBaseUrl(value) {
   return `${parsedUrl.origin}${stripTrailingSlashes(parsedUrl.pathname)}`;
 }
 
+function getOwnConfigValue(config, fieldName) {
+  if (config === null || typeof config !== 'object' || Array.isArray(config)) {
+    return undefined;
+  }
+
+  const descriptor = Object.getOwnPropertyDescriptor(config, fieldName);
+  return descriptor !== undefined && Object.hasOwn(descriptor, 'value')
+    ? descriptor.value
+    : undefined;
+}
+
 function normalizeConfiguredApiBaseUrl(value) {
   if (typeof value !== 'string') {
     return '';
@@ -115,7 +126,9 @@ function normalizeConfiguredApiBaseUrl(value) {
 }
 
 function resolveApiBaseUrl(env) {
-  const baseUrl = normalizeConfiguredApiBaseUrl(env?.REACT_APP_API_BASE_URL);
+  const baseUrl = normalizeConfiguredApiBaseUrl(
+    getOwnConfigValue(env, 'REACT_APP_API_BASE_URL')
+  );
 
   return baseUrl || DEFAULT_API_BASE_URL;
 }

@@ -240,6 +240,54 @@ test('resolveApiBaseUrl falls back to the local development URL', () => {
   assert.equal(getAuthEndpoint(AUTH_MODES.LOGIN), 'http://localhost:3001/api/login');
 });
 
+test('resolveApiBaseUrl treats primitive, null, undefined, and array env values as absent', () => {
+  const arrayEnv = [];
+  arrayEnv.REACT_APP_API_BASE_URL = 'https://api.example.test';
+
+  for (const env of [null, undefined, 'https://api.example.test', 42, true, arrayEnv]) {
+    assert.equal(resolveApiBaseUrl(env), 'http://localhost:3001');
+  }
+});
+
+test('resolveApiBaseUrl ignores inherited API base URLs', () => {
+  const env = Object.create({
+    REACT_APP_API_BASE_URL: 'https://api.example.test',
+  });
+
+  assert.equal(resolveApiBaseUrl(env), 'http://localhost:3001');
+});
+
+test('resolveApiBaseUrl ignores accessor-backed API base URLs without invoking getters', () => {
+  let getterCalls = 0;
+  const env = {};
+  Object.defineProperty(env, 'REACT_APP_API_BASE_URL', {
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      return 'https://api.example.test';
+    },
+  });
+
+  assert.equal(resolveApiBaseUrl(env), 'http://localhost:3001');
+  assert.equal(getterCalls, 0);
+});
+
+test('resolveApiBaseUrl uses own data API base URLs over inherited values', () => {
+  const prototype = {};
+  Object.defineProperty(prototype, 'REACT_APP_API_BASE_URL', {
+    get() {
+      throw new Error('prototype API base URL getter should not run');
+    },
+  });
+  const env = Object.create(prototype);
+  Object.defineProperty(env, 'REACT_APP_API_BASE_URL', {
+    enumerable: true,
+    value: 'https://api.example.test/v1',
+  });
+
+  assert.equal(resolveApiBaseUrl(env), 'https://api.example.test/v1');
+});
+
 test('createAuthRequest uses configured API base URL without trailing slashes', () => {
   assert.equal(
     resolveApiBaseUrl({ REACT_APP_API_BASE_URL: 'https://api.example.test///' }),
