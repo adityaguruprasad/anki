@@ -8,6 +8,15 @@ const {
   createMaxLengthCompactJwt,
 } = require('./authTokenTestHelpers');
 
+function restoreGlobalProperty(propertyName, descriptor) {
+  if (descriptor) {
+    Object.defineProperty(globalThis, propertyName, descriptor);
+    return;
+  }
+
+  delete globalThis[propertyName];
+}
+
 test('buildAuthHeaders builds a bearer header for a compact JWT token', () => {
   const token = createCompactJwt();
 
@@ -87,6 +96,126 @@ test('buildAuthHeaders reads a token from a storage-like object', () => {
   assert.deepEqual(buildAuthHeaders(storage), {
     Authorization: `Bearer ${token}`,
   });
+});
+
+test('buildAuthHeaders reads a token from an accepted Web Storage prototype method', () => {
+  const token = createCompactJwt();
+  const previousStorageDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'Storage');
+
+  function Storage() {}
+
+  Object.defineProperty(Storage.prototype, 'getItem', {
+    configurable: true,
+    value(key) {
+      assert.equal(key, 'token');
+      return this.token;
+    },
+  });
+
+  Object.defineProperty(globalThis, 'Storage', {
+    configurable: true,
+    value: Storage,
+    writable: true,
+  });
+
+  try {
+    const storage = Object.create(Storage.prototype);
+    storage.token = token;
+
+    assert.deepEqual(buildAuthHeaders(storage), {
+      Authorization: `Bearer ${token}`,
+    });
+  } finally {
+    restoreGlobalProperty('Storage', previousStorageDescriptor);
+  }
+});
+
+test('buildAuthHeaders reads Web Storage getItem through an extra prototype layer without invoking inherited accessors', () => {
+  const token = createCompactJwt();
+  const previousStorageDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'Storage');
+  let getterCalls = 0;
+
+  function Storage() {}
+  function LayeredStorage() {}
+
+  Object.defineProperty(Storage.prototype, 'getItem', {
+    configurable: true,
+    value(key) {
+      assert.equal(key, 'token');
+      return this.token;
+    },
+  });
+
+  LayeredStorage.prototype = Object.create(Storage.prototype);
+  Object.defineProperty(LayeredStorage.prototype, 'constructor', {
+    configurable: true,
+    value: LayeredStorage,
+  });
+  Object.defineProperty(LayeredStorage.prototype, 'getItem', {
+    configurable: true,
+    get() {
+      getterCalls += 1;
+      return () => token;
+    },
+  });
+
+  Object.defineProperty(globalThis, 'Storage', {
+    configurable: true,
+    value: Storage,
+    writable: true,
+  });
+
+  try {
+    const storage = new LayeredStorage();
+    storage.token = token;
+
+    assert.deepEqual(buildAuthHeaders(storage), {
+      Authorization: `Bearer ${token}`,
+    });
+    assert.equal(getterCalls, 0);
+  } finally {
+    restoreGlobalProperty('Storage', previousStorageDescriptor);
+  }
+});
+
+test('buildAuthHeaders ignores inherited getItem on plain objects without invoking it', () => {
+  const token = createCompactJwt();
+  let getItemCalls = 0;
+  const storage = Object.create({
+    getItem() {
+      getItemCalls += 1;
+      return token;
+    },
+  });
+
+  assert.deepEqual(buildAuthHeaders(storage), {});
+  assert.equal(getItemCalls, 0);
+});
+
+test('buildAuthHeaders ignores accessor-backed getItem properties without invoking getters', () => {
+  const token = createCompactJwt();
+  let getterCalls = 0;
+  const ownAccessorStorage = {};
+  Object.defineProperty(ownAccessorStorage, 'getItem', {
+    configurable: true,
+    get() {
+      getterCalls += 1;
+      return () => token;
+    },
+  });
+
+  const inheritedAccessorPrototype = {};
+  Object.defineProperty(inheritedAccessorPrototype, 'getItem', {
+    configurable: true,
+    get() {
+      getterCalls += 1;
+      return () => token;
+    },
+  });
+
+  assert.deepEqual(buildAuthHeaders(ownAccessorStorage), {});
+  assert.deepEqual(buildAuthHeaders(Object.create(inheritedAccessorPrototype)), {});
+  assert.equal(getterCalls, 0);
 });
 
 test('buildAuthHeaders reads a token from a getter function', () => {
