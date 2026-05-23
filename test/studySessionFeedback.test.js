@@ -11,6 +11,27 @@ const {
 } = require('../studySessionFeedback');
 const { MAX_POSTGRES_SERIAL_ID } = require('../cardIdentifier');
 
+function createValidSubmissionCard(overrides = {}) {
+  return {
+    id: 7,
+    next_review: '2026-05-09T14:30:00.000Z',
+    last_reviewed: '2026-05-08T14:30:00.000Z',
+    interval: 3,
+    ease_factor: 2.6,
+    review_count: 4,
+    ...overrides,
+  };
+}
+
+function defineThrowingGetter(object, fieldName) {
+  Object.defineProperty(object, fieldName, {
+    configurable: true,
+    get() {
+      throw new Error(`Unexpected ${fieldName} getter invocation`);
+    },
+  });
+}
+
 test('getStudySessionQualityLabel maps visible study answer qualities', () => {
   assert.equal(getStudySessionQualityLabel(1), 'Hard');
   assert.equal(getStudySessionQualityLabel(3), 'Good');
@@ -89,6 +110,36 @@ test('getStudySessionSubmissionFeedback ignores parseable timestamps outside the
   });
 });
 
+test('getStudySessionSubmissionFeedback ignores accessor-backed response fields without invoking getters', () => {
+  const accessorResponse = {};
+  defineThrowingGetter(accessorResponse, 'card');
+
+  assert.deepEqual(
+    getStudySessionSubmissionFeedback({
+      quality: 3,
+      response: accessorResponse,
+      formatDate() {
+        throw new Error('formatDate should not run');
+      },
+    }),
+    { message: 'Answered Good. Review schedule updated.' },
+  );
+
+  const accessorCard = {};
+  defineThrowingGetter(accessorCard, 'next_review');
+
+  assert.deepEqual(
+    getStudySessionSubmissionFeedback({
+      quality: 3,
+      response: { card: accessorCard },
+      formatDate() {
+        throw new Error('formatDate should not run');
+      },
+    }),
+    { message: 'Answered Good. Review schedule updated.' },
+  );
+});
+
 test('getStudySessionSubmissionRecovery maps validated stale-card conflicts to next-card recovery', () => {
   assert.deepEqual(getStudySessionSubmissionRecovery({ status: 409 }, { error: 'Card is not due' }), {
     action: STUDY_SESSION_SUBMISSION_RECOVERY_ACTIONS.LOAD_NEXT_DUE_CARD,
@@ -124,6 +175,27 @@ test('getStudySessionSubmissionRecovery ignores non-conflict or malformed submis
   ].forEach(([response, payload]) => {
     assert.equal(getStudySessionSubmissionRecovery(response, payload), null);
   });
+});
+
+test('getStudySessionSubmissionRecovery rejects inherited and accessor-backed error payloads without invoking getters', () => {
+  assert.equal(
+    getStudySessionSubmissionRecovery(
+      { status: 409 },
+      Object.create({ error: 'Card is not due' }),
+    ),
+    null,
+  );
+
+  const accessorPayload = {};
+  defineThrowingGetter(accessorPayload, 'error');
+  assert.equal(getStudySessionSubmissionRecovery({ status: 409 }, accessorPayload), null);
+
+  const accessorPrototype = {};
+  defineThrowingGetter(accessorPrototype, 'error');
+  assert.equal(
+    getStudySessionSubmissionRecovery({ status: 409 }, Object.create(accessorPrototype)),
+    null,
+  );
 });
 
 test('parseStudySessionSubmissionResponse returns parsed objects and ignores unsafe bodies', () => {
@@ -174,6 +246,43 @@ test('getValidatedStudySessionSubmissionResponse preserves valid submission payl
     },
   };
   assert.equal(getValidatedStudySessionSubmissionResponse(boundaryResponse), boundaryResponse);
+});
+
+test('getValidatedStudySessionSubmissionResponse rejects inherited response fields without invoking getters', () => {
+  const inheritedResponse = Object.create({
+    success: true,
+    card: createValidSubmissionCard(),
+  });
+  assert.equal(getValidatedStudySessionSubmissionResponse(inheritedResponse), null);
+
+  const accessorPrototype = {};
+  defineThrowingGetter(accessorPrototype, 'success');
+  defineThrowingGetter(accessorPrototype, 'card');
+  assert.equal(getValidatedStudySessionSubmissionResponse(Object.create(accessorPrototype)), null);
+});
+
+test('getValidatedStudySessionSubmissionResponse rejects accessor-backed response and card fields without invoking getters', () => {
+  const accessorSuccessResponse = {};
+  defineThrowingGetter(accessorSuccessResponse, 'success');
+  assert.equal(getValidatedStudySessionSubmissionResponse(accessorSuccessResponse), null);
+
+  const accessorCardResponse = { success: true };
+  defineThrowingGetter(accessorCardResponse, 'card');
+  assert.equal(getValidatedStudySessionSubmissionResponse(accessorCardResponse), null);
+
+  const validCard = createValidSubmissionCard();
+  ['id', 'next_review', 'last_reviewed', 'interval', 'ease_factor', 'review_count'].forEach(
+    (fieldName) => {
+      const card = { ...validCard };
+      defineThrowingGetter(card, fieldName);
+
+      assert.equal(
+        getValidatedStudySessionSubmissionResponse({ success: true, card }),
+        null,
+        fieldName,
+      );
+    },
+  );
 });
 
 test('getValidatedStudySessionSubmissionResponse requires next review after the review time', () => {

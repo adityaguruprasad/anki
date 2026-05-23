@@ -10,6 +10,22 @@ const {
 const { MAX_CARD_CONTENT_LENGTH } = require('../cardContentValidation');
 const { MAX_POSTGRES_SERIAL_ID } = require('../cardIdentifier');
 
+function assertMalformedSelection(payload, options) {
+  assert.throws(
+    () => selectValidatedStudySessionDueCard(payload, options),
+    new RegExp(MALFORMED_DUE_CARD_PAYLOAD_ERROR),
+  );
+}
+
+function defineThrowingGetter(object, fieldName) {
+  Object.defineProperty(object, fieldName, {
+    configurable: true,
+    get() {
+      throw new Error(`Unexpected ${fieldName} getter invocation`);
+    },
+  });
+}
+
 test('selectValidatedStudySessionDueCard keeps empty arrays on the no-due path', () => {
   assert.equal(selectValidatedStudySessionDueCard([]), null);
 });
@@ -116,11 +132,35 @@ test('selectValidatedStudySessionDueCard rejects malformed top-level payloads', 
     { 0: { id: 1, front_content: 'Front', back_content: 'Back' } },
     'not an array',
   ].forEach((payload) => {
-    assert.throws(
-      () => selectValidatedStudySessionDueCard(payload),
-      new RegExp(MALFORMED_DUE_CARD_PAYLOAD_ERROR),
-    );
+    assertMalformedSelection(payload);
   });
+});
+
+test('selectValidatedStudySessionDueCard rejects inherited row fields without invoking getters', () => {
+  const prototype = {};
+  ['id', 'deck_id', 'front_content', 'back_content'].forEach((fieldName) => {
+    defineThrowingGetter(prototype, fieldName);
+  });
+  const card = Object.create(prototype);
+
+  assert.equal(hasStudySessionDueCardRowPayload(card, { expectedDeckId: 7 }), false);
+  assertMalformedSelection([card], { expectedDeckId: 7 });
+});
+
+test('selectValidatedStudySessionDueCard rejects accessor-backed rows and array entries without invoking getters', () => {
+  const card = {};
+  ['id', 'deck_id', 'front_content', 'back_content'].forEach((fieldName) => {
+    defineThrowingGetter(card, fieldName);
+  });
+
+  assert.equal(hasStudySessionDueCardRowPayload(card, { expectedDeckId: 7 }), false);
+  assertMalformedSelection([card], { expectedDeckId: 7 });
+
+  const payload = [];
+  defineThrowingGetter(payload, '0');
+
+  assert.equal(payload.length, 1);
+  assertMalformedSelection(payload);
 });
 
 test('selectValidatedStudySessionDueCard rejects blank or missing content', () => {
@@ -198,7 +238,7 @@ test('hasStudySessionDueCardRowPayload rejects invalid card row shapes', () => {
   );
 });
 
-test('selectValidatedStudySessionDueCard rejects invalid IDs anywhere in the payload', () => {
+test('selectValidatedStudySessionDueCard rejects multi-card payloads before validating later IDs', () => {
   const validCard = { id: 1, front_content: 'Front', back_content: 'Back' };
 
   [

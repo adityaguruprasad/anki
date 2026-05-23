@@ -25,6 +25,21 @@ function isObjectRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+function descriptorHasValue(descriptor) {
+  return (
+    descriptor !== undefined
+    && Object.prototype.hasOwnProperty.call(descriptor, 'value')
+  );
+}
+
+function getOwnDataPropertyValue(value, key) {
+  const descriptor = isObjectRecord(value)
+    ? Object.getOwnPropertyDescriptor(value, key)
+    : undefined;
+
+  return descriptorHasValue(descriptor) ? descriptor.value : undefined;
+}
+
 function parseStudySessionSubmissionResponse(responseText) {
   if (typeof responseText !== 'string' || responseText.trim() === '') {
     return null;
@@ -61,12 +76,17 @@ function getValidNextReviewDate(nextReview) {
 }
 
 function hasValidStudySessionSchedulingFields(card) {
-  const nextReviewDate = getValidNextReviewDate(card.next_review);
-  if (nextReviewDate === null || !isValidIsoTimestamp(card.last_reviewed)) {
+  const nextReview = getOwnDataPropertyValue(card, 'next_review');
+  const lastReviewed = getOwnDataPropertyValue(card, 'last_reviewed');
+  const interval = getOwnDataPropertyValue(card, 'interval');
+  const easeFactor = getOwnDataPropertyValue(card, 'ease_factor');
+  const reviewCount = getOwnDataPropertyValue(card, 'review_count');
+  const nextReviewDate = getValidNextReviewDate(nextReview);
+  if (nextReviewDate === null || !isValidIsoTimestamp(lastReviewed)) {
     return false;
   }
 
-  const lastReviewedDate = new Date(card.last_reviewed);
+  const lastReviewedDate = new Date(lastReviewed);
   const lastReviewedAt = lastReviewedDate.getTime();
   const nextReviewAt = nextReviewDate.getTime();
   // Backend apiHandlers and cards_review_temporal_order_check require this
@@ -79,14 +99,14 @@ function hasValidStudySessionSchedulingFields(card) {
   }
 
   return (
-    Number.isSafeInteger(card.interval)
-    && card.interval >= 1
-    && card.interval <= MAX_STUDY_SESSION_INTERVAL_DAYS
-    && typeof card.ease_factor === 'number'
-    && Number.isFinite(card.ease_factor)
-    && card.ease_factor >= MIN_STUDY_SESSION_EASE_FACTOR
-    && Number.isSafeInteger(card.review_count)
-    && card.review_count >= 0
+    Number.isSafeInteger(interval)
+    && interval >= 1
+    && interval <= MAX_STUDY_SESSION_INTERVAL_DAYS
+    && typeof easeFactor === 'number'
+    && Number.isFinite(easeFactor)
+    && easeFactor >= MIN_STUDY_SESSION_EASE_FACTOR
+    && Number.isSafeInteger(reviewCount)
+    && reviewCount >= 0
   );
 }
 
@@ -95,17 +115,18 @@ function getValidatedStudySessionSubmissionResponse(response, options = {}) {
     return null;
   }
 
-  if (response.success !== true) {
+  if (getOwnDataPropertyValue(response, 'success') !== true) {
     return null;
   }
 
-  const { card } = response;
+  const card = getOwnDataPropertyValue(response, 'card');
 
   if (!isObjectRecord(card)) {
     return null;
   }
 
-  if (typeof card.id !== 'number' || !hasRouteSafeCardId(card.id)) {
+  const cardId = getOwnDataPropertyValue(card, 'id');
+  if (typeof cardId !== 'number' || !hasRouteSafeCardId(cardId)) {
     return null;
   }
 
@@ -114,7 +135,7 @@ function getValidatedStudySessionSubmissionResponse(response, options = {}) {
     options.expectedId !== undefined
     && (
       !hasRouteSafeCardId(options.expectedId)
-      || !hasSameRouteSafeCardId(card.id, options.expectedId)
+      || !hasSameRouteSafeCardId(cardId, options.expectedId)
     )
   ) {
     return null;
@@ -137,7 +158,8 @@ function formatNextReviewDate(nextReviewDate) {
 function getStudySessionSubmissionFeedback(options = {}) {
   const qualityLabel = getStudySessionQualityLabel(options.quality);
   const messageStart = qualityLabel ? `Answered ${qualityLabel}.` : 'Answer submitted.';
-  const nextReviewDate = getValidNextReviewDate(options.response?.card?.next_review);
+  const card = getOwnDataPropertyValue(options.response, 'card');
+  const nextReviewDate = getValidNextReviewDate(getOwnDataPropertyValue(card, 'next_review'));
 
   if (!nextReviewDate) {
     return {
@@ -157,6 +179,8 @@ function getStudySessionSubmissionFeedback(options = {}) {
 function getStudySessionSubmissionRecovery(response, payload) {
   let status;
   try {
+    // Fetch Response.status is intentionally read through the native status getter;
+    // untrusted JSON payloads use own data-property access instead.
     status = response?.status;
   } catch {
     return null;
@@ -165,7 +189,7 @@ function getStudySessionSubmissionRecovery(response, payload) {
   if (
     status !== 409
     || !isObjectRecord(payload)
-    || payload.error !== STALE_CARD_CONFLICT_API_ERROR
+    || getOwnDataPropertyValue(payload, 'error') !== STALE_CARD_CONFLICT_API_ERROR
   ) {
     return null;
   }
