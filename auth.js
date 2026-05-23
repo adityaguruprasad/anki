@@ -363,6 +363,20 @@ function getOwnAuthorizationHeader(headers) {
   return descriptor === null ? undefined : descriptor.value;
 }
 
+function getRequestHeadersObject(req) {
+  if (req === null || typeof req !== 'object' || Array.isArray(req)) {
+    return {};
+  }
+
+  // Auth must inspect the own data-property descriptor for req.headers only;
+  // inherited or accessor-backed headers containers must not be invoked.
+  const headersDescriptor = getOwnDataPropertyDescriptor(req, 'headers');
+  const headers = headersDescriptor === null ? undefined : headersDescriptor.value;
+  return headers !== null && typeof headers === 'object' && !Array.isArray(headers)
+    ? headers
+    : {};
+}
+
 function getDefaultPasswordHasher() {
   try {
     return require('bcrypt');
@@ -891,7 +905,7 @@ function createAuthHandlers(db, options = {}) {
   };
 
   const authenticateToken = (req, res, next) => {
-    const token = extractBearerToken(getOwnAuthorizationHeader(req?.headers));
+    const token = extractBearerToken(getOwnAuthorizationHeader(getRequestHeadersObject(req)));
     if (token == null) return res.sendStatus(401);
 
     try {

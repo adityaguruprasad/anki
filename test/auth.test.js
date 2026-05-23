@@ -3450,6 +3450,55 @@ test('authenticateToken ignores accessor authorization headers', () => {
   assert.equal(req.user, undefined);
 });
 
+test('authenticateToken ignores an inherited-only request headers container', () => {
+  const signedToken = signToken({ userId: 305 }, 'inherited-headers-container-secret');
+  const { authenticateToken } = createAuthHandlers(createDb([]), {
+    jwtSecret: 'inherited-headers-container-secret',
+    passwordHasher: createPasswordHasher(),
+  });
+  const req = Object.create({
+    headers: { authorization: `Bearer ${signedToken}` },
+  });
+  const res = createRes();
+  let nextCalled = false;
+
+  authenticateToken(req, res, () => {
+    nextCalled = true;
+  });
+
+  assert.equal(res.statusCode, 401);
+  assert.equal(nextCalled, false);
+  assert.equal(req.user, undefined);
+});
+
+test('authenticateToken ignores an accessor request headers container without invoking getters', () => {
+  const signedToken = signToken({ userId: 305 }, 'accessor-headers-container-secret');
+  const { authenticateToken } = createAuthHandlers(createDb([]), {
+    jwtSecret: 'accessor-headers-container-secret',
+    passwordHasher: createPasswordHasher(),
+  });
+  const req = {};
+  let headersAccessCount = 0;
+  Object.defineProperty(req, 'headers', {
+    enumerable: true,
+    get() {
+      headersAccessCount += 1;
+      return { authorization: `Bearer ${signedToken}` };
+    },
+  });
+  const res = createRes();
+  let nextCalled = false;
+
+  authenticateToken(req, res, () => {
+    nextCalled = true;
+  });
+
+  assert.equal(res.statusCode, 401);
+  assert.equal(headersAccessCount, 0);
+  assert.equal(nextCalled, false);
+  assert.equal(req.user, undefined);
+});
+
 test('authenticateToken accepts own authorization over an inherited forged header', () => {
   const signedToken = signToken({ userId: 306 }, 'own-header-secret');
   const { authenticateToken } = createAuthHandlers(createDb([]), {
