@@ -74,22 +74,25 @@ function base64UrlJson(value) {
 }
 
 function resolveJwtSecret(env = process.env) {
-  if (env.JWT_SECRET !== undefined) {
-    if (typeof env.JWT_SECRET !== 'string') {
+  const jwtSecretValue = getOwnConfigValue(env, 'JWT_SECRET');
+  const nodeEnv = getOwnConfigValue(env, 'NODE_ENV');
+
+  if (jwtSecretValue !== undefined) {
+    if (typeof jwtSecretValue !== 'string') {
       throw new TypeError(JWT_SECRET_TYPE_ERROR);
     }
 
-    const jwtSecret = env.JWT_SECRET.trim();
+    const jwtSecret = jwtSecretValue.trim();
     if (jwtSecret === '') {
       throw new Error(JWT_SECRET_EMPTY_ERROR);
     }
 
-    if (env.NODE_ENV === 'production' && jwtSecret === DEFAULT_DEV_JWT_SECRET) {
+    if (nodeEnv === 'production' && jwtSecret === DEFAULT_DEV_JWT_SECRET) {
       throw new Error(JWT_SECRET_DEFAULT_PRODUCTION_ERROR);
     }
 
     if (
-      env.NODE_ENV === 'production'
+      nodeEnv === 'production'
       && Buffer.byteLength(jwtSecret, 'utf8') < JWT_SECRET_MIN_PRODUCTION_BYTES
     ) {
       throw new Error(JWT_SECRET_MIN_PRODUCTION_BYTES_ERROR);
@@ -98,11 +101,22 @@ function resolveJwtSecret(env = process.env) {
     return jwtSecret;
   }
 
-  if (env.NODE_ENV === 'production') {
+  if (nodeEnv === 'production') {
     throw new Error('JWT_SECRET must be set in production');
   }
 
   return DEFAULT_DEV_JWT_SECRET;
+}
+
+function getOwnConfigValue(config, fieldName) {
+  if (config === null || typeof config !== 'object' || Array.isArray(config)) {
+    return undefined;
+  }
+
+  const descriptor = Object.getOwnPropertyDescriptor(config, fieldName);
+  return descriptor !== undefined && Object.hasOwn(descriptor, 'value')
+    ? descriptor.value
+    : undefined;
 }
 
 function validateJwtExpiresInSeconds(value) {
@@ -132,11 +146,12 @@ function validateJwtExpiresInSeconds(value) {
 }
 
 function resolveJwtExpiresInSeconds(env = process.env) {
-  if (env.JWT_EXPIRES_IN_SECONDS == null || env.JWT_EXPIRES_IN_SECONDS === '') {
+  const expiresInSeconds = getOwnConfigValue(env, 'JWT_EXPIRES_IN_SECONDS');
+  if (expiresInSeconds == null || expiresInSeconds === '') {
     return DEFAULT_JWT_EXPIRES_IN_SECONDS;
   }
 
-  return validateJwtExpiresInSeconds(env.JWT_EXPIRES_IN_SECONDS);
+  return validateJwtExpiresInSeconds(expiresInSeconds);
 }
 
 function decodeJsonPart(value) {
@@ -689,7 +704,7 @@ function resolveAuthHandlerJwtSecret(options = {}) {
   // Only undefined means "not provided"; other falsy values must fail closed.
   if (options.jwtSecret !== undefined) {
     return resolveJwtSecret({
-      ...options.env,
+      NODE_ENV: getOwnConfigValue(options.env, 'NODE_ENV'),
       JWT_SECRET: options.jwtSecret,
     });
   }

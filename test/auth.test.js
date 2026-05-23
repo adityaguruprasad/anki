@@ -3235,6 +3235,40 @@ test('createAuthHandlers lets undefined jwtSecret fall back to env JWT_SECRET', 
   assert.equal(req.user.userId, 204);
 });
 
+test('createAuthHandlers ignores inherited env JWT_SECRET before authenticating tokens', () => {
+  withObjectPrototypeProperties({ JWT_SECRET: 'polluted-auth-secret' }, () => {
+    const { authenticateToken } = createAuthHandlers(createDb([]), {
+      env: {},
+      passwordHasher: createPasswordHasher(),
+    });
+    const inheritedSecretReq = {
+      headers: { authorization: `Bearer ${signToken({ userId: 205 }, 'polluted-auth-secret')}` },
+    };
+    const inheritedSecretRes = createRes();
+    let inheritedSecretNextCalled = false;
+
+    authenticateToken(inheritedSecretReq, inheritedSecretRes, () => {
+      inheritedSecretNextCalled = true;
+    });
+
+    assert.equal(inheritedSecretRes.statusCode, 403);
+    assert.equal(inheritedSecretNextCalled, false);
+    assert.equal(inheritedSecretReq.user, undefined);
+
+    const defaultSecretReq = {
+      headers: { authorization: `Bearer ${signToken({ userId: 206 }, DEFAULT_DEV_JWT_SECRET)}` },
+    };
+    let defaultSecretNextCalled = false;
+
+    authenticateToken(defaultSecretReq, createRes(), () => {
+      defaultSecretNextCalled = true;
+    });
+
+    assert.equal(defaultSecretNextCalled, true);
+    assert.equal(defaultSecretReq.user.userId, 206);
+  });
+});
+
 test('authenticateToken accepts API-issued numeric userId claims as numbers', () => {
   const { authenticateToken } = createAuthHandlers(createDb([]), {
     jwtSecret: 'numeric-auth-secret',
@@ -3531,6 +3565,29 @@ test('resolveJwtSecret trims JWT_SECRET and returns the canonical secret', () =>
   assert.equal(resolveJwtSecret({ JWT_SECRET: '  from-env\n\t', NODE_ENV: 'test' }), 'from-env');
 });
 
+test('resolveJwtSecret requires own data-property env fields', () => {
+  withObjectPrototypeProperties({
+    JWT_SECRET: 'polluted-secret',
+    NODE_ENV: 'production',
+  }, () => {
+    assert.equal(resolveJwtSecret({}), DEFAULT_DEV_JWT_SECRET);
+    assert.throws(
+      () => resolveJwtSecret({ NODE_ENV: 'production' }),
+      /JWT_SECRET must be set in production/
+    );
+    assert.equal(resolveJwtSecret({ JWT_SECRET: 'own-secret' }), 'own-secret');
+  });
+
+  const { object: accessorEnv, accessCounts } = createObjectWithAccessorFields({
+    JWT_SECRET: 'accessor-secret',
+    NODE_ENV: 'production',
+  });
+
+  assert.equal(resolveJwtSecret(accessorEnv), DEFAULT_DEV_JWT_SECRET);
+  assert.equal(accessCounts.JWT_SECRET, 0);
+  assert.equal(accessCounts.NODE_ENV, 0);
+});
+
 test('resolveJwtSecret rejects non-string injected JWT_SECRET values with a type error', () => {
   assert.throws(
     () => resolveJwtSecret({ JWT_SECRET: 12345, NODE_ENV: 'test' }),
@@ -3644,6 +3701,19 @@ test('resolveJwtExpiresInSeconds supports a configurable positive integer defaul
       String(value)
     );
   }
+});
+
+test('resolveJwtExpiresInSeconds ignores inherited and accessor env values', () => {
+  withObjectPrototypeProperties({ JWT_EXPIRES_IN_SECONDS: '120' }, () => {
+    assert.equal(resolveJwtExpiresInSeconds({}), DEFAULT_JWT_EXPIRES_IN_SECONDS);
+  });
+
+  const { object: accessorEnv, accessCounts } = createObjectWithAccessorFields({
+    JWT_EXPIRES_IN_SECONDS: '120',
+  });
+
+  assert.equal(resolveJwtExpiresInSeconds(accessorEnv), DEFAULT_JWT_EXPIRES_IN_SECONDS);
+  assert.equal(accessCounts.JWT_EXPIRES_IN_SECONDS, 0);
 });
 
 test('authenticateToken preserves existing 401 and 403 responses for missing and invalid tokens', () => {
