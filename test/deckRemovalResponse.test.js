@@ -56,9 +56,22 @@ test('parseDeckRemovalSuccessPayload rejects missing or non-true success values'
 
 test('getDeckRemovalFailureMessage preserves existing non-OK error fallback behavior', () => {
   assert.equal(getDeckRemovalFailureMessage({ error: 'Deck not found' }), 'Deck not found');
+  assert.equal(getDeckRemovalFailureMessage({ error: '  Deck not found  ' }), '  Deck not found  ');
   assert.equal(getDeckRemovalFailureMessage({ error: '' }), DECK_REMOVAL_MESSAGES.deleteFailed);
+  assert.equal(getDeckRemovalFailureMessage({ error: '   ' }), DECK_REMOVAL_MESSAGES.deleteFailed);
   assert.equal(getDeckRemovalFailureMessage({}), DECK_REMOVAL_MESSAGES.deleteFailed);
   assert.equal(getDeckRemovalFailureMessage(null), DECK_REMOVAL_MESSAGES.deleteFailed);
+});
+
+test('getDeckRemovalFailureMessage falls back for malformed server error fields', () => {
+  [
+    { error: { message: 'Deck not found' } },
+    { error: ['Deck not found'] },
+    { error: 404 },
+    { error: true },
+  ].forEach((payload) => {
+    assert.equal(getDeckRemovalFailureMessage(payload), DECK_REMOVAL_MESSAGES.deleteFailed);
+  });
 });
 
 test('deck-removal response completion ignores stale responses before parsing payloads', () => {
@@ -98,6 +111,20 @@ test('deck-removal response completion preserves non-OK server error behavior', 
     error: 'Deck not found',
   });
   assert.equal(parseCalls, 0);
+});
+
+test('deck-removal response completion does not expose malformed server error payloads', () => {
+  const completion = getDeckRemovalResponseCompletion({
+    isCurrent: true,
+    responseOk: false,
+    payload: { error: { message: 'Deck not found' } },
+  });
+
+  assert.deepEqual(completion, {
+    type: DECK_REMOVAL_COMPLETION_TYPES.SERVER_ERROR,
+    ignored: false,
+    error: DECK_REMOVAL_MESSAGES.deleteFailed,
+  });
 });
 
 test('deck-removal response completion exposes only validated successful removal payloads', () => {

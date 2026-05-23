@@ -29,7 +29,11 @@ function parseDeckRemovalSuccessPayload(payload) {
 }
 
 function getDeckRemovalFailureMessage(payload) {
-  return (payload && payload.error) || DECK_REMOVAL_MESSAGES.deleteFailed;
+  if (payload && typeof payload.error === 'string' && payload.error.trim()) {
+    return payload.error;
+  }
+
+  return DECK_REMOVAL_MESSAGES.deleteFailed;
 }
 
 function createIgnoredDeckRemovalCompletion() {
