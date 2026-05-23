@@ -2,13 +2,56 @@ function hasSameDeckId(leftId, rightId) {
   return String(leftId) === String(rightId);
 }
 
+function isObjectRecord(value) {
+  return value !== null && typeof value === 'object';
+}
+
+function descriptorHasValue(descriptor) {
+  return descriptor !== undefined && Object.hasOwn(descriptor, 'value');
+}
+
+function getOwnDataPropertyValue(value, key) {
+  if (!isObjectRecord(value)) {
+    return undefined;
+  }
+
+  const descriptor = Object.getOwnPropertyDescriptor(value, key);
+  return descriptorHasValue(descriptor) ? descriptor.value : undefined;
+}
+
+function getOwnEnumerableDataProperties(value) {
+  if (!isObjectRecord(value)) {
+    return {};
+  }
+
+  const properties = {};
+  for (const key of Reflect.ownKeys(value)) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptorHasValue(descriptor) || !descriptor.enumerable) {
+      continue;
+    }
+
+    // Define descriptor values directly so keys like __proto__ cannot invoke setters.
+    Object.defineProperty(properties, key, {
+      value: descriptor.value,
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
+  }
+
+  return properties;
+}
+
 function isDeckObject(deck) {
-  return deck !== null && typeof deck === 'object' && deck.id !== undefined && deck.id !== null;
+  const id = getOwnDataPropertyValue(deck, 'id');
+  return id !== undefined && id !== null;
 }
 
 function getUsableDeckName(deck, fallbackName = '') {
-  if (typeof deck?.name === 'string' && deck.name.trim()) {
-    return deck.name;
+  const name = getOwnDataPropertyValue(deck, 'name');
+  if (typeof name === 'string' && name.trim()) {
+    return name;
   }
 
   if (typeof fallbackName === 'string' && fallbackName.trim()) {
@@ -33,10 +76,10 @@ function normalizeCreatedDeck(createdDeck, fallbackName = '') {
   }
 
   return {
-    ...createdDeck,
+    ...getOwnEnumerableDataProperties(createdDeck),
     name,
-    totalCards: normalizeDeckCount(createdDeck.totalCards),
-    dueCards: normalizeDeckCount(createdDeck.dueCards),
+    totalCards: normalizeDeckCount(getOwnDataPropertyValue(createdDeck, 'totalCards')),
+    dueCards: normalizeDeckCount(getOwnDataPropertyValue(createdDeck, 'dueCards')),
   };
 }
 
@@ -53,14 +96,17 @@ function addCreatedDeck(decks, createdDeck, fallbackName = '') {
 }
 
 function mergeRenamedDeck(decks, deckId, renamedDeck, fallbackName = '') {
-  const hasMatchingResponse = isDeckObject(renamedDeck) && hasSameDeckId(renamedDeck.id, deckId);
+  const renamedDeckId = getOwnDataPropertyValue(renamedDeck, 'id');
+  const hasMatchingResponse = renamedDeckId !== undefined
+    && renamedDeckId !== null
+    && hasSameDeckId(renamedDeckId, deckId);
   const name = getUsableDeckName(hasMatchingResponse ? renamedDeck : null, fallbackName);
   if (!name) {
     return decks;
   }
 
   let didUpdate = false;
-  const responsePatch = hasMatchingResponse ? renamedDeck : {};
+  const responsePatch = hasMatchingResponse ? getOwnEnumerableDataProperties(renamedDeck) : {};
 
   const nextDecks = decks.map((deck) => {
     if (!hasSameDeckId(deck.id, deckId)) {
