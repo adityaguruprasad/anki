@@ -419,10 +419,15 @@ function assertObjectHasOwnFields(row, fields, errorMessage) {
   }
 
   for (const field of fields) {
-    if (!Object.hasOwn(row, field)) {
+    if (!hasOwnDataProperty(row, field)) {
       throw new TypeError(errorMessage);
     }
   }
+}
+
+function hasOwnDataProperty(object, fieldName) {
+  const descriptor = Object.getOwnPropertyDescriptor(object, fieldName);
+  return descriptor !== undefined && Object.hasOwn(descriptor, 'value');
 }
 
 function isValidDatabaseTimestamp(value) {
@@ -933,15 +938,27 @@ function toRecommendedDailyReviewTarget(focusLoad) {
 }
 
 function assertQueryResultShape(result, errorMessage) {
+  if (result === null || typeof result !== 'object' || Array.isArray(result)) {
+    throw new TypeError(errorMessage);
+  }
+
+  const rowsDescriptor = Object.getOwnPropertyDescriptor(result, 'rows');
+  const rowCountDescriptor = Object.getOwnPropertyDescriptor(result, 'rowCount');
   if (
-    result === null
-    || typeof result !== 'object'
-    || Array.isArray(result)
-    || !Object.hasOwn(result, 'rows')
-    || !Object.hasOwn(result, 'rowCount')
-    || !Array.isArray(result.rows)
-    || !Number.isSafeInteger(result.rowCount)
-    || result.rowCount < 0
+    rowsDescriptor === undefined
+    || rowCountDescriptor === undefined
+    || !Object.hasOwn(rowsDescriptor, 'value')
+    || !Object.hasOwn(rowCountDescriptor, 'value')
+  ) {
+    throw new TypeError(errorMessage);
+  }
+
+  const rows = rowsDescriptor.value;
+  const rowCount = rowCountDescriptor.value;
+  if (
+    !Array.isArray(rows)
+    || !Number.isSafeInteger(rowCount)
+    || rowCount < 0
   ) {
     throw new TypeError(errorMessage);
   }

@@ -58,6 +58,31 @@ function createQueryResultWithInheritedShape(rowCount, rows) {
   return Object.create({ rowCount, rows });
 }
 
+function createQueryResultWithAccessorShape(rowCount, rows) {
+  const result = {};
+  Object.defineProperties(result, {
+    rowCount: {
+      enumerable: true,
+      get: () => rowCount,
+    },
+    rows: {
+      enumerable: true,
+      get: () => rows,
+    },
+  });
+  return result;
+}
+
+function createRowWithAccessorField(row, fieldName) {
+  const accessorRow = { ...row };
+  const value = accessorRow[fieldName];
+  Object.defineProperty(accessorRow, fieldName, {
+    enumerable: true,
+    get: () => value,
+  });
+  return accessorRow;
+}
+
 function createUniqueViolation(constraint) {
   const error = new Error('duplicate key value violates unique constraint');
   error.code = '23505';
@@ -694,6 +719,89 @@ test('API query result helpers fail closed when rows and rowCount are inherited'
       assert.equal(db.calls.length, 1);
     });
   }
+});
+
+test('API query result helpers fail closed when rows and rowCount are accessors', async (t) => {
+  const deck = {
+    id: 12,
+    user_id: 1,
+    name: 'Biology',
+    description: null,
+    created_at: '2026-05-08T00:00:00.000Z',
+  };
+  const deckListRow = {
+    ...deck,
+    totalCards: '3',
+    dueCards: '1',
+  };
+  const stats = {
+    totalCards: '12',
+    totalDecks: '3',
+    todayReviews: '4',
+    weekReviews: '7',
+    monthReviews: '10',
+  };
+  const cases = [
+    {
+      name: 'optional single result',
+      result: createQueryResultWithAccessorShape(1, [deck]),
+      run: (db, res) => createDeck(
+        { body: { name: 'Biology' }, user: { userId: 1 } },
+        res,
+        db
+      ),
+    },
+    {
+      name: 'list result',
+      result: createQueryResultWithAccessorShape(1, [deckListRow]),
+      run: (db, res) => getDecks({ user: { userId: 1 } }, res, db),
+    },
+    {
+      name: 'aggregate result',
+      result: createQueryResultWithAccessorShape(1, [stats]),
+      run: (db, res) => getStats({ user: { userId: 1 } }, res, db),
+    },
+  ];
+  t.mock.method(console, 'error', () => {});
+
+  for (const testCase of cases) {
+    await t.test(testCase.name, async () => {
+      const db = createDb([testCase.result]);
+      const res = createRes();
+
+      await testCase.run(db, res);
+
+      assert.equal(res.statusCode, 500);
+      assert.deepEqual(res.body, { error: 'Internal server error' });
+      assert.equal(db.calls.length, 1);
+    });
+  }
+});
+
+test('API row validators fail closed when required result fields are accessors', async (t) => {
+  const deck = {
+    id: 12,
+    user_id: 1,
+    name: 'Biology',
+    description: null,
+    created_at: '2026-05-08T00:00:00.000Z',
+  };
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [createRowWithAccessorField(deck, 'id')],
+    },
+  ]);
+  const req = { body: { name: 'Biology' }, user: { userId: 1 } };
+  const res = createRes();
+  t.mock.method(console, 'error', () => {});
+
+  await createDeck(req, res, db);
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Internal server error' });
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [1, 'Biology']);
 });
 
 test('POST /api/decks uses atomic conflict handling for duplicate deck names', async () => {
