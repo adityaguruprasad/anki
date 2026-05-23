@@ -1153,9 +1153,22 @@ function validateDueCardsLimit(value) {
   return validation;
 }
 
+function getOwnRequestContainer(req, fieldName) {
+  if (
+    req === null
+    || typeof req !== 'object'
+    || Array.isArray(req)
+    || !Object.hasOwn(req, fieldName)
+  ) {
+    return {};
+  }
+
+  const value = req[fieldName];
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
 function getRequestQueryObject(req) {
-  const query = req?.query;
-  return query !== null && typeof query === 'object' && !Array.isArray(query) ? query : {};
+  return getOwnRequestContainer(req, 'query');
 }
 
 function getOwnRequestQueryValue(query, fieldName) {
@@ -1163,8 +1176,7 @@ function getOwnRequestQueryValue(query, fieldName) {
 }
 
 function getRequestParamsObject(req) {
-  const params = req?.params;
-  return params !== null && typeof params === 'object' && !Array.isArray(params) ? params : {};
+  return getOwnRequestContainer(req, 'params');
 }
 
 function getOwnRequestParamValue(params, fieldName) {
@@ -1172,8 +1184,7 @@ function getOwnRequestParamValue(params, fieldName) {
 }
 
 function getRequestBodyObject(req) {
-  const body = req?.body;
-  return body !== null && typeof body === 'object' && !Array.isArray(body) ? body : {};
+  return getOwnRequestContainer(req, 'body');
 }
 
 function getOwnRequestBodyValue(body, fieldName) {

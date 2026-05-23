@@ -660,7 +660,16 @@ function resolveAuthHandlerJwtSecret(options = {}) {
 }
 
 function getRequestBodyObject(req) {
-  const body = req?.body;
+  if (
+    req === null
+    || typeof req !== 'object'
+    || Array.isArray(req)
+    || !Object.hasOwn(req, 'body')
+  ) {
+    return {};
+  }
+
+  const body = req.body;
   return body !== null && typeof body === 'object' && !Array.isArray(body) ? body : {};
 }
 

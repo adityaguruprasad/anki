@@ -528,6 +528,48 @@ test('register ignores inherited body fields before hashing or querying', async 
   assert.deepEqual(db.calls, []);
 });
 
+test('register ignores inherited request body container before hashing, querying, or rate tracking', async () => {
+  const db = createDb([{ rowCount: 1, rows: [createRegistrationRow(45)] }]);
+  const passwordHasher = createPasswordHasher();
+  const { register } = createAuthHandlers(db, {
+    jwtSecret: 'inherited-register-container-secret',
+    passwordHasher,
+    registrationRateLimit: { maxAttempts: 1, windowMs: 60000 },
+  });
+  const inheritedReq = createRequestWithInheritedFields({
+    body: {
+      username: 'polluted',
+      email: 'polluted@example.com',
+      password: 'valid-pass',
+    },
+  });
+  const inheritedRes = createRes();
+
+  await register(inheritedReq, inheritedRes);
+
+  assert.equal(inheritedRes.statusCode, 400);
+  assert.deepEqual(inheritedRes.body, { error: 'Username is required' });
+  assert.deepEqual(passwordHasher.hashCalls, []);
+  assert.deepEqual(db.calls, []);
+
+  const validRes = createRes();
+  await register({
+    body: {
+      username: 'ada',
+      email: 'ada@example.com',
+      password: 'valid-pass',
+    },
+  }, validRes);
+
+  assert.equal(validRes.statusCode, 201);
+  assert.equal(typeof validRes.body.token, 'string');
+  assert.deepEqual(passwordHasher.hashCalls, [
+    { password: 'valid-pass', rounds: PASSWORD_HASH_COST },
+  ]);
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, ['ada', 'ada@example.com', 'hashed:valid-pass']);
+});
+
 test('register accepts a password exactly at the bcrypt byte limit', async () => {
   const password = 'a'.repeat(AUTH_PASSWORD_MAX_BYTES);
   const db = createDb([{ rowCount: 1, rows: [createRegistrationRow(44)] }]);
@@ -1936,6 +1978,44 @@ test('login ignores inherited body fields before querying or comparing', async (
   assert.deepEqual(res.body, { error: 'Valid email is required' });
   assert.deepEqual(db.calls, []);
   assert.deepEqual(passwordHasher.compareCalls, []);
+});
+
+test('login ignores inherited request body container before querying, comparing, or rate tracking', async () => {
+  const db = createDb([{ rowCount: 0, rows: [] }]);
+  const passwordHasher = createPasswordHasher();
+  const { login } = createAuthHandlers(db, {
+    jwtSecret: 'inherited-login-container-secret',
+    passwordHasher,
+    loginRateLimit: { maxFailures: 1, windowMs: 60000 },
+  });
+  const inheritedReq = createRequestWithInheritedFields({
+    body: {
+      email: 'grace@example.com',
+      password: 'candidate-password',
+    },
+  });
+  const inheritedRes = createRes();
+
+  await login(inheritedReq, inheritedRes);
+
+  assert.equal(inheritedRes.statusCode, 400);
+  assert.deepEqual(inheritedRes.body, { error: 'Valid email is required' });
+  assert.deepEqual(db.calls, []);
+  assert.deepEqual(passwordHasher.compareCalls, []);
+
+  const validRes = createRes();
+  await login({
+    body: {
+      email: 'grace@example.com',
+      password: 'candidate-password',
+    },
+  }, validRes);
+
+  assert.equal(validRes.statusCode, 401);
+  assert.deepEqual(validRes.body, { error: 'Invalid credentials' });
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, ['grace@example.com']);
+  assert.equal(passwordHasher.compareCalls.length, 1);
 });
 
 test('login treats inherited password hashes as invalid stored hashes', async () => {

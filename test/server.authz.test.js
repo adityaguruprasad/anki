@@ -115,6 +115,10 @@ function createParamsWithInheritedFields(inheritedFields, ownFields = {}) {
   return Object.assign(Object.create(inheritedFields), ownFields);
 }
 
+function createRequestWithInheritedFields(inheritedFields, ownFields = {}) {
+  return Object.assign(Object.create(inheritedFields), ownFields);
+}
+
 const EXPECTED_PUBLIC_CARD_READ_FIELDS = Object.freeze([
   'id',
   'deck_id',
@@ -1504,6 +1508,28 @@ test('API route params arrays are ignored before validation or SQL use', async (
   assert.equal(db.connectCalls, 0);
 });
 
+test('API route params ignore inherited request params containers before validation or SQL use', async () => {
+  const db = addUnexpectedConnect(createDb([
+    {
+      rowCount: 1,
+      rows: [createEmptyDueCardQueryRow()],
+    },
+  ]));
+  const req = createRequestWithInheritedFields(
+    { params: { deckId: '42' } },
+    { query: {}, user: { userId: 1 } }
+  );
+  const res = createRes();
+
+  await getDueCardsByDeck(req, res, db);
+
+  assert.equal(res.statusCode, 400);
+  assert.deepEqual(res.body, { error: 'Invalid deckId: must be a positive integer' });
+  assert.equal(Object.hasOwn(req, 'params'), false);
+  assert.equal(db.calls.length, 0);
+  assert.equal(db.connectCalls, 0);
+});
+
 test('GET /api/decks fails closed when a deck-list row is missing or cannot use required response fields', async (t) => {
   const validRow = {
     id: 7,
@@ -2542,6 +2568,33 @@ test('GET /api/decks/:deckId/cards ignores inherited query fields before SQL con
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, { cards: [], nextCursor: null });
   assert.equal(Object.keys(query).length, 0);
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [42, 1, 51]);
+  assert.doesNotMatch(db.calls[0].sql, /POSITION\(/i);
+  assert.match(db.calls[0].sql, /\bLIMIT \$3/);
+});
+
+test('GET /api/decks/:deckId/cards ignores inherited request query container before SQL construction', async () => {
+  const db = createDb([{ rowCount: 1, rows: [createEmptyCardReadSentinel()] }]);
+  const req = createRequestWithInheritedFields(
+    {
+      query: {
+        limit: '1',
+        q: 'inherited search',
+      },
+    },
+    {
+      params: { deckId: '42' },
+      user: { userId: 1 },
+    }
+  );
+  const res = createRes();
+
+  await getCardsByDeck(req, res, db);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, { cards: [], nextCursor: null });
+  assert.equal(Object.hasOwn(req, 'query'), false);
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, [42, 1, 51]);
   assert.doesNotMatch(db.calls[0].sql, /POSITION\(/i);
@@ -5556,6 +5609,28 @@ test('API mutation body fields must be own properties before validation or SQL u
     assert.equal(db.connectCalls, 0, testCase.name);
     assert.equal(schedulerCalled, false, testCase.name);
   }
+});
+
+test('POST /api/study-session ignores inherited request body container before transaction or scheduler work', async () => {
+  const db = addUnexpectedConnect(createDb([]));
+  const req = createRequestWithInheritedFields(
+    { body: { cardId: 77, quality: 4 } },
+    { user: { userId: 1 } }
+  );
+  const res = createRes();
+  let schedulerCalled = false;
+
+  await submitStudySession(req, res, db, () => {
+    schedulerCalled = true;
+    return {};
+  });
+
+  assert.equal(res.statusCode, 400);
+  assert.deepEqual(res.body, { error: 'Invalid cardId: must be a positive integer' });
+  assert.equal(Object.hasOwn(req, 'body'), false);
+  assert.equal(db.calls.length, 0);
+  assert.equal(db.connectCalls, 0);
+  assert.equal(schedulerCalled, false);
 });
 
 test('POST /api/study-session returns 400 for invalid cardId and skips db query', async () => {
