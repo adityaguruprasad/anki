@@ -73,8 +73,64 @@ function createQueryResultWithInheritedShape(rowCount, rows) {
   return Object.create({ rowCount, rows });
 }
 
+function createQueryResultWithAccessorShape(rowCount, rows) {
+  const result = {};
+  Object.defineProperties(result, {
+    rowCount: {
+      enumerable: true,
+      get: () => rowCount,
+    },
+    rows: {
+      enumerable: true,
+      get: () => rows,
+    },
+  });
+  return result;
+}
+
+function createQueryResultWithSetterOnlyAccessorField(fieldName, rowCount, rows) {
+  const result = { rowCount, rows };
+  Object.defineProperty(result, fieldName, {
+    enumerable: true,
+    set: () => {},
+  });
+  return result;
+}
+
+function createQueryResultSetterOnlyAccessorCases(rowCount, rows) {
+  return [
+    {
+      name: 'setter-only accessor rowCount',
+      result: createQueryResultWithSetterOnlyAccessorField('rowCount', rowCount, rows),
+    },
+    {
+      name: 'setter-only accessor rows',
+      result: createQueryResultWithSetterOnlyAccessorField('rows', rowCount, rows),
+    },
+  ];
+}
+
 function createArrayShapedQueryResult(rowCount, rows) {
   return Object.assign([], { rowCount, rows });
+}
+
+function createRowWithAccessorField(row, fieldName) {
+  const accessorRow = { ...row };
+  const value = accessorRow[fieldName];
+  Object.defineProperty(accessorRow, fieldName, {
+    enumerable: true,
+    get: () => value,
+  });
+  return accessorRow;
+}
+
+function createRowWithSetterOnlyAccessorField(row, fieldName) {
+  const accessorRow = { ...row };
+  Object.defineProperty(accessorRow, fieldName, {
+    enumerable: true,
+    set: () => {},
+  });
+  return accessorRow;
 }
 
 function createBodyWithInheritedFields(inheritedFields, ownFields = {}) {
@@ -356,6 +412,11 @@ test('register fails closed when the insert result cardinality is malformed', as
       result: createQueryResultWithInheritedShape(1, [createRegistrationRow(42)]),
     },
     {
+      name: 'accessor rows and rowCount',
+      result: createQueryResultWithAccessorShape(1, [createRegistrationRow(42)]),
+    },
+    ...createQueryResultSetterOnlyAccessorCases(1, [createRegistrationRow(42)]),
+    {
       name: 'array-shaped result with returned id',
       result: createArrayShapedQueryResult(1, [createRegistrationRow(42)]),
     },
@@ -375,6 +436,46 @@ test('register fails closed when the insert result cardinality is malformed', as
       const passwordHasher = createPasswordHasher();
       const { register } = createAuthHandlers(db, {
         jwtSecret: 'malformed-register-result-secret',
+        passwordHasher,
+      });
+      const res = createRes();
+
+      await register({
+        body: {
+          username: 'ada',
+          email: 'ada@example.com',
+          password: 'correct horse battery staple',
+        },
+      }, res);
+
+      assert.equal(res.statusCode, 500);
+      assert.deepEqual(res.body, { error: 'Error registering user' });
+      assert.equal(res.body.token, undefined);
+      assert.deepEqual(passwordHasher.hashCalls, [
+        { password: 'correct horse battery staple', rounds: PASSWORD_HASH_COST },
+      ]);
+      assert.equal(db.calls.length, 1);
+    });
+  }
+});
+
+test('register does not mint a token when returned identity fields are accessors', async (t) => {
+  const returnedRow = createRegistrationRow(42);
+  const cases = [
+    { name: 'accessor returned id', row: createRowWithAccessorField(returnedRow, 'id') },
+    { name: 'accessor returned email', row: createRowWithAccessorField(returnedRow, 'email') },
+    {
+      name: 'setter-only accessor returned id',
+      row: createRowWithSetterOnlyAccessorField(returnedRow, 'id'),
+    },
+  ];
+
+  for (const { name, row } of cases) {
+    await t.test(name, async () => {
+      const db = createDb([{ rowCount: 1, rows: [row] }]);
+      const passwordHasher = createPasswordHasher();
+      const { register } = createAuthHandlers(db, {
+        jwtSecret: 'accessor-register-row-secret',
         passwordHasher,
       });
       const res = createRes();
@@ -1056,6 +1157,17 @@ test('login fails closed when the lookup result cardinality is malformed', async
       ),
     },
     {
+      name: 'accessor rows and rowCount',
+      result: createQueryResultWithAccessorShape(
+        1,
+        [{ id: 79, email: 'ada@example.com', password_hash: 'stored-user-hash' }]
+      ),
+    },
+    ...createQueryResultSetterOnlyAccessorCases(
+      1,
+      [{ id: 79, email: 'ada@example.com', password_hash: 'stored-user-hash' }]
+    ),
+    {
       name: 'array-shaped result with returned user',
       result: createArrayShapedQueryResult(
         1,
@@ -1139,6 +1251,40 @@ test('login fails closed when lookup row identity fields are inherited', async (
   assert.deepEqual(passwordHasher.compareCalls, []);
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, ['ada@example.com']);
+});
+
+test('login fails closed when lookup row identity fields are accessors', async (t) => {
+  const userRow = { id: 79, email: 'ada@example.com', password_hash: 'stored-user-hash' };
+  const cases = [
+    { name: 'accessor user id', row: createRowWithAccessorField(userRow, 'id') },
+    { name: 'accessor email', row: createRowWithAccessorField(userRow, 'email') },
+  ];
+
+  for (const { name, row } of cases) {
+    await t.test(name, async () => {
+      const db = createDb([
+        {
+          rowCount: 1,
+          rows: [row],
+        },
+      ]);
+      const passwordHasher = createPasswordHasher({ compareResult: true });
+      const { login } = createAuthHandlers(db, {
+        jwtSecret: 'accessor-login-row-secret',
+        passwordHasher,
+      });
+      const res = createRes();
+
+      await login({ body: { email: 'ada@example.com', password: 'stored-password' } }, res);
+
+      assert.equal(res.statusCode, 500);
+      assert.deepEqual(res.body, { error: 'Error logging in' });
+      assert.equal(res.body.token, undefined);
+      assert.deepEqual(passwordHasher.compareCalls, []);
+      assert.equal(db.calls.length, 1);
+      assert.deepEqual(db.calls[0].params, ['ada@example.com']);
+    });
+  }
 });
 
 test('login fails closed when the lookup result rows shape is invalid', async (t) => {
@@ -2043,6 +2189,56 @@ test('login treats inherited password hashes as invalid stored hashes', async ()
   });
   const req = {
     ip: '203.0.113.41',
+    body: { email: 'ada@example.com', password: 'candidate-password' },
+  };
+  const res = createRes();
+
+  await login(req, res);
+
+  assert.equal(res.statusCode, 401);
+  assert.deepEqual(res.body, { error: 'Invalid credentials' });
+  assert.equal(res.body.token, undefined);
+  assert.deepEqual(passwordHasher.compareCalls, [
+    {
+      password: 'candidate-password',
+      passwordHash: MISSING_ACCOUNT_DUMMY_PASSWORD_HASH,
+    },
+  ]);
+
+  const blockedRes = createRes();
+  await login(req, blockedRes);
+
+  assert.equal(blockedRes.statusCode, 429);
+  assert.deepEqual(blockedRes.body, { error: LOGIN_RATE_LIMIT_ERROR });
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, ['ada@example.com']);
+  assert.equal(passwordHasher.compareCalls.length, 1);
+});
+
+test('login treats accessor password hashes as invalid stored hashes', async () => {
+  const row = createRowWithAccessorField({
+    id: 80,
+    email: 'ada@example.com',
+    password_hash: 'stored-user-hash',
+  }, 'password_hash');
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [row],
+    },
+  ]);
+  const passwordHasher = createPasswordHasher({ compareResult: true });
+  const { login } = createAuthHandlers(db, {
+    jwtSecret: 'accessor-login-hash-secret',
+    passwordHasher,
+    loginRateLimit: {
+      maxFailures: 1,
+      windowMs: 60000,
+      now: () => 1250,
+    },
+  });
+  const req = {
+    ip: '203.0.113.42',
     body: { email: 'ada@example.com', password: 'candidate-password' },
   };
   const res = createRes();

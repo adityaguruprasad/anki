@@ -386,55 +386,87 @@ function validatePasswordHash(passwordHash) {
   );
 }
 
+function getOwnDataPropertyDescriptor(object, fieldName) {
+  const descriptor = Object.getOwnPropertyDescriptor(object, fieldName);
+  return descriptor !== undefined && Object.hasOwn(descriptor, 'value')
+    ? descriptor
+    : null;
+}
+
+function getRequiredAuthRowValue(row, fieldName, errorMessage) {
+  const descriptor = getOwnDataPropertyDescriptor(row, fieldName);
+  if (descriptor === null) {
+    throw new Error(errorMessage);
+  }
+
+  return descriptor.value;
+}
+
+function getOptionalAuthRowValue(row, fieldName) {
+  const descriptor = getOwnDataPropertyDescriptor(row, fieldName);
+  return descriptor === null ? undefined : descriptor.value;
+}
+
 function normalizeLoginUserRow(row, normalizedEmail) {
   if (row === null || typeof row !== 'object' || Array.isArray(row)) {
     throw new Error(INVALID_LOGIN_USER_LOOKUP_RESULT_ERROR);
   }
 
-  if (!Object.hasOwn(row, 'id') || !Object.hasOwn(row, 'email')) {
-    throw new Error(INVALID_LOGIN_USER_LOOKUP_RESULT_ERROR);
-  }
+  const id = getRequiredAuthRowValue(row, 'id', INVALID_LOGIN_USER_LOOKUP_RESULT_ERROR);
+  const email = getRequiredAuthRowValue(row, 'email', INVALID_LOGIN_USER_LOOKUP_RESULT_ERROR);
 
-  const normalizedUserId = normalizeTokenUserId(row.id);
-  if (normalizedUserId == null || row.email !== normalizedEmail) {
+  const normalizedUserId = normalizeTokenUserId(id);
+  if (normalizedUserId == null || email !== normalizedEmail) {
     throw new Error(INVALID_LOGIN_USER_LOOKUP_RESULT_ERROR);
   }
 
   return {
     id: normalizedUserId,
     email: normalizedEmail,
-    password_hash: Object.hasOwn(row, 'password_hash') ? row.password_hash : undefined,
+    password_hash: getOptionalAuthRowValue(row, 'password_hash'),
   };
 }
 
 function getOptionalSingleAuthQueryRow(result, errorMessage) {
   // Auth queries use node-postgres result objects; require rowCount to agree
   // with rows before trusting a row for password checks or token issuance.
-  // The array and own-property checks intentionally reject prototype-polluted
-  // or array-shaped query result objects before trusting rows/rowCount.
+  // The array and own data-property checks intentionally reject
+  // prototype-polluted, accessor-shaped, or array-shaped query result objects
+  // before trusting rows/rowCount.
   if (
     result === null
     || typeof result !== 'object'
     || Array.isArray(result)
-    || !Object.hasOwn(result, 'rows')
-    || !Object.hasOwn(result, 'rowCount')
-    || !Array.isArray(result.rows)
-    || !Number.isSafeInteger(result.rowCount)
-    || result.rowCount < 0
-    || result.rowCount !== result.rows.length
   ) {
     throw new Error(errorMessage);
   }
 
-  if (result.rows.length === 0) {
-    return null;
-  }
-
-  if (result.rows.length !== 1) {
+  const rowsDescriptor = getOwnDataPropertyDescriptor(result, 'rows');
+  const rowCountDescriptor = getOwnDataPropertyDescriptor(result, 'rowCount');
+  if (rowsDescriptor === null || rowCountDescriptor === null) {
     throw new Error(errorMessage);
   }
 
-  return result.rows[0];
+  const { value: rows } = rowsDescriptor;
+  const { value: rowCount } = rowCountDescriptor;
+  if (
+    !Array.isArray(rows)
+    || !Number.isSafeInteger(rowCount)
+    || rowCount < 0
+    || rowCount !== rows.length
+  ) {
+    throw new Error(errorMessage);
+  }
+
+  if (rows.length === 0) {
+    return null;
+  }
+
+  if (rows.length !== 1) {
+    throw new Error(errorMessage);
+  }
+
+  return rows[0];
 }
 
 function getSingleRegistrationUserId(result, normalizedEmail) {
@@ -443,16 +475,16 @@ function getSingleRegistrationUserId(result, normalizedEmail) {
     row === null
     || typeof row !== 'object'
     || Array.isArray(row)
-    || !Object.hasOwn(row, 'id')
-    || !Object.hasOwn(row, 'email')
   ) {
     throw new Error(INVALID_REGISTRATION_INSERT_RESULT_ERROR);
   }
 
-  const normalizedUserId = normalizeTokenUserId(row.id);
+  const id = getRequiredAuthRowValue(row, 'id', INVALID_REGISTRATION_INSERT_RESULT_ERROR);
+  const email = getRequiredAuthRowValue(row, 'email', INVALID_REGISTRATION_INSERT_RESULT_ERROR);
+  const normalizedUserId = normalizeTokenUserId(id);
   // Before minting a JWT, require the database to echo the exact normalized email
   // inserted for this registration row.
-  if (normalizedUserId == null || row.email !== normalizedEmail) {
+  if (normalizedUserId == null || email !== normalizedEmail) {
     throw new Error(INVALID_REGISTRATION_INSERT_RESULT_ERROR);
   }
 
