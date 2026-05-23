@@ -430,6 +430,13 @@ function hasOwnDataProperty(object, fieldName) {
   return descriptor !== undefined && Object.hasOwn(descriptor, 'value');
 }
 
+function getOwnDataPropertyValue(object, fieldName) {
+  const descriptor = Object.getOwnPropertyDescriptor(object, fieldName);
+  return descriptor !== undefined && Object.hasOwn(descriptor, 'value')
+    ? descriptor.value
+    : undefined;
+}
+
 function isValidDatabaseTimestamp(value) {
   if (value === null) {
     return true;
@@ -1175,12 +1182,11 @@ function getOwnRequestContainer(req, fieldName) {
     req === null
     || typeof req !== 'object'
     || Array.isArray(req)
-    || !Object.hasOwn(req, fieldName)
   ) {
     return {};
   }
 
-  const value = req[fieldName];
+  const value = getOwnDataPropertyValue(req, fieldName);
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value : {};
 }
 
@@ -1189,7 +1195,7 @@ function getRequestQueryObject(req) {
 }
 
 function getOwnRequestQueryValue(query, fieldName) {
-  return Object.hasOwn(query, fieldName) ? query[fieldName] : undefined;
+  return getOwnDataPropertyValue(query, fieldName);
 }
 
 function getRequestParamsObject(req) {
@@ -1197,7 +1203,7 @@ function getRequestParamsObject(req) {
 }
 
 function getOwnRequestParamValue(params, fieldName) {
-  return Object.hasOwn(params, fieldName) ? params[fieldName] : undefined;
+  return getOwnDataPropertyValue(params, fieldName);
 }
 
 function getRequestBodyObject(req) {
@@ -1205,14 +1211,14 @@ function getRequestBodyObject(req) {
 }
 
 function getOwnRequestBodyValue(body, fieldName) {
-  return Object.hasOwn(body, fieldName) ? body[fieldName] : undefined;
+  return getOwnDataPropertyValue(body, fieldName);
 }
 
 function validateBrowseCardsCursor(query = {}) {
-  const hasBeforeCreatedAtParam = Object.hasOwn(query, 'beforeCreatedAt');
-  const hasBeforeIdParam = Object.hasOwn(query, 'beforeId');
-  const hasCursorCreatedAtParam = Object.hasOwn(query, 'cursorCreatedAt');
-  const hasCursorIdParam = Object.hasOwn(query, 'cursorId');
+  const hasBeforeCreatedAtParam = hasOwnDataProperty(query, 'beforeCreatedAt');
+  const hasBeforeIdParam = hasOwnDataProperty(query, 'beforeId');
+  const hasCursorCreatedAtParam = hasOwnDataProperty(query, 'cursorCreatedAt');
+  const hasCursorIdParam = hasOwnDataProperty(query, 'cursorId');
   const hasBeforeFamily = hasBeforeCreatedAtParam || hasBeforeIdParam;
   const hasCursorFamily = hasCursorCreatedAtParam || hasCursorIdParam;
   const hasCompleteBeforeFamily = hasBeforeCreatedAtParam && hasBeforeIdParam;
@@ -1230,8 +1236,8 @@ function validateBrowseCardsCursor(query = {}) {
       };
     }
 
-    const beforeCreatedAt = query.beforeCreatedAt;
-    const cursorCreatedAt = query.cursorCreatedAt;
+    const beforeCreatedAt = getOwnDataPropertyValue(query, 'beforeCreatedAt');
+    const cursorCreatedAt = getOwnDataPropertyValue(query, 'cursorCreatedAt');
 
     if (!isValidIsoTimestamp(beforeCreatedAt)) {
       return { ok: false, error: 'Invalid beforeCreatedAt: must be a valid date' };
@@ -1241,12 +1247,18 @@ function validateBrowseCardsCursor(query = {}) {
       return { ok: false, error: 'Invalid cursorCreatedAt: must be a valid date' };
     }
 
-    const beforeIdValidation = validatePositiveIntegerIdentifier(query.beforeId, 'beforeId');
+    const beforeIdValidation = validatePositiveIntegerIdentifier(
+      getOwnDataPropertyValue(query, 'beforeId'),
+      'beforeId'
+    );
     if (!beforeIdValidation.ok) {
       return { ok: false, error: beforeIdValidation.error };
     }
 
-    const cursorIdValidation = validatePositiveIntegerIdentifier(query.cursorId, 'cursorId');
+    const cursorIdValidation = validatePositiveIntegerIdentifier(
+      getOwnDataPropertyValue(query, 'cursorId'),
+      'cursorId'
+    );
     if (!cursorIdValidation.ok) {
       return { ok: false, error: cursorIdValidation.error };
     }
@@ -1276,8 +1288,8 @@ function validateBrowseCardsCursor(query = {}) {
     return { ok: false, error: 'Invalid cursor: created-at and id values must be provided together' };
   }
 
-  const createdAt = query[createdAtField];
-  const id = query[idField];
+  const createdAt = getOwnDataPropertyValue(query, createdAtField);
+  const id = getOwnDataPropertyValue(query, idField);
 
   if (!isValidIsoTimestamp(createdAt)) {
     return { ok: false, error: `Invalid ${createdAtField}: must be a valid date` };

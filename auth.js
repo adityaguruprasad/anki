@@ -344,7 +344,8 @@ function getOwnAuthorizationHeader(headers) {
     return undefined;
   }
 
-  return Object.hasOwn(headers, 'authorization') ? headers.authorization : undefined;
+  const descriptor = getOwnDataPropertyDescriptor(headers, 'authorization');
+  return descriptor === null ? undefined : descriptor.value;
 }
 
 function getDefaultPasswordHasher() {
@@ -644,7 +645,8 @@ function getOwnNonArrayObjectValue(value, fieldName) {
     return undefined;
   }
 
-  return Object.hasOwn(value, fieldName) ? value[fieldName] : undefined;
+  const descriptor = getOwnDataPropertyDescriptor(value, fieldName);
+  return descriptor === null ? undefined : descriptor.value;
 }
 
 function getRequestIp(req = {}) {
@@ -700,17 +702,18 @@ function getRequestBodyObject(req) {
     req === null
     || typeof req !== 'object'
     || Array.isArray(req)
-    || !Object.hasOwn(req, 'body')
   ) {
     return {};
   }
 
-  const body = req.body;
+  const bodyDescriptor = getOwnDataPropertyDescriptor(req, 'body');
+  const body = bodyDescriptor === null ? undefined : bodyDescriptor.value;
   return body !== null && typeof body === 'object' && !Array.isArray(body) ? body : {};
 }
 
 function getOwnRequestBodyValue(body, fieldName) {
-  return Object.hasOwn(body, fieldName) ? body[fieldName] : undefined;
+  const descriptor = getOwnDataPropertyDescriptor(body, fieldName);
+  return descriptor === null ? undefined : descriptor.value;
 }
 
 function createAuthHandlers(db, options = {}) {

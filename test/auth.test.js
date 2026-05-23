@@ -141,6 +141,24 @@ function createRequestWithInheritedFields(inheritedFields, ownFields = {}) {
   return Object.assign(Object.create(inheritedFields), ownFields);
 }
 
+function createObjectWithAccessorFields(accessorFields, ownFields = {}) {
+  const object = { ...ownFields };
+  const accessCounts = {};
+
+  for (const [fieldName, value] of Object.entries(accessorFields)) {
+    accessCounts[fieldName] = 0;
+    Object.defineProperty(object, fieldName, {
+      enumerable: true,
+      get() {
+        accessCounts[fieldName] += 1;
+        return value;
+      },
+    });
+  }
+
+  return { object, accessCounts };
+}
+
 function createRegistrationRow(id, email = 'ada@example.com') {
   return { id, email };
 }
@@ -629,6 +647,33 @@ test('register ignores inherited body fields before hashing or querying', async 
   assert.deepEqual(db.calls, []);
 });
 
+test('register ignores accessor body fields before hashing or querying', async () => {
+  const db = createDb([]);
+  const passwordHasher = createPasswordHasher();
+  const { object: body, accessCounts } = createObjectWithAccessorFields({
+    username: 'ada',
+    email: 'ada@example.com',
+    password: 'valid-pass',
+  });
+  const { register } = createAuthHandlers(db, {
+    jwtSecret: 'accessor-register-secret',
+    passwordHasher,
+  });
+  const res = createRes();
+
+  await register({ body }, res);
+
+  assert.equal(res.statusCode, 400);
+  assert.deepEqual(res.body, { error: 'Username is required' });
+  assert.deepEqual(accessCounts, {
+    username: 0,
+    email: 0,
+    password: 0,
+  });
+  assert.deepEqual(passwordHasher.hashCalls, []);
+  assert.deepEqual(db.calls, []);
+});
+
 test('register ignores inherited request body container before hashing, querying, or rate tracking', async () => {
   const db = createDb([{ rowCount: 1, rows: [createRegistrationRow(45)] }]);
   const passwordHasher = createPasswordHasher();
@@ -650,6 +695,55 @@ test('register ignores inherited request body container before hashing, querying
 
   assert.equal(inheritedRes.statusCode, 400);
   assert.deepEqual(inheritedRes.body, { error: 'Username is required' });
+  assert.deepEqual(passwordHasher.hashCalls, []);
+  assert.deepEqual(db.calls, []);
+
+  const validRes = createRes();
+  await register({
+    body: {
+      username: 'ada',
+      email: 'ada@example.com',
+      password: 'valid-pass',
+    },
+  }, validRes);
+
+  assert.equal(validRes.statusCode, 201);
+  assert.equal(typeof validRes.body.token, 'string');
+  assert.deepEqual(passwordHasher.hashCalls, [
+    { password: 'valid-pass', rounds: PASSWORD_HASH_COST },
+  ]);
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, ['ada', 'ada@example.com', 'hashed:valid-pass']);
+});
+
+test('register ignores accessor request body container before hashing, querying, or rate tracking', async () => {
+  const db = createDb([{ rowCount: 1, rows: [createRegistrationRow(45)] }]);
+  const passwordHasher = createPasswordHasher();
+  const { register } = createAuthHandlers(db, {
+    jwtSecret: 'accessor-register-container-secret',
+    passwordHasher,
+    registrationRateLimit: { maxAttempts: 1, windowMs: 60000 },
+  });
+  const accessorReq = {};
+  let bodyAccessCount = 0;
+  Object.defineProperty(accessorReq, 'body', {
+    enumerable: true,
+    get() {
+      bodyAccessCount += 1;
+      return {
+        username: 'polluted',
+        email: 'polluted@example.com',
+        password: 'valid-pass',
+      };
+    },
+  });
+  const accessorRes = createRes();
+
+  await register(accessorReq, accessorRes);
+
+  assert.equal(accessorRes.statusCode, 400);
+  assert.deepEqual(accessorRes.body, { error: 'Username is required' });
+  assert.equal(bodyAccessCount, 0);
   assert.deepEqual(passwordHasher.hashCalls, []);
   assert.deepEqual(db.calls, []);
 
@@ -2176,6 +2270,31 @@ test('login ignores inherited body fields before querying or comparing', async (
   assert.deepEqual(passwordHasher.compareCalls, []);
 });
 
+test('login ignores accessor body fields before querying or comparing', async () => {
+  const db = createDb([]);
+  const passwordHasher = createPasswordHasher();
+  const { object: body, accessCounts } = createObjectWithAccessorFields({
+    email: 'grace@example.com',
+    password: 'candidate-password',
+  });
+  const { login } = createAuthHandlers(db, {
+    jwtSecret: 'accessor-login-secret',
+    passwordHasher,
+  });
+  const res = createRes();
+
+  await login({ body }, res);
+
+  assert.equal(res.statusCode, 400);
+  assert.deepEqual(res.body, { error: 'Valid email is required' });
+  assert.deepEqual(accessCounts, {
+    email: 0,
+    password: 0,
+  });
+  assert.deepEqual(db.calls, []);
+  assert.deepEqual(passwordHasher.compareCalls, []);
+});
+
 test('login ignores inherited request body container before querying, comparing, or rate tracking', async () => {
   const db = createDb([{ rowCount: 0, rows: [] }]);
   const passwordHasher = createPasswordHasher();
@@ -2196,6 +2315,51 @@ test('login ignores inherited request body container before querying, comparing,
 
   assert.equal(inheritedRes.statusCode, 400);
   assert.deepEqual(inheritedRes.body, { error: 'Valid email is required' });
+  assert.deepEqual(db.calls, []);
+  assert.deepEqual(passwordHasher.compareCalls, []);
+
+  const validRes = createRes();
+  await login({
+    body: {
+      email: 'grace@example.com',
+      password: 'candidate-password',
+    },
+  }, validRes);
+
+  assert.equal(validRes.statusCode, 401);
+  assert.deepEqual(validRes.body, { error: 'Invalid credentials' });
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, ['grace@example.com']);
+  assert.equal(passwordHasher.compareCalls.length, 1);
+});
+
+test('login ignores accessor request body container before querying, comparing, or rate tracking', async () => {
+  const db = createDb([{ rowCount: 0, rows: [] }]);
+  const passwordHasher = createPasswordHasher();
+  const { login } = createAuthHandlers(db, {
+    jwtSecret: 'accessor-login-container-secret',
+    passwordHasher,
+    loginRateLimit: { maxFailures: 1, windowMs: 60000 },
+  });
+  const accessorReq = {};
+  let bodyAccessCount = 0;
+  Object.defineProperty(accessorReq, 'body', {
+    enumerable: true,
+    get() {
+      bodyAccessCount += 1;
+      return {
+        email: 'grace@example.com',
+        password: 'candidate-password',
+      };
+    },
+  });
+  const accessorRes = createRes();
+
+  await login(accessorReq, accessorRes);
+
+  assert.equal(accessorRes.statusCode, 400);
+  assert.deepEqual(accessorRes.body, { error: 'Valid email is required' });
+  assert.equal(bodyAccessCount, 0);
   assert.deepEqual(db.calls, []);
   assert.deepEqual(passwordHasher.compareCalls, []);
 
@@ -3225,6 +3389,29 @@ test('authenticateToken ignores inherited-only authorization headers', () => {
   });
 
   assert.equal(res.statusCode, 401);
+  assert.equal(nextCalled, false);
+  assert.equal(req.user, undefined);
+});
+
+test('authenticateToken ignores accessor authorization headers', () => {
+  const signedToken = signToken({ userId: 305 }, 'accessor-header-secret');
+  const { authenticateToken } = createAuthHandlers(createDb([]), {
+    jwtSecret: 'accessor-header-secret',
+    passwordHasher: createPasswordHasher(),
+  });
+  const { object: headers, accessCounts } = createObjectWithAccessorFields({
+    authorization: `Bearer ${signedToken}`,
+  });
+  const req = { headers };
+  const res = createRes();
+  let nextCalled = false;
+
+  authenticateToken(req, res, () => {
+    nextCalled = true;
+  });
+
+  assert.equal(res.statusCode, 401);
+  assert.equal(accessCounts.authorization, 0);
   assert.equal(nextCalled, false);
   assert.equal(req.user, undefined);
 });
