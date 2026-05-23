@@ -60,6 +60,67 @@ test('parseDeckManagementDeckListPayload accepts and preserves an empty deck lis
   assert.equal(hasDeckManagementDeckListPayload(decks), true);
 });
 
+test('parseDeckManagementDeckListPayload preserves null-prototype rows with own data fields', () => {
+  const deck = Object.create(null);
+  Object.defineProperties(deck, {
+    id: { value: '42', enumerable: true },
+    name: { value: 'Science', enumerable: true },
+    totalCards: { value: 3, enumerable: true },
+    dueCards: { value: 1, enumerable: true },
+  });
+  const decks = [deck];
+
+  assert.equal(parseDeckManagementDeckListPayload(decks), decks);
+  assert.equal(hasDeckManagementDeckListPayload(decks), true);
+});
+
+test('parseDeckManagementDeckListPayload rejects accessor-backed row fields without invoking getters', () => {
+  let getterCalls = 0;
+  const deck = {
+    id: 1,
+    name: 'Math',
+    dueCards: 0,
+  };
+  Object.defineProperty(deck, 'totalCards', {
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      throw new Error('totalCards getter should not run');
+    },
+  });
+
+  assert.equal(hasDeckManagementDeckListPayload([deck]), false);
+  assert.throws(
+    () => parseDeckManagementDeckListPayload([deck]),
+    { message: MALFORMED_DECK_MANAGEMENT_DECK_LIST_PAYLOAD_ERROR },
+  );
+  assert.equal(getterCalls, 0);
+});
+
+test('parseDeckManagementDeckListPayload rejects prototype-backed row fields without invoking getters', () => {
+  let getterCalls = 0;
+  const prototype = {};
+  Object.defineProperty(prototype, 'id', {
+    get() {
+      getterCalls += 1;
+      throw new Error('prototype id getter should not run');
+    },
+  });
+  const deck = Object.create(prototype);
+  Object.defineProperties(deck, {
+    name: { value: 'Math', enumerable: true },
+    totalCards: { value: 2, enumerable: true },
+    dueCards: { value: 1, enumerable: true },
+  });
+
+  assert.equal(hasDeckManagementDeckListPayload([deck]), false);
+  assert.throws(
+    () => parseDeckManagementDeckListPayload([deck]),
+    { message: MALFORMED_DECK_MANAGEMENT_DECK_LIST_PAYLOAD_ERROR },
+  );
+  assert.equal(getterCalls, 0);
+});
+
 test('parseDeckManagementDeckListPayload rejects invalid top-level payloads', () => {
   [
     null,

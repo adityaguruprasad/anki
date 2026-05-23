@@ -2,18 +2,46 @@ const { MAX_POSTGRES_SERIAL_ID } = require('./cardIdentifier');
 
 const MAX_POSTGRES_SERIAL_ID_STRING = String(MAX_POSTGRES_SERIAL_ID);
 
+function isObjectRecord(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function descriptorHasValue(descriptor) {
+  return (
+    descriptor !== undefined
+    && Object.prototype.hasOwnProperty.call(descriptor, 'value')
+  );
+}
+
+function getOwnDataPropertyValue(value, key) {
+  const descriptor = isObjectRecord(value)
+    ? Object.getOwnPropertyDescriptor(value, key)
+    : undefined;
+
+  return descriptorHasValue(descriptor) ? descriptor.value : undefined;
+}
+
 function hasNonNegativeSafeIntegerCount(deck, key) {
-  return Boolean(deck) && Number.isSafeInteger(deck[key]) && deck[key] >= 0;
+  const count = getOwnDataPropertyValue(deck, key);
+
+  return Number.isSafeInteger(count) && count >= 0;
 }
 
 function hasPositiveSafeIntegerCount(deck, key) {
-  return hasNonNegativeSafeIntegerCount(deck, key) && deck[key] > 0;
+  const count = getOwnDataPropertyValue(deck, key);
+
+  return Number.isSafeInteger(count) && count > 0;
 }
 
 function hasConsistentDeckCounts(deck) {
-  return hasNonNegativeSafeIntegerCount(deck, 'totalCards')
-    && hasNonNegativeSafeIntegerCount(deck, 'dueCards')
-    && deck.dueCards <= deck.totalCards;
+  const totalCards = getOwnDataPropertyValue(deck, 'totalCards');
+  const dueCards = getOwnDataPropertyValue(deck, 'dueCards');
+
+  return Number.isSafeInteger(totalCards)
+    && totalCards >= 0
+    && Number.isSafeInteger(dueCards)
+    && dueCards >= 0
+    && dueCards <= totalCards;
 }
 
 // Returns the canonical positive PostgreSQL SERIAL deck id string used in study routes.
@@ -48,15 +76,13 @@ function normalizeStudyDeckId(value) {
 }
 
 function hasUsableDeckId(deck) {
-  return Boolean(deck) && normalizeStudyDeckId(deck.id) !== null;
+  return normalizeStudyDeckId(getOwnDataPropertyValue(deck, 'id')) !== null;
 }
 
 function hasDashboardDeckListPayload(decks) {
   return Array.isArray(decks)
     && decks.every((deck) => (
-      deck
-      && typeof deck === 'object'
-      && !Array.isArray(deck)
+      isObjectRecord(deck)
       && hasUsableDeckId(deck)
       && hasConsistentDeckCounts(deck)
     ));
@@ -74,7 +100,12 @@ function selectDeckWithMostDueCards(decks) {
       continue;
     }
 
-    if (!selectedDeck || deck.dueCards > selectedDeck.dueCards) {
+    const dueCards = getOwnDataPropertyValue(deck, 'dueCards');
+    const selectedDueCards = selectedDeck
+      ? getOwnDataPropertyValue(selectedDeck, 'dueCards')
+      : null;
+
+    if (!selectedDeck || dueCards > selectedDueCards) {
       selectedDeck = deck;
     }
   }
@@ -99,7 +130,7 @@ function selectStudyDeckTarget(decks) {
 }
 
 function getStudyDeckTargetPath(deck) {
-  const deckId = deck ? normalizeStudyDeckId(deck.id) : null;
+  const deckId = normalizeStudyDeckId(getOwnDataPropertyValue(deck, 'id'));
 
   if (deckId && hasDueCards(deck)) {
     return `/study?deckId=${encodeURIComponent(deckId)}`;

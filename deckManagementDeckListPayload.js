@@ -5,6 +5,21 @@ function isObjectRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+function descriptorHasValue(descriptor) {
+  return (
+    descriptor !== undefined
+    && Object.prototype.hasOwnProperty.call(descriptor, 'value')
+  );
+}
+
+function getOwnDataPropertyValue(value, key) {
+  const descriptor = isObjectRecord(value)
+    ? Object.getOwnPropertyDescriptor(value, key)
+    : undefined;
+
+  return descriptorHasValue(descriptor) ? descriptor.value : undefined;
+}
+
 function isNonBlankString(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
@@ -33,17 +48,22 @@ function hasRouteSafeDeckManagementDeckId(value) {
 }
 
 function hasNonNegativeSafeIntegerCount(deck, key) {
-  return Number.isSafeInteger(deck[key]) && deck[key] >= 0;
+  const count = getOwnDataPropertyValue(deck, key);
+
+  return Number.isSafeInteger(count) && count >= 0;
 }
 
 function hasDeckManagementDeckRowPayload(deck) {
+  const totalCards = getOwnDataPropertyValue(deck, 'totalCards');
+  const dueCards = getOwnDataPropertyValue(deck, 'dueCards');
+
   return (
     isObjectRecord(deck)
-    && hasRouteSafeDeckManagementDeckId(deck.id)
-    && isNonBlankString(deck.name)
+    && hasRouteSafeDeckManagementDeckId(getOwnDataPropertyValue(deck, 'id'))
+    && isNonBlankString(getOwnDataPropertyValue(deck, 'name'))
     && hasNonNegativeSafeIntegerCount(deck, 'totalCards')
     && hasNonNegativeSafeIntegerCount(deck, 'dueCards')
-    && deck.dueCards <= deck.totalCards
+    && dueCards <= totalCards
   );
 }
 
