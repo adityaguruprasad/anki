@@ -43,8 +43,15 @@ function finishDeckListSilentFailure(currentState = {}) {
 }
 
 function getDeckListLoadFailureMessage(payload) {
-  if (payload && typeof payload.error === 'string' && payload.error.trim()) {
-    return payload.error;
+  if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+    const descriptor = Object.getOwnPropertyDescriptor(payload, 'error');
+    const hasErrorValue = descriptor
+      && Object.prototype.hasOwnProperty.call(descriptor, 'value');
+    const error = hasErrorValue ? descriptor.value : undefined;
+
+    if (typeof error === 'string' && error.trim()) {
+      return error;
+    }
   }
 
   return DECK_LIST_LOAD_MESSAGES.loadFailed;
