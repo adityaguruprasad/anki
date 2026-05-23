@@ -52,6 +52,18 @@ test('createInitialAuthSession reads and trims a usable stored token', () => {
   assert.deepEqual(requestedKeys, [AUTH_TOKEN_STORAGE_KEY]);
 });
 
+test('createInitialAuthSession accepts direct function and raw token sources', () => {
+  const token = createCompactJwt();
+  const expectedSession = {
+    isLoggedIn: true,
+    token,
+    cleanupNeeded: false,
+  };
+
+  assert.deepEqual(createInitialAuthSession(() => `  ${token}  `), expectedSession);
+  assert.deepEqual(createInitialAuthSession(`  ${token}  `), expectedSession);
+});
+
 test('createInitialAuthSession accepts a max-length compact JWT token', () => {
   const token = createMaxLengthCompactJwt();
 
@@ -60,6 +72,109 @@ test('createInitialAuthSession accepts a max-length compact JWT token', () => {
     token,
     cleanupNeeded: false,
   });
+});
+
+test('createInitialAuthSession ignores inherited storage getItem methods', () => {
+  const token = createCompactJwt();
+  let calls = 0;
+  const storage = Object.create({
+    getItem() {
+      calls += 1;
+      return token;
+    },
+  });
+
+  assert.deepEqual(createInitialAuthSession(storage), {
+    isLoggedIn: false,
+    token: '',
+    cleanupNeeded: false,
+  });
+  assert.equal(calls, 0);
+});
+
+test('createInitialAuthSession ignores accessor-backed getItem without invoking it', () => {
+  const token = createCompactJwt();
+  let getterCalls = 0;
+  const storage = {};
+  Object.defineProperty(storage, 'getItem', {
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      return () => token;
+    },
+  });
+
+  assert.deepEqual(createInitialAuthSession(storage), {
+    isLoggedIn: false,
+    token: '',
+    cleanupNeeded: false,
+  });
+  assert.equal(getterCalls, 0);
+});
+
+test('createInitialAuthSession preserves own data-property getItem methods', () => {
+  const token = createCompactJwt();
+  const requestedKeys = [];
+  const storage = {};
+  Object.defineProperty(storage, 'getItem', {
+    enumerable: true,
+    value(key) {
+      requestedKeys.push(key);
+      return `  ${token}  `;
+    },
+  });
+
+  assert.deepEqual(createInitialAuthSession(storage), {
+    isLoggedIn: true,
+    token,
+    cleanupNeeded: false,
+  });
+  assert.deepEqual(requestedKeys, [AUTH_TOKEN_STORAGE_KEY]);
+});
+
+test('createInitialAuthSession accepts getItem from Storage.prototype', (t) => {
+  const originalStorageDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'Storage');
+  if (originalStorageDescriptor && !originalStorageDescriptor.configurable) {
+    t.skip('global Storage cannot be replaced safely in this environment');
+    return;
+  }
+
+  const token = createCompactJwt();
+  const requestedKeys = [];
+  class SimulatedStorage {
+    constructor() {
+      this.values = new Map([[AUTH_TOKEN_STORAGE_KEY, `  ${token}  `]]);
+    }
+
+    getItem(key) {
+      requestedKeys.push(key);
+      return this.values.get(key) ?? null;
+    }
+  }
+
+  try {
+    Object.defineProperty(globalThis, 'Storage', {
+      configurable: true,
+      writable: true,
+      value: SimulatedStorage,
+    });
+
+    const storage = new SimulatedStorage();
+
+    assert.equal(Object.hasOwn(storage, 'getItem'), false);
+    assert.deepEqual(createInitialAuthSession(storage), {
+      isLoggedIn: true,
+      token,
+      cleanupNeeded: false,
+    });
+    assert.deepEqual(requestedKeys, [AUTH_TOKEN_STORAGE_KEY]);
+  } finally {
+    if (originalStorageDescriptor) {
+      Object.defineProperty(globalThis, 'Storage', originalStorageDescriptor);
+    } else {
+      delete globalThis.Storage;
+    }
+  }
 });
 
 test('createInitialAuthSession treats missing tokens as logged out without cleanup', () => {
