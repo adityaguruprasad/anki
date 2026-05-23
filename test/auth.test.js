@@ -1104,6 +1104,56 @@ test('login compares an existing user password only against the stored hash', as
   assert.equal(verifyToken(res.body.token, 'existing-login-secret').userId, 79);
 });
 
+test('login requires an exact boolean true password comparison before issuing a token', async (t) => {
+  const truthyNonBooleanResults = [
+    { name: 'string true', compareResult: 'true' },
+    { name: 'numeric one', compareResult: 1 },
+    { name: 'object result', compareResult: { match: true } },
+  ];
+
+  for (const { name, compareResult } of truthyNonBooleanResults) {
+    await t.test(name, async () => {
+      const db = createDb([
+        {
+          rowCount: 1,
+          rows: [{ id: 79, email: 'ada@example.com', password_hash: 'stored-user-hash' }],
+        },
+      ]);
+      const passwordHasher = createPasswordHasher({ compareResult });
+      const { login } = createAuthHandlers(db, {
+        jwtSecret: 'strict-compare-login-secret',
+        passwordHasher,
+        loginRateLimit: {
+          maxFailures: 1,
+          windowMs: 60000,
+          now: () => 1300,
+        },
+      });
+      const req = {
+        ip: '203.0.113.43',
+        body: { email: 'ada@example.com', password: 'stored-password' },
+      };
+      const res = createRes();
+
+      await login(req, res);
+
+      assert.equal(res.statusCode, 401);
+      assert.deepEqual(res.body, { error: 'Invalid credentials' });
+      assert.equal(res.body.token, undefined);
+      assert.deepEqual(passwordHasher.compareCalls, [
+        { password: 'stored-password', passwordHash: 'stored-user-hash' },
+      ]);
+
+      const blockedRes = createRes();
+      await login(req, blockedRes);
+
+      assert.equal(blockedRes.statusCode, 429);
+      assert.deepEqual(blockedRes.body, { error: LOGIN_RATE_LIMIT_ERROR });
+      assert.equal(db.calls.length, 1);
+    });
+  }
+});
+
 test('login fails closed when the normalized email lookup returns multiple rows', async () => {
   const db = createDb([
     {

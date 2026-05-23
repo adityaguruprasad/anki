@@ -386,6 +386,10 @@ function validatePasswordHash(passwordHash) {
   );
 }
 
+function isPasswordCompareMatch(result) {
+  return result === true;
+}
+
 function getOwnDataPropertyDescriptor(object, fieldName) {
   const descriptor = Object.getOwnPropertyDescriptor(object, fieldName);
   return descriptor !== undefined && Object.hasOwn(descriptor, 'value')
@@ -854,7 +858,7 @@ function createAuthHandlers(db, options = {}) {
         return res.status(401).json({ error: 'Invalid credentials' });
       }
       const isValidPassword = await passwordHasher.compare(password, user.password_hash);
-      if (!isValidPassword) {
+      if (!isPasswordCompareMatch(isValidPassword)) {
         recordLoginFailure();
         return res.status(401).json({ error: 'Invalid credentials' });
       }
