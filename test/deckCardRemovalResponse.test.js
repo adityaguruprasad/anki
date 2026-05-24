@@ -32,6 +32,20 @@ function assertMalformed(payload, options) {
   assert.equal(hasDeckCardRemovalSuccessPayload(payload, options), false);
 }
 
+function defineThrowingGetter(record, fieldName) {
+  let getterCalls = 0;
+
+  Object.defineProperty(record, fieldName, {
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      throw new Error(`${fieldName} getter should not run`);
+    },
+  });
+
+  return () => getterCalls;
+}
+
 test('parseDeckCardRemovalSuccessPayload preserves valid success payloads and extra fields', () => {
   const payload = {
     ...createValidRemovalPayload(),
@@ -106,6 +120,37 @@ test('parseDeckCardRemovalSuccessPayload rejects malformed top-level payloads', 
     1,
     true,
   ].forEach(assertMalformed);
+});
+
+test('parseDeckCardRemovalSuccessPayload rejects inherited and accessor-backed top-level fields without invoking getters', () => {
+  const { card } = createValidRemovalPayload();
+
+  [
+    Object.assign(Object.create({ success: true }), { card }),
+    Object.assign(Object.create({ card }), { success: true }),
+  ].forEach(assertMalformed);
+
+  const accessorSuccessPayload = { card };
+  const ownSuccessGetterCalls = defineThrowingGetter(accessorSuccessPayload, 'success');
+  assertMalformed(accessorSuccessPayload);
+  assert.equal(ownSuccessGetterCalls(), 0);
+
+  const accessorCardPayload = { success: true };
+  const ownCardGetterCalls = defineThrowingGetter(accessorCardPayload, 'card');
+  assertMalformed(accessorCardPayload);
+  assert.equal(ownCardGetterCalls(), 0);
+
+  const successPrototype = {};
+  const inheritedSuccessGetterCalls = defineThrowingGetter(successPrototype, 'success');
+  const inheritedSuccessPayload = Object.assign(Object.create(successPrototype), { card });
+  assertMalformed(inheritedSuccessPayload);
+  assert.equal(inheritedSuccessGetterCalls(), 0);
+
+  const cardPrototype = {};
+  const inheritedCardGetterCalls = defineThrowingGetter(cardPrototype, 'card');
+  const inheritedCardPayload = Object.assign(Object.create(cardPrototype), { success: true });
+  assertMalformed(inheritedCardPayload);
+  assert.equal(inheritedCardGetterCalls(), 0);
 });
 
 test('parseDeckCardRemovalSuccessPayload rejects missing or non-true success values', () => {

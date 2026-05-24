@@ -1,18 +1,24 @@
 const { hasDeckCardMutationPayload } = require('./deckCardMutationResponse');
+const {
+  getOwnDataPropertyValue,
+  isObjectRecord,
+} = require('./recordDataProperty');
 
 const MALFORMED_DECK_CARD_REMOVAL_PAYLOAD_ERROR = 'Malformed deck-card removal payload';
 
-function isObjectRecord(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
 function hasDeckCardRemovalSuccessPayload(payload, options = {}) {
+  if (!isObjectRecord(payload)) {
+    return false;
+  }
+
+  const success = getOwnDataPropertyValue(payload, 'success');
+  const card = getOwnDataPropertyValue(payload, 'card');
+
   return (
-    isObjectRecord(payload)
-    && payload.success === true
+    success === true
     // Delete echoes intentionally use a smaller card contract than create/update
     // responses because scheduling metadata is irrelevant after removal.
-    && hasDeckCardMutationPayload(payload.card, {
+    && hasDeckCardMutationPayload(card, {
       ...options,
       requireSchedulingMetadata: false,
     })
