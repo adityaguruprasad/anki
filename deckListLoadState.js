@@ -1,3 +1,5 @@
+const { getOwnDataPropertyValue } = require('./recordDataProperty');
+
 const DECK_LIST_LOAD_MESSAGES = Object.freeze({
   loading: 'Loading decks...',
   loadFailed: 'Unable to load decks. Please try again.',
@@ -43,15 +45,10 @@ function finishDeckListSilentFailure(currentState = {}) {
 }
 
 function getDeckListLoadFailureMessage(payload) {
-  if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
-    const descriptor = Object.getOwnPropertyDescriptor(payload, 'error');
-    const hasErrorValue = descriptor
-      && Object.prototype.hasOwnProperty.call(descriptor, 'value');
-    const error = hasErrorValue ? descriptor.value : undefined;
+  const error = getOwnDataPropertyValue(payload, 'error');
 
-    if (typeof error === 'string' && error.trim()) {
-      return error;
-    }
+  if (typeof error === 'string' && error.trim()) {
+    return error;
   }
 
   return DECK_LIST_LOAD_MESSAGES.loadFailed;

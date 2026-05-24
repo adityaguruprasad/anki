@@ -6,32 +6,15 @@ const {
   normalizeRouteSafeCardId,
   normalizeRouteSafeId,
 } = require('./cardIdentifier');
+const {
+  getOwnDataPropertyValue,
+  getOwnRecordPropertyDescriptor,
+  hasOwnDataProperty,
+  isDataPropertyDescriptor,
+  isObjectRecord,
+} = require('./recordDataProperty');
 
 const MALFORMED_DECK_CARD_BROWSE_PAYLOAD_ERROR = 'Malformed deck-card browse payload';
-
-function isObjectRecord(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function descriptorHasValue(descriptor) {
-  return (
-    descriptor !== undefined
-    && Object.prototype.hasOwnProperty.call(descriptor, 'value')
-  );
-}
-
-function getOwnFieldDescriptor(value, key) {
-  return isObjectRecord(value) ? Object.getOwnPropertyDescriptor(value, key) : undefined;
-}
-
-function hasOwnDataProperty(value, key) {
-  return descriptorHasValue(getOwnFieldDescriptor(value, key));
-}
-
-function getOwnDataPropertyValue(value, key) {
-  const descriptor = getOwnFieldDescriptor(value, key);
-  return descriptorHasValue(descriptor) ? descriptor.value : undefined;
-}
 
 function hasUsableId(value) {
   return hasRouteSafeCardId(value);
@@ -83,8 +66,8 @@ function hasValidCursorFamily(cursor, createdAtKey, idKey) {
 }
 
 function hasInvalidCursorFamily(cursor, createdAtKey, idKey) {
-  const createdAtDescriptor = getOwnFieldDescriptor(cursor, createdAtKey);
-  const idDescriptor = getOwnFieldDescriptor(cursor, idKey);
+  const createdAtDescriptor = getOwnRecordPropertyDescriptor(cursor, createdAtKey);
+  const idDescriptor = getOwnRecordPropertyDescriptor(cursor, idKey);
   const hasCreatedAt = createdAtDescriptor !== undefined;
   const hasId = idDescriptor !== undefined;
 
@@ -93,8 +76,8 @@ function hasInvalidCursorFamily(cursor, createdAtKey, idKey) {
   }
 
   return (
-    !descriptorHasValue(createdAtDescriptor)
-    || !descriptorHasValue(idDescriptor)
+    !isDataPropertyDescriptor(createdAtDescriptor)
+    || !isDataPropertyDescriptor(idDescriptor)
     || !isValidIsoTimestamp(createdAtDescriptor.value)
     || !hasRouteSafeCardId(idDescriptor.value)
   );
@@ -135,12 +118,12 @@ function hasMatchingCursorFamilies(cursor) {
 }
 
 function parseDeckCardBrowseNextCursor(payload) {
-  const nextCursorDescriptor = getOwnFieldDescriptor(payload, 'nextCursor');
+  const nextCursorDescriptor = getOwnRecordPropertyDescriptor(payload, 'nextCursor');
   if (nextCursorDescriptor === undefined) {
     return null;
   }
 
-  if (!descriptorHasValue(nextCursorDescriptor)) {
+  if (!isDataPropertyDescriptor(nextCursorDescriptor)) {
     throw new Error(MALFORMED_DECK_CARD_BROWSE_PAYLOAD_ERROR);
   }
 
@@ -172,8 +155,8 @@ function parseDeckCardBrowseNextCursor(payload) {
 }
 
 function parseDeckCardBrowseResponsePayload(payload, options = {}) {
-  const cardsDescriptor = getOwnFieldDescriptor(payload, 'cards');
-  if (!descriptorHasValue(cardsDescriptor) || !Array.isArray(cardsDescriptor.value)) {
+  const cardsDescriptor = getOwnRecordPropertyDescriptor(payload, 'cards');
+  if (!isDataPropertyDescriptor(cardsDescriptor) || !Array.isArray(cardsDescriptor.value)) {
     throw new Error(MALFORMED_DECK_CARD_BROWSE_PAYLOAD_ERROR);
   }
 

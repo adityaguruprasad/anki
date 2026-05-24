@@ -1,3 +1,8 @@
+const {
+  getOwnDataPropertyValue,
+  isObjectRecord,
+} = require('./recordDataProperty');
+
 const MALFORMED_SCHEDULING_INSIGHTS_PAYLOAD = 'Malformed scheduling insights payload';
 
 const SCHEDULING_INSIGHTS_SUMMARY_COUNT_KEYS = Object.freeze([
@@ -7,25 +12,6 @@ const SCHEDULING_INSIGHTS_SUMMARY_COUNT_KEYS = Object.freeze([
   'dueNext7Days',
   'recommendedDailyReviewTarget',
 ]);
-
-function isObjectRecord(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function descriptorHasValue(descriptor) {
-  return (
-    descriptor !== undefined
-    && Object.prototype.hasOwnProperty.call(descriptor, 'value')
-  );
-}
-
-function getOwnDataPropertyValue(value, key) {
-  const descriptor = isObjectRecord(value)
-    ? Object.getOwnPropertyDescriptor(value, key)
-    : undefined;
-
-  return descriptorHasValue(descriptor) ? descriptor.value : undefined;
-}
 
 function isNonNegativeSafeInteger(value) {
   return Number.isSafeInteger(value) && value >= 0;
