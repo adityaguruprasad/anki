@@ -186,13 +186,15 @@ function validateJwtPayloadUserId(payload) {
   if (
     payload === null ||
     typeof payload !== 'object' ||
-    Array.isArray(payload) ||
-    !Object.hasOwn(payload, 'userId')
+    Array.isArray(payload)
   ) {
     throw new Error('Token userId is required');
   }
 
-  const normalizedUserId = normalizeTokenUserId(payload.userId);
+  const userIdDescriptor = getOwnDataPropertyDescriptor(payload, 'userId');
+  const normalizedUserId = userIdDescriptor === null
+    ? null
+    : normalizeTokenUserId(userIdDescriptor.value);
   if (normalizedUserId == null) {
     throw new Error('Token userId is required');
   }

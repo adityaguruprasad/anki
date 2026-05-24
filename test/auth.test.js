@@ -2557,6 +2557,18 @@ test('signToken requires a usable userId claim before issuing a token', () => {
   }
 });
 
+test('signToken rejects accessor-backed userId claims without invoking getters', () => {
+  const { object: payload, accessCounts } = createObjectWithAccessorFields({
+    userId: 42,
+  });
+
+  assert.throws(
+    () => signToken(payload, 'accessor-sign-user-secret', { now: 1000, expiresInSeconds: 60 }),
+    /Token userId is required/
+  );
+  assert.equal(accessCounts.userId, 0);
+});
+
 test('signToken canonicalizes signed userId claims to positive integers', () => {
   const token = signToken({ userId: ' 00042 ' }, 'canonical-user-secret', {
     now: 1000,
