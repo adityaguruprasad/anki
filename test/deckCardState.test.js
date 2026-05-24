@@ -11,11 +11,50 @@ const {
 
 test('isCardCurrentlyDue treats unscheduled or past next_review values as due', () => {
   const now = new Date('2026-05-09T12:00:00.000Z');
+  const nullPrototypeUnscheduledCard = Object.assign(Object.create(null), {
+    next_review: null,
+  });
+  const nullPrototypePastCard = Object.assign(Object.create(null), {
+    next_review: '2026-05-09T11:59:59.999Z',
+  });
 
   assert.equal(isCardCurrentlyDue({ next_review: null }, now), true);
+  assert.equal(isCardCurrentlyDue(nullPrototypeUnscheduledCard, now), true);
   assert.equal(isCardCurrentlyDue({ next_review: '2026-05-09T12:00:00.000Z' }, now), true);
   assert.equal(isCardCurrentlyDue({ next_review: '2026-05-09T11:59:59.999Z' }, now), true);
+  assert.equal(isCardCurrentlyDue(nullPrototypePastCard, now), true);
   assert.equal(isCardCurrentlyDue({ next_review: '2026-05-09T12:00:00.001Z' }, now), false);
+});
+
+test('isCardCurrentlyDue ignores inherited or accessor-backed next_review metadata', () => {
+  const now = new Date('2026-05-09T12:00:00.000Z');
+  const inheritedDataCard = Object.create({ next_review: null });
+  let ownGetterCalls = 0;
+  const ownAccessorCard = {};
+  Object.defineProperty(ownAccessorCard, 'next_review', {
+    enumerable: true,
+    get() {
+      ownGetterCalls += 1;
+      throw new Error('next_review getter should not be called');
+    },
+  });
+
+  let inheritedGetterCalls = 0;
+  const inheritedAccessorPrototype = {};
+  Object.defineProperty(inheritedAccessorPrototype, 'next_review', {
+    enumerable: true,
+    get() {
+      inheritedGetterCalls += 1;
+      throw new Error('inherited next_review getter should not be called');
+    },
+  });
+  const inheritedAccessorCard = Object.create(inheritedAccessorPrototype);
+
+  assert.equal(isCardCurrentlyDue(inheritedDataCard, now), false);
+  assert.equal(isCardCurrentlyDue(ownAccessorCard, now), false);
+  assert.equal(isCardCurrentlyDue(inheritedAccessorCard, now), false);
+  assert.equal(ownGetterCalls, 0);
+  assert.equal(inheritedGetterCalls, 0);
 });
 
 test('isCardCurrentlyDue treats missing or invalid next_review metadata as unknown', () => {
@@ -111,6 +150,26 @@ test('optimistic card count updates leave due counts unchanged without trustwort
   const decks = [
     { id: 2, name: 'Biology', totalCards: 4, dueCards: 3 },
   ];
+  const inheritedDueCard = Object.assign(Object.create({ next_review: null }), { id: 11 });
+  let getterCalls = 0;
+  const accessorDueCard = { id: 12 };
+  Object.defineProperty(accessorDueCard, 'next_review', {
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      throw new Error('next_review getter should not be called');
+    },
+  });
+  let inheritedGetterCalls = 0;
+  const inheritedAccessorPrototype = {};
+  Object.defineProperty(inheritedAccessorPrototype, 'next_review', {
+    enumerable: true,
+    get() {
+      inheritedGetterCalls += 1;
+      throw new Error('inherited next_review getter should not be called');
+    },
+  });
+  const inheritedAccessorDueCard = Object.assign(Object.create(inheritedAccessorPrototype), { id: 13 });
 
   assert.deepEqual(
     incrementDeckCardCounts(decks, 2, { id: 10 }, new Date('2026-05-09T12:00:00.000Z')),
@@ -129,6 +188,41 @@ test('optimistic card count updates leave due counts unchanged without trustwort
       { id: 2, name: 'Biology', totalCards: 3, dueCards: 3 },
     ],
   );
+  assert.deepEqual(
+    incrementDeckCardCounts(
+      decks,
+      2,
+      inheritedDueCard,
+      new Date('2026-05-09T12:00:00.000Z'),
+    ),
+    [
+      { id: 2, name: 'Biology', totalCards: 5, dueCards: 3 },
+    ],
+  );
+  assert.deepEqual(
+    incrementDeckCardCounts(
+      decks,
+      2,
+      inheritedAccessorDueCard,
+      new Date('2026-05-09T12:00:00.000Z'),
+    ),
+    [
+      { id: 2, name: 'Biology', totalCards: 5, dueCards: 3 },
+    ],
+  );
+  assert.deepEqual(
+    decrementDeckCardCounts(
+      decks,
+      2,
+      accessorDueCard,
+      new Date('2026-05-09T12:00:00.000Z'),
+    ),
+    [
+      { id: 2, name: 'Biology', totalCards: 3, dueCards: 3 },
+    ],
+  );
+  assert.equal(getterCalls, 0);
+  assert.equal(inheritedGetterCalls, 0);
 });
 
 test('decrementDeckCardCounts does not produce negative card counts', () => {

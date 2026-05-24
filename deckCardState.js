@@ -1,4 +1,5 @@
 const { isValidIsoTimestamp } = require('./isoTimestampValidation');
+const { getOwnDataPropertyValue } = require('./recordDataProperty');
 
 function hasSameId(leftId, rightId) {
   return String(leftId) === String(rightId);
@@ -12,19 +13,8 @@ function decrementCount(value) {
   return typeof value === 'number' && Number.isFinite(value) ? Math.max(value - 1, 0) : 0;
 }
 
-function hasSchedulingMetadata(card) {
-  return card !== null
-    && typeof card === 'object'
-    && !Array.isArray(card)
-    && Object.prototype.hasOwnProperty.call(card, 'next_review');
-}
-
 function isCardCurrentlyDue(card, now = new Date()) {
-  if (!hasSchedulingMetadata(card)) {
-    return false;
-  }
-
-  const nextReview = card?.next_review;
+  const nextReview = getOwnDataPropertyValue(card, 'next_review');
   if (nextReview === null) {
     return true;
   }
