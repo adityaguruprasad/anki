@@ -77,44 +77,57 @@ test('dashboard deck targeting preserves null-prototype rows with own data field
 });
 
 test('dashboard deck targeting rejects accessor-backed row fields without invoking getters', () => {
-  let getterCalls = 0;
-  const deck = {
-    id: 1,
-    totalCards: 4,
-  };
-  Object.defineProperty(deck, 'dueCards', {
-    enumerable: true,
-    get() {
-      getterCalls += 1;
-      throw new Error('dueCards getter should not run');
-    },
-  });
+  ['id', 'totalCards', 'dueCards'].forEach((field) => {
+    let getterCalls = 0;
+    const deck = {
+      id: 1,
+      totalCards: 4,
+      dueCards: 2,
+    };
 
-  assert.equal(hasDashboardDeckListPayload([deck]), false);
-  assert.equal(selectStudyDeckTarget([deck]), null);
-  assert.equal(getStudyDeckTargetPath(deck), '/decks');
-  assert.equal(getterCalls, 0);
+    Object.defineProperty(deck, field, {
+      enumerable: true,
+      get() {
+        getterCalls += 1;
+        throw new Error(`${field} getter should not run`);
+      },
+    });
+
+    assert.equal(hasDashboardDeckListPayload([deck]), false, field);
+    assert.equal(selectStudyDeckTarget([deck]), null, field);
+    assert.equal(getStudyDeckTargetPath(deck), '/decks', field);
+    assert.equal(getterCalls, 0, field);
+  });
 });
 
 test('dashboard deck targeting rejects prototype-backed row fields without invoking getters', () => {
-  let getterCalls = 0;
-  const prototype = {};
-  Object.defineProperty(prototype, 'id', {
-    get() {
-      getterCalls += 1;
-      throw new Error('prototype id getter should not run');
-    },
-  });
-  const deck = Object.create(prototype);
-  Object.defineProperties(deck, {
-    totalCards: { value: 4, enumerable: true },
-    dueCards: { value: 2, enumerable: true },
-  });
+  ['id', 'totalCards', 'dueCards'].forEach((field) => {
+    let getterCalls = 0;
+    const prototype = {};
 
-  assert.equal(hasDashboardDeckListPayload([deck]), false);
-  assert.equal(selectStudyDeckTarget([deck]), null);
-  assert.equal(getStudyDeckTargetPath(deck), '/decks');
-  assert.equal(getterCalls, 0);
+    Object.defineProperty(prototype, field, {
+      get() {
+        getterCalls += 1;
+        throw new Error(`prototype ${field} getter should not run`);
+      },
+    });
+
+    const deck = Object.create(prototype);
+    if (field !== 'id') {
+      Object.defineProperty(deck, 'id', { value: 1, enumerable: true });
+    }
+    if (field !== 'totalCards') {
+      Object.defineProperty(deck, 'totalCards', { value: 4, enumerable: true });
+    }
+    if (field !== 'dueCards') {
+      Object.defineProperty(deck, 'dueCards', { value: 2, enumerable: true });
+    }
+
+    assert.equal(hasDashboardDeckListPayload([deck]), false, field);
+    assert.equal(selectStudyDeckTarget([deck]), null, field);
+    assert.equal(getStudyDeckTargetPath(deck), '/decks', field);
+    assert.equal(getterCalls, 0, field);
+  });
 });
 
 test('hasDashboardDeckListPayload rejects non-integer, negative, unsafe, and impossible count fields', () => {

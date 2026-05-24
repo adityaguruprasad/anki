@@ -1,25 +1,10 @@
 const { MAX_POSTGRES_SERIAL_ID } = require('./cardIdentifier');
+const {
+  getOwnDataPropertyValue,
+  isObjectRecord,
+} = require('./recordDataProperty');
 
 const MAX_POSTGRES_SERIAL_ID_STRING = String(MAX_POSTGRES_SERIAL_ID);
-
-function isObjectRecord(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function descriptorHasValue(descriptor) {
-  return (
-    descriptor !== undefined
-    && Object.prototype.hasOwnProperty.call(descriptor, 'value')
-  );
-}
-
-function getOwnDataPropertyValue(value, key) {
-  const descriptor = isObjectRecord(value)
-    ? Object.getOwnPropertyDescriptor(value, key)
-    : undefined;
-
-  return descriptorHasValue(descriptor) ? descriptor.value : undefined;
-}
 
 function hasNonNegativeSafeIntegerCount(deck, key) {
   const count = getOwnDataPropertyValue(deck, key);
