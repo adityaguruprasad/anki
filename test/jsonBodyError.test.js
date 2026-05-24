@@ -99,6 +99,145 @@ test('rejectJsonArrayBody rejects top-level JSON array bodies before route handl
   assert.doesNotMatch(JSON.stringify(res.body), /secret|deckId|password/i);
 });
 
+test('rejectJsonArrayBody ignores inherited request body properties', () => {
+  const req = Object.create({
+    body: [{ password: 'inherited-secret', deckId: 1 }],
+  });
+  const res = createRes();
+  let downstreamBody = 'not-called';
+  let nextCalls = 0;
+
+  rejectJsonArrayBody(req, res, () => {
+    nextCalls += 1;
+    downstreamBody = req.body;
+  });
+
+  assert.equal(nextCalls, 1);
+  assert.equal(downstreamBody, undefined);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body, null);
+  assert.deepEqual(Object.getOwnPropertyDescriptor(req, 'body'), {
+    configurable: true,
+    enumerable: false,
+    value: undefined,
+    writable: true,
+  });
+  assert.equal(req.body, undefined);
+});
+
+test('rejectJsonArrayBody fails closed when inherited request body cannot be shadowed', () => {
+  let getterCalls = 0;
+  const prototype = {};
+  Object.defineProperty(prototype, 'body', {
+    configurable: true,
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      return [{ password: 'inherited-secret', deckId: 1 }];
+    },
+  });
+  const req = Object.preventExtensions(Object.create(prototype));
+  const res = createRes();
+  let nextCalls = 0;
+
+  rejectJsonArrayBody(req, res, () => {
+    nextCalls += 1;
+  });
+
+  assert.equal(getterCalls, 0);
+  assert.equal(nextCalls, 0);
+  assert.equal(res.statusCode, 400);
+  assert.deepEqual(res.body, { error: JSON_REQUEST_BODY_ARRAY_ERROR });
+  assert.equal(Object.hasOwn(req, 'body'), false);
+  assert.equal(getterCalls, 0);
+});
+
+test('rejectJsonArrayBody ignores accessor-backed request body properties', () => {
+  const req = {};
+  const res = createRes();
+  let downstreamBody = 'not-called';
+  let getterCalls = 0;
+  let nextCalls = 0;
+
+  Object.defineProperty(req, 'body', {
+    configurable: true,
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      return [{ password: 'accessor-secret', deckId: 1 }];
+    },
+  });
+
+  rejectJsonArrayBody(req, res, () => {
+    nextCalls += 1;
+    downstreamBody = req.body;
+  });
+
+  assert.equal(getterCalls, 0);
+  assert.equal(nextCalls, 1);
+  assert.equal(downstreamBody, undefined);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body, null);
+  assert.deepEqual(Object.getOwnPropertyDescriptor(req, 'body'), {
+    configurable: true,
+    enumerable: true,
+    value: undefined,
+    writable: true,
+  });
+  assert.equal(req.body, undefined);
+  assert.equal(getterCalls, 0);
+});
+
+test('rejectJsonArrayBody fails closed when accessor-backed request body cannot be shadowed', () => {
+  const req = {};
+  const res = createRes();
+  let getterCalls = 0;
+  let nextCalls = 0;
+  function getBody() {
+    getterCalls += 1;
+    return [{ password: 'accessor-secret', deckId: 1 }];
+  }
+
+  Object.defineProperty(req, 'body', {
+    configurable: false,
+    enumerable: true,
+    get: getBody,
+  });
+
+  rejectJsonArrayBody(req, res, () => {
+    nextCalls += 1;
+  });
+
+  const descriptor = Object.getOwnPropertyDescriptor(req, 'body');
+  assert.equal(getterCalls, 0);
+  assert.equal(nextCalls, 0);
+  assert.equal(res.statusCode, 400);
+  assert.deepEqual(res.body, { error: JSON_REQUEST_BODY_ARRAY_ERROR });
+  assert.equal(descriptor.configurable, false);
+  assert.equal(descriptor.enumerable, true);
+  assert.equal(descriptor.get, getBody);
+  assert.equal(Object.hasOwn(descriptor, 'value'), false);
+  assert.equal(getterCalls, 0);
+});
+
+test('rejectJsonArrayBody leaves ordinary absent request bodies absent', () => {
+  const req = {};
+  const res = createRes();
+  let downstreamBody = 'not-called';
+  let nextCalls = 0;
+
+  rejectJsonArrayBody(req, res, () => {
+    nextCalls += 1;
+    downstreamBody = req.body;
+  });
+
+  assert.equal(nextCalls, 1);
+  assert.equal(downstreamBody, undefined);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body, null);
+  assert.equal(Object.hasOwn(req, 'body'), false);
+});
+
 test('rejectJsonArrayBody strips inherited fields from parsed object bodies', () => {
   const inheritedFields = {
     deckId: 42,

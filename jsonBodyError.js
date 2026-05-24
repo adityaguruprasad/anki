@@ -53,10 +53,78 @@ function handleJsonBodyError(error, req, res, next) {
   return next(error);
 }
 
+function isObjectLike(value) {
+  return value !== null && (typeof value === 'object' || typeof value === 'function');
+}
+
+function hasInheritedBodyProperty(req) {
+  let prototype = Object.getPrototypeOf(req);
+
+  while (prototype !== null) {
+    if (Object.getOwnPropertyDescriptor(prototype, 'body')) {
+      return true;
+    }
+
+    prototype = Object.getPrototypeOf(prototype);
+  }
+
+  return false;
+}
+
+function describeBodyProperty(req) {
+  if (!isObjectLike(req)) {
+    return { kind: 'absent' };
+  }
+
+  const descriptor = Object.getOwnPropertyDescriptor(req, 'body');
+
+  if (!descriptor) {
+    return hasInheritedBodyProperty(req)
+      ? { enumerable: false, kind: 'unsafe' }
+      : { kind: 'absent' };
+  }
+
+  if (!Object.hasOwn(descriptor, 'value')) {
+    return { enumerable: descriptor.enumerable, kind: 'unsafe' };
+  }
+
+  return { body: descriptor.value, kind: 'data' };
+}
+
+function shadowUnsafeBody(req, enumerable) {
+  try {
+    Object.defineProperty(req, 'body', {
+      configurable: true,
+      enumerable,
+      value: undefined,
+      writable: true,
+    });
+    return true;
+  } catch {
+    // Non-extensible or non-configurable request objects cannot be sanitized
+    // here without risking accessor invocation.
+    return false;
+  }
+}
+
 function rejectJsonArrayBody(req, res, next) {
   // Express' JSON parser keeps strict parsing enabled by default, so primitive
   // JSON bodies are rejected as malformed before this parsed-body shape guard.
-  const body = req?.body;
+  const bodyProperty = describeBodyProperty(req);
+
+  if (bodyProperty.kind === 'unsafe') {
+    if (!shadowUnsafeBody(req, bodyProperty.enumerable)) {
+      return res.status(400).json({ error: JSON_REQUEST_BODY_ARRAY_ERROR });
+    }
+
+    return next();
+  }
+
+  if (bodyProperty.kind === 'absent') {
+    return next();
+  }
+
+  const body = bodyProperty.body;
 
   if (Array.isArray(body)) {
     return res.status(400).json({ error: JSON_REQUEST_BODY_ARRAY_ERROR });
