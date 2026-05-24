@@ -283,11 +283,69 @@ test('getCreateCardFailureMessage returns trimmed non-empty string server errors
   });
 });
 
+test('getCreateCardFailureMessage preserves null-prototype own data server errors', () => {
+  const payload = Object.create(null);
+  payload.error = '  Deck not found  ';
+
+  assert.equal(getCreateCardFailureMessage(payload), 'Deck not found');
+});
+
+test('getCreateCardFailureMessage ignores inherited server errors without invoking getters', () => {
+  const dataBackedPayload = Object.create({
+    error: 'Inherited error should not surface.',
+  });
+
+  assert.equal(
+    getCreateCardFailureMessage(dataBackedPayload),
+    CARD_CREATE_MESSAGES.createFailed,
+  );
+
+  let getterCalls = 0;
+  const prototype = {};
+  Object.defineProperty(prototype, 'error', {
+    get() {
+      getterCalls += 1;
+      throw new Error('prototype error getter should not run');
+    },
+  });
+
+  assert.equal(
+    getCreateCardFailureMessage(Object.create(prototype)),
+    CARD_CREATE_MESSAGES.createFailed,
+  );
+  assert.equal(getterCalls, 0);
+});
+
+test('getCreateCardFailureMessage ignores own accessor server errors without invoking getters', () => {
+  let getterCalls = 0;
+  const payload = {};
+
+  Object.defineProperty(payload, 'error', {
+    get() {
+      getterCalls += 1;
+      throw new Error('own error getter should not run');
+    },
+  });
+
+  assert.equal(
+    getCreateCardFailureMessage(payload),
+    CARD_CREATE_MESSAGES.createFailed,
+  );
+  assert.equal(getterCalls, 0);
+});
+
 test('getCreateCardFailureMessage falls back when response has no usable server error', () => {
+  const arrayPayload = [];
+  arrayPayload.error = 'Array error should not surface.';
+
   [
     undefined,
     null,
+    'Deck not found',
+    404,
+    true,
     {},
+    arrayPayload,
     { error: '' },
     { error: '   ' },
     { error: 404 },

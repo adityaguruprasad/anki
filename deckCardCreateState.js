@@ -1,5 +1,6 @@
 const { MAX_CARD_CONTENT_LENGTH, validateCardContent } = require('./cardContentValidation');
 const { parseDeckCardMutationResponsePayload } = require('./deckCardMutationResponse');
+const { getOwnDataPropertyValue } = require('./recordDataProperty');
 
 const MAX_CARD_CONTENT_LENGTH_LABEL = MAX_CARD_CONTENT_LENGTH.toLocaleString('en-US');
 
@@ -105,8 +106,10 @@ function createIgnoredCardCreateCompletion() {
 }
 
 function getCreateCardFailureMessage(payload) {
-  if (payload && typeof payload.error === 'string') {
-    const error = payload.error.trim();
+  const serverError = getOwnDataPropertyValue(payload, 'error');
+
+  if (typeof serverError === 'string') {
+    const error = serverError.trim();
     if (error) {
       return error;
     }
