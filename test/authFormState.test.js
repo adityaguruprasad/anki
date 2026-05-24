@@ -29,6 +29,15 @@ function createEmailWithLength(totalLength) {
   return `${'a'.repeat(totalLength - domain.length)}${domain}`;
 }
 
+function restoreGlobalProperty(propertyName, descriptor) {
+  if (descriptor) {
+    Object.defineProperty(globalThis, propertyName, descriptor);
+    return;
+  }
+
+  delete globalThis[propertyName];
+}
+
 test('getNextAuthMode toggles between login and register modes', () => {
   assert.equal(getNextAuthMode(AUTH_MODES.LOGIN), AUTH_MODES.REGISTER);
   assert.equal(getNextAuthMode(AUTH_MODES.REGISTER), AUTH_MODES.LOGIN);
@@ -169,11 +178,65 @@ test('createInitialAuthSession accepts getItem from Storage.prototype', (t) => {
     });
     assert.deepEqual(requestedKeys, [AUTH_TOKEN_STORAGE_KEY]);
   } finally {
-    if (originalStorageDescriptor) {
-      Object.defineProperty(globalThis, 'Storage', originalStorageDescriptor);
-    } else {
-      delete globalThis.Storage;
-    }
+    restoreGlobalProperty('Storage', originalStorageDescriptor);
+  }
+});
+
+test('createInitialAuthSession accepts Web Storage getItem through a layered prototype without invoking inherited accessors', (t) => {
+  const originalStorageDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'Storage');
+  if (originalStorageDescriptor && !originalStorageDescriptor.configurable) {
+    t.skip('global Storage cannot be replaced safely in this environment');
+    return;
+  }
+
+  const token = createCompactJwt();
+  const requestedKeys = [];
+  let getterCalls = 0;
+
+  function SimulatedStorage() {}
+  Object.defineProperty(SimulatedStorage.prototype, 'getItem', {
+    configurable: true,
+    value(key) {
+      requestedKeys.push(key);
+      return this.values.get(key) ?? null;
+    },
+  });
+
+  function LayeredStorage() {
+    this.values = new Map([[AUTH_TOKEN_STORAGE_KEY, `  ${token}  `]]);
+  }
+  LayeredStorage.prototype = Object.create(SimulatedStorage.prototype);
+  Object.defineProperty(LayeredStorage.prototype, 'constructor', {
+    configurable: true,
+    value: LayeredStorage,
+  });
+  Object.defineProperty(LayeredStorage.prototype, 'getItem', {
+    configurable: true,
+    get() {
+      getterCalls += 1;
+      return () => token;
+    },
+  });
+
+  try {
+    Object.defineProperty(globalThis, 'Storage', {
+      configurable: true,
+      writable: true,
+      value: SimulatedStorage,
+    });
+
+    const storage = new LayeredStorage();
+
+    assert.equal(Object.hasOwn(storage, 'getItem'), false);
+    assert.deepEqual(createInitialAuthSession(storage), {
+      isLoggedIn: true,
+      token,
+      cleanupNeeded: false,
+    });
+    assert.deepEqual(requestedKeys, [AUTH_TOKEN_STORAGE_KEY]);
+    assert.equal(getterCalls, 0);
+  } finally {
+    restoreGlobalProperty('Storage', originalStorageDescriptor);
   }
 });
 

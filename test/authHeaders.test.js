@@ -98,6 +98,24 @@ test('buildAuthHeaders reads a token from a storage-like object', () => {
   });
 });
 
+test('buildAuthHeaders reads an own data getItem from a null-prototype storage-like object', () => {
+  const token = createCompactJwt();
+  const requestedKeys = [];
+  const storage = Object.create(null);
+  Object.defineProperty(storage, 'getItem', {
+    enumerable: true,
+    value(key) {
+      requestedKeys.push(key);
+      return token;
+    },
+  });
+
+  assert.deepEqual(buildAuthHeaders(storage), {
+    Authorization: `Bearer ${token}`,
+  });
+  assert.deepEqual(requestedKeys, ['token']);
+});
+
 test('buildAuthHeaders reads a token from an accepted Web Storage prototype method', () => {
   const token = createCompactJwt();
   const previousStorageDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'Storage');

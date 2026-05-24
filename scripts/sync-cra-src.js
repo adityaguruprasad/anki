@@ -19,6 +19,7 @@ const FRONTEND_MODULES = Object.freeze([
   'authSubmissionLifecycle.js',
   'authTokenValidation.js',
   'recordDataProperty.js',
+  'storageGetItem.js',
   'cardContentValidation.js',
   'cardIdentifier.js',
   'isoTimestampValidation.js',

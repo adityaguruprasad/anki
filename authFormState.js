@@ -5,6 +5,7 @@ const {
   validateRegistrationPassword,
 } = require('./authPasswordValidation');
 const { normalizeAuthToken } = require('./authTokenValidation');
+const { getStorageGetItem } = require('./storageGetItem');
 
 const AUTH_MODES = Object.freeze({
   LOGIN: 'login',
@@ -195,56 +196,6 @@ function getAuthEndpoint(mode, env) {
 
 function getNextAuthMode(mode) {
   return normalizeAuthMode(mode) === AUTH_MODES.LOGIN ? AUTH_MODES.REGISTER : AUTH_MODES.LOGIN;
-}
-
-function getOwnStorageGetItem(tokenSource) {
-  const descriptor = Object.getOwnPropertyDescriptor(tokenSource, 'getItem');
-  return descriptor && typeof descriptor.value === 'function'
-    ? descriptor.value
-    : null;
-}
-
-// Auth bootstrap only trusts own data-property getItem or real Storage.prototype.getItem
-// to avoid Object.prototype pollution and accessor side effects.
-function getWebStoragePrototypeGetItem(tokenSource) {
-  const storageDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'Storage');
-  if (!storageDescriptor || typeof storageDescriptor.value !== 'function') {
-    return null;
-  }
-
-  const prototypeDescriptor = Object.getOwnPropertyDescriptor(storageDescriptor.value, 'prototype');
-  const storagePrototype = prototypeDescriptor && prototypeDescriptor.value;
-  if (
-    storagePrototype === null
-    || (typeof storagePrototype !== 'object' && typeof storagePrototype !== 'function')
-  ) {
-    return null;
-  }
-
-  let currentPrototype = Object.getPrototypeOf(tokenSource);
-  while (currentPrototype !== null && currentPrototype !== storagePrototype) {
-    currentPrototype = Object.getPrototypeOf(currentPrototype);
-  }
-
-  if (currentPrototype !== storagePrototype) {
-    return null;
-  }
-
-  const descriptor = Object.getOwnPropertyDescriptor(storagePrototype, 'getItem');
-  return descriptor && typeof descriptor.value === 'function'
-    ? descriptor.value
-    : null;
-}
-
-function getStorageGetItem(tokenSource) {
-  if (
-    tokenSource === null
-    || typeof tokenSource !== 'object'
-  ) {
-    return null;
-  }
-
-  return getOwnStorageGetItem(tokenSource) || getWebStoragePrototypeGetItem(tokenSource);
 }
 
 function readInitialAuthToken(tokenSource) {
