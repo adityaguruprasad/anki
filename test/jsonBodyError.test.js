@@ -56,6 +56,34 @@ function createJsonUnsupportedEncodingError(type = 'encoding.unsupported', encod
   return error;
 }
 
+function defineNonEnumerableOwnDataProperties(object, properties) {
+  for (const [propertyName, value] of Object.entries(properties)) {
+    Object.defineProperty(object, propertyName, {
+      configurable: true,
+      enumerable: false,
+      value,
+      writable: true,
+    });
+  }
+
+  return object;
+}
+
+function defineGetterProperties(object, properties, onGetterCall) {
+  for (const [propertyName, value] of Object.entries(properties)) {
+    Object.defineProperty(object, propertyName, {
+      configurable: true,
+      enumerable: true,
+      get() {
+        onGetterCall();
+        return value;
+      },
+    });
+  }
+
+  return object;
+}
+
 test('createJsonBodyParser configures an explicit JSON request budget', () => {
   const middleware = () => {};
   let receivedOptions = null;
@@ -262,6 +290,152 @@ test('rejectJsonArrayBody strips inherited fields from parsed object bodies', ()
   assert.equal(req.body.backContent, 'Back');
   assert.equal(req.body.deckId, undefined);
   assert.equal(req.body.password, undefined);
+});
+
+test('isMalformedJsonBodyError recognizes non-enumerable own parser fields', () => {
+  const error = defineNonEnumerableOwnDataProperties(
+    new SyntaxError('Unexpected token } in JSON at position 1'),
+    {
+      status: 400,
+      type: 'entity.parse.failed',
+    },
+  );
+
+  assert.equal(isMalformedJsonBodyError(error), true);
+});
+
+test('isMalformedJsonBodyError rejects inherited and accessor-backed parser fields without invoking getters', () => {
+  const inheritedPrototype = Object.create(SyntaxError.prototype);
+  Object.defineProperties(inheritedPrototype, {
+    status: {
+      configurable: true,
+      enumerable: true,
+      value: 400,
+      writable: true,
+    },
+    type: {
+      configurable: true,
+      enumerable: true,
+      value: 'entity.parse.failed',
+      writable: true,
+    },
+  });
+  const inheritedError = new SyntaxError('Unexpected token } in JSON at position 1');
+  Object.setPrototypeOf(inheritedError, inheritedPrototype);
+
+  let inheritedGetterCalls = 0;
+  const inheritedAccessorPrototype = Object.create(SyntaxError.prototype);
+  defineGetterProperties(inheritedAccessorPrototype, {
+    status: 400,
+    type: 'entity.parse.failed',
+  }, () => {
+    inheritedGetterCalls += 1;
+  });
+  const inheritedAccessorError = new SyntaxError('Unexpected token } in JSON at position 1');
+  Object.setPrototypeOf(inheritedAccessorError, inheritedAccessorPrototype);
+
+  let ownGetterCalls = 0;
+  const accessorError = new SyntaxError('Unexpected token } in JSON at position 1');
+  defineGetterProperties(accessorError, {
+    status: 400,
+    type: 'entity.parse.failed',
+  }, () => {
+    ownGetterCalls += 1;
+  });
+
+  assert.equal(isMalformedJsonBodyError(inheritedError), false);
+  assert.equal(isMalformedJsonBodyError(inheritedAccessorError), false);
+  assert.equal(inheritedGetterCalls, 0);
+  assert.equal(isMalformedJsonBodyError(accessorError), false);
+  assert.equal(ownGetterCalls, 0);
+});
+
+test('isJsonBodyTooLargeError recognizes non-enumerable own parser fields', () => {
+  const error = defineNonEnumerableOwnDataProperties(
+    new Error('request entity too large'),
+    {
+      statusCode: 413,
+      type: 'entity.too.large',
+    },
+  );
+
+  assert.equal(isJsonBodyTooLargeError(error), true);
+});
+
+test('isJsonBodyTooLargeError rejects inherited and accessor-backed parser fields without invoking getters', () => {
+  const inheritedError = Object.create({
+    status: 413,
+    statusCode: 413,
+    type: 'entity.too.large',
+  });
+
+  let inheritedGetterCalls = 0;
+  const inheritedAccessorError = Object.create(defineGetterProperties({}, {
+    status: 413,
+    statusCode: 413,
+    type: 'entity.too.large',
+  }, () => {
+    inheritedGetterCalls += 1;
+  }));
+
+  let ownGetterCalls = 0;
+  const accessorError = defineGetterProperties({}, {
+    status: 413,
+    statusCode: 413,
+    type: 'entity.too.large',
+  }, () => {
+    ownGetterCalls += 1;
+  });
+
+  assert.equal(isJsonBodyTooLargeError(inheritedError), false);
+  assert.equal(isJsonBodyTooLargeError(inheritedAccessorError), false);
+  assert.equal(inheritedGetterCalls, 0);
+  assert.equal(isJsonBodyTooLargeError(accessorError), false);
+  assert.equal(ownGetterCalls, 0);
+});
+
+test('isJsonBodyUnsupportedEncodingError recognizes non-enumerable own parser fields', () => {
+  const error = defineNonEnumerableOwnDataProperties(
+    new Error('unsupported request encoding'),
+    {
+      statusCode: 415,
+      type: 'charset.unsupported',
+    },
+  );
+
+  assert.equal(isJsonBodyUnsupportedEncodingError(error), true);
+});
+
+test('isJsonBodyUnsupportedEncodingError rejects inherited and accessor-backed parser fields without invoking getters', () => {
+  const inheritedError = Object.create({
+    status: 415,
+    statusCode: 415,
+    type: 'encoding.unsupported',
+  });
+
+  let inheritedGetterCalls = 0;
+  const inheritedAccessorError = Object.create(defineGetterProperties({}, {
+    status: 415,
+    statusCode: 415,
+    type: 'encoding.unsupported',
+  }, () => {
+    inheritedGetterCalls += 1;
+  }));
+
+  let ownGetterCalls = 0;
+  const accessorError = defineGetterProperties({}, {
+    status: 415,
+    statusCode: 415,
+    type: 'encoding.unsupported',
+  }, () => {
+    ownGetterCalls += 1;
+  });
+
+  assert.equal(isJsonBodyUnsupportedEncodingError(inheritedError), false);
+  assert.equal(isJsonBodyUnsupportedEncodingError(inheritedAccessorError), false);
+  assert.equal(inheritedGetterCalls, 0);
+  assert.equal(isJsonBodyUnsupportedEncodingError(accessorError), false);
+  assert.equal(ownGetterCalls, 0);
 });
 
 test('rejectJsonArrayBody hides Object.prototype pollution from parsed object bodies', () => {

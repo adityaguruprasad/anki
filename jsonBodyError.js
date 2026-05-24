@@ -1,3 +1,5 @@
+const { getOwnDataPropertyValue } = require('./recordDataProperty');
+
 const INVALID_JSON_REQUEST_BODY_ERROR = 'Invalid JSON request body';
 const JSON_REQUEST_BODY_ARRAY_ERROR = 'JSON request body must be an object';
 const JSON_REQUEST_BODY_TOO_LARGE_ERROR = 'JSON request body too large';
@@ -13,27 +15,32 @@ function createJsonBodyParser(expressModule) {
   return expressModule.json({ inflate: false, limit: JSON_BODY_LIMIT });
 }
 
+function hasOwnDataPropertyValue(object, propertyName, expectedValue) {
+  return getOwnDataPropertyValue(object, propertyName) === expectedValue;
+}
+
 function isMalformedJsonBodyError(error) {
   return Boolean(
     error instanceof SyntaxError &&
-      error.status === 400 &&
-      error.type === 'entity.parse.failed'
+      hasOwnDataPropertyValue(error, 'status', 400) &&
+      hasOwnDataPropertyValue(error, 'type', 'entity.parse.failed')
   );
 }
 
 function isJsonBodyTooLargeError(error) {
   return Boolean(
-    error &&
-      (error.status === 413 || error.statusCode === 413) &&
-      error.type === 'entity.too.large'
+    (hasOwnDataPropertyValue(error, 'status', 413) ||
+      hasOwnDataPropertyValue(error, 'statusCode', 413)) &&
+      hasOwnDataPropertyValue(error, 'type', 'entity.too.large')
   );
 }
 
 function isJsonBodyUnsupportedEncodingError(error) {
   return Boolean(
-    error &&
-      (error.status === 415 || error.statusCode === 415) &&
-      (error.type === 'encoding.unsupported' || error.type === 'charset.unsupported')
+    (hasOwnDataPropertyValue(error, 'status', 415) ||
+      hasOwnDataPropertyValue(error, 'statusCode', 415)) &&
+      (hasOwnDataPropertyValue(error, 'type', 'encoding.unsupported') ||
+        hasOwnDataPropertyValue(error, 'type', 'charset.unsupported'))
   );
 }
 
