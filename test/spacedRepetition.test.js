@@ -94,6 +94,57 @@ test('calculateNextReview returns safe defaults for missing persisted values', (
   assert.equal(result.ease_factor, 2.5);
 });
 
+test('calculateNextReview requires own data scheduling fields without invoking getters', () => {
+  const reviewedAt = new Date('2026-05-10T14:30:00.000Z');
+  let getterCalls = 0;
+  const card = Object.create({
+    interval: 12,
+    ease_factor: 3,
+    review_count: 1,
+  });
+
+  for (const field of ['interval', 'ease_factor', 'review_count']) {
+    Object.defineProperty(card, field, {
+      enumerable: true,
+      get() {
+        getterCalls += 1;
+        throw new Error(`${field} getter should not run`);
+      },
+    });
+  }
+
+  const result = calculateNextReview(card, 3, reviewedAt);
+
+  assertValidSchedule(result);
+  assert.equal(result.interval, 6);
+  assert.equal(result.ease_factor, 2.5);
+  assert.equal(result.next_review.toISOString(), '2026-05-16T14:30:00.000Z');
+  assert.equal(getterCalls, 0);
+});
+
+test('calculateNextReview ignores prototype-backed scheduling metadata', () => {
+  const reviewedAt = new Date('2026-05-10T14:30:00.000Z');
+  let getterCalls = 0;
+  const prototype = {
+    interval: 12,
+    ease_factor: 3,
+  };
+  Object.defineProperty(prototype, 'review_count', {
+    get() {
+      getterCalls += 1;
+      throw new Error('review_count getter should not run');
+    },
+  });
+
+  const result = calculateNextReview(Object.create(prototype), 3, reviewedAt);
+
+  assertValidSchedule(result);
+  assert.equal(result.interval, 6);
+  assert.equal(result.ease_factor, 2.5);
+  assert.equal(result.next_review.toISOString(), '2026-05-16T14:30:00.000Z');
+  assert.equal(getterCalls, 0);
+});
+
 test('calculateNextReview uses initial pass interval for first review of persisted new cards', () => {
   const reviewedAt = new Date('2026-05-10T14:30:00.000Z');
   const result = calculateNextReview({

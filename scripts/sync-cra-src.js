@@ -22,6 +22,7 @@ const FRONTEND_MODULES = Object.freeze([
   'cardContentValidation.js',
   'cardIdentifier.js',
   'isoTimestampValidation.js',
+  'spacedRepetition.js',
   'dashboardApiRequests.js',
   'dashboardAuxiliaryDisplayState.js',
   'dashboardDeckTarget.js',

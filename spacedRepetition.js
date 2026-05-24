@@ -1,4 +1,9 @@
 // spacedRepetition.js
+const {
+  getOwnDataPropertyValue,
+  hasOwnDataProperty,
+} = require('./recordDataProperty');
+
 const MIN_EASE_FACTOR = 1.3;
 const DEFAULT_EASE_FACTOR = 2.5;
 const INITIAL_GOOD_INTERVAL = 6;
@@ -24,18 +29,19 @@ const normalizeInterval = (value) => {
 };
 
 const hasExplicitInitialReviewCount = (card) => {
-  if (!Object.prototype.hasOwnProperty.call(card ?? {}, 'review_count')) {
+  if (!hasOwnDataProperty(card, 'review_count')) {
     return false;
   }
 
   // Only an explicit, finite review_count <= 0 marks a persisted card as new.
   // Null means "absent/legacy" here; missing, null, or non-finite counts keep
   // the legacy persisted-interval behavior.
-  if (card.review_count === null) {
+  const persistedReviewCount = getOwnDataPropertyValue(card, 'review_count');
+  if (persistedReviewCount === null) {
     return false;
   }
 
-  const reviewCount = Number(card.review_count);
+  const reviewCount = Number(persistedReviewCount);
   return Number.isFinite(reviewCount) && reviewCount <= 0;
 };
 
@@ -59,8 +65,8 @@ const assertValidQuality = (quality) => {
 const calculateNextReview = (card, quality, reviewedAt) => {
   assertValidQuality(quality);
 
-  let ease_factor = normalizeEaseFactor(card?.ease_factor);
-  const storedInterval = normalizeInterval(card?.interval);
+  let ease_factor = normalizeEaseFactor(getOwnDataPropertyValue(card, 'ease_factor'));
+  const storedInterval = normalizeInterval(getOwnDataPropertyValue(card, 'interval'));
   let interval;
 
   // If there's no usable persisted interval, apply initial scheduling defaults.
