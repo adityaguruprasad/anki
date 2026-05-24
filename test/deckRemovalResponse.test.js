@@ -32,6 +32,18 @@ test('parseDeckRemovalSuccessPayload preserves valid success payloads and extra 
   assert.equal(hasDeckRemovalSuccessPayload(payload), true);
 });
 
+test('parseDeckRemovalSuccessPayload supports null-prototype success payloads', () => {
+  const payload = Object.create(null);
+  payload.success = true;
+  payload.requestId = 'delete-1';
+
+  const parsed = parseDeckRemovalSuccessPayload(payload);
+
+  assert.equal(parsed, payload);
+  assert.equal(parsed.requestId, 'delete-1');
+  assert.equal(hasDeckRemovalSuccessPayload(payload), true);
+});
+
 test('parseDeckRemovalSuccessPayload rejects malformed top-level payloads', () => {
   [
     undefined,
@@ -54,6 +66,38 @@ test('parseDeckRemovalSuccessPayload rejects missing or non-true success values'
   ].forEach(assertMalformed);
 });
 
+test('parseDeckRemovalSuccessPayload rejects inherited success fields without invoking prototype getters', () => {
+  assertMalformed(Object.create({ success: true }));
+
+  let getterCalls = 0;
+  const prototype = {};
+  Object.defineProperty(prototype, 'success', {
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      return true;
+    },
+  });
+
+  assertMalformed(Object.create(prototype));
+  assert.equal(getterCalls, 0);
+});
+
+test('parseDeckRemovalSuccessPayload rejects accessor-backed success fields without invoking getters', () => {
+  let getterCalls = 0;
+  const payload = {};
+  Object.defineProperty(payload, 'success', {
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      return true;
+    },
+  });
+
+  assertMalformed(payload);
+  assert.equal(getterCalls, 0);
+});
+
 test('getDeckRemovalFailureMessage preserves existing non-OK error fallback behavior', () => {
   assert.equal(getDeckRemovalFailureMessage({ error: 'Deck not found' }), 'Deck not found');
   assert.equal(getDeckRemovalFailureMessage({ error: '  Deck not found  ' }), '  Deck not found  ');
@@ -61,6 +105,13 @@ test('getDeckRemovalFailureMessage preserves existing non-OK error fallback beha
   assert.equal(getDeckRemovalFailureMessage({ error: '   ' }), DECK_REMOVAL_MESSAGES.deleteFailed);
   assert.equal(getDeckRemovalFailureMessage({}), DECK_REMOVAL_MESSAGES.deleteFailed);
   assert.equal(getDeckRemovalFailureMessage(null), DECK_REMOVAL_MESSAGES.deleteFailed);
+});
+
+test('getDeckRemovalFailureMessage supports null-prototype error payloads', () => {
+  const payload = Object.create(null);
+  payload.error = 'Deck not found';
+
+  assert.equal(getDeckRemovalFailureMessage(payload), 'Deck not found');
 });
 
 test('getDeckRemovalFailureMessage falls back for malformed server error fields', () => {
@@ -72,6 +123,44 @@ test('getDeckRemovalFailureMessage falls back for malformed server error fields'
   ].forEach((payload) => {
     assert.equal(getDeckRemovalFailureMessage(payload), DECK_REMOVAL_MESSAGES.deleteFailed);
   });
+});
+
+test('getDeckRemovalFailureMessage falls back for inherited error fields without invoking prototype getters', () => {
+  assert.equal(
+    getDeckRemovalFailureMessage(Object.create({ error: 'Deck not found' })),
+    DECK_REMOVAL_MESSAGES.deleteFailed,
+  );
+
+  let getterCalls = 0;
+  const prototype = {};
+  Object.defineProperty(prototype, 'error', {
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      return 'Deck not found';
+    },
+  });
+
+  assert.equal(
+    getDeckRemovalFailureMessage(Object.create(prototype)),
+    DECK_REMOVAL_MESSAGES.deleteFailed,
+  );
+  assert.equal(getterCalls, 0);
+});
+
+test('getDeckRemovalFailureMessage falls back for accessor-backed error fields without invoking getters', () => {
+  let getterCalls = 0;
+  const payload = {};
+  Object.defineProperty(payload, 'error', {
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      return 'Deck not found';
+    },
+  });
+
+  assert.equal(getDeckRemovalFailureMessage(payload), DECK_REMOVAL_MESSAGES.deleteFailed);
+  assert.equal(getterCalls, 0);
 });
 
 test('deck-removal response completion ignores stale responses before parsing payloads', () => {

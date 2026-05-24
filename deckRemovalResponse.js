@@ -1,3 +1,5 @@
+const { getOwnDataPropertyValue } = require('./recordDataProperty');
+
 const MALFORMED_DECK_REMOVAL_PAYLOAD_ERROR = 'Malformed deck removal payload';
 
 const DECK_REMOVAL_MESSAGES = Object.freeze({
@@ -12,12 +14,8 @@ const DECK_REMOVAL_COMPLETION_TYPES = Object.freeze({
   SUCCESS: 'success',
 });
 
-function isObjectRecord(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
 function hasDeckRemovalSuccessPayload(payload) {
-  return isObjectRecord(payload) && payload.success === true;
+  return getOwnDataPropertyValue(payload, 'success') === true;
 }
 
 function parseDeckRemovalSuccessPayload(payload) {
@@ -29,8 +27,10 @@ function parseDeckRemovalSuccessPayload(payload) {
 }
 
 function getDeckRemovalFailureMessage(payload) {
-  if (payload && typeof payload.error === 'string' && payload.error.trim()) {
-    return payload.error;
+  const error = getOwnDataPropertyValue(payload, 'error');
+
+  if (typeof error === 'string' && error.trim()) {
+    return error;
   }
 
   return DECK_REMOVAL_MESSAGES.deleteFailed;
