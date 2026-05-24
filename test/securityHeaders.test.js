@@ -59,13 +59,36 @@ test('primitive, null, undefined, and array config values keep the non-productio
   }
 });
 
-test('inherited NODE_ENV config is ignored by security header production detection', () => {
+test('inherited data NODE_ENV config is ignored by security header production detection', () => {
   const config = Object.create({ NODE_ENV: 'production' });
   const headers = buildSecurityHeaders(undefined, config);
   const res = createRes();
 
   createSecurityHeadersMiddleware(undefined, config)({}, res, () => {});
 
+  assert.equal(Object.hasOwn(headers, 'Strict-Transport-Security'), false);
+  assert.deepEqual(headers, EXPECTED_DEFAULT_SECURITY_HEADERS);
+  assert.equal(Object.hasOwn(res.headers, 'Strict-Transport-Security'), false);
+  assert.deepEqual(res.headers, EXPECTED_DEFAULT_SECURITY_HEADERS);
+});
+
+test('inherited NODE_ENV config is ignored without invoking getters', () => {
+  let getterCalls = 0;
+  const prototype = {};
+  Object.defineProperty(prototype, 'NODE_ENV', {
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      return 'production';
+    },
+  });
+  const config = Object.create(prototype);
+  const headers = buildSecurityHeaders(undefined, config);
+  const res = createRes();
+
+  createSecurityHeadersMiddleware(undefined, config)({}, res, () => {});
+
+  assert.equal(getterCalls, 0);
   assert.equal(Object.hasOwn(headers, 'Strict-Transport-Security'), false);
   assert.deepEqual(headers, EXPECTED_DEFAULT_SECURITY_HEADERS);
   assert.equal(Object.hasOwn(res.headers, 'Strict-Transport-Security'), false);
@@ -150,6 +173,27 @@ test('own data NODE_ENV config enables production security headers', () => {
     },
   });
   const config = Object.create(prototype);
+  Object.defineProperty(config, 'NODE_ENV', {
+    enumerable: true,
+    value: 'production',
+  });
+  const res = createRes();
+
+  const headers = buildSecurityHeaders(undefined, config);
+  createSecurityHeadersMiddleware(undefined, config)({}, res, () => {});
+
+  assert.deepEqual(headers, {
+    ...EXPECTED_DEFAULT_SECURITY_HEADERS,
+    'Strict-Transport-Security': STRICT_TRANSPORT_SECURITY_HEADER,
+  });
+  assert.deepEqual(res.headers, {
+    ...EXPECTED_DEFAULT_SECURITY_HEADERS,
+    'Strict-Transport-Security': STRICT_TRANSPORT_SECURITY_HEADER,
+  });
+});
+
+test('null-prototype NODE_ENV config enables production security headers', () => {
+  const config = Object.create(null);
   Object.defineProperty(config, 'NODE_ENV', {
     enumerable: true,
     value: 'production',

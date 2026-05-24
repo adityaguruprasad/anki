@@ -89,13 +89,38 @@ test('buildCorsOptions treats primitive, null, undefined, and array config as ab
   }
 });
 
-test('buildCorsOptions ignores inherited config fields', () => {
+test('buildCorsOptions ignores inherited data config fields', () => {
   const config = Object.create({
     CORS_ALLOWED_ORIGINS: 'https://app.example.com',
     NODE_ENV: 'production',
   });
 
   assert.deepEqual(buildCorsOptions(config), {});
+});
+
+test('buildCorsOptions ignores inherited config fields without invoking getters', () => {
+  let getterCalls = 0;
+  const prototype = {};
+  Object.defineProperties(prototype, {
+    CORS_ALLOWED_ORIGINS: {
+      enumerable: true,
+      get() {
+        getterCalls += 1;
+        return 'https://app.example.com';
+      },
+    },
+    NODE_ENV: {
+      enumerable: true,
+      get() {
+        getterCalls += 1;
+        return 'production';
+      },
+    },
+  });
+  const config = Object.create(prototype);
+
+  assert.deepEqual(buildCorsOptions(config), {});
+  assert.equal(getterCalls, 0);
 });
 
 test('buildCorsOptions ignores accessor-backed config fields without invoking getters', () => {
@@ -137,6 +162,28 @@ test('buildCorsOptions uses own data config fields', async () => {
     },
   });
   const config = Object.create(prototype);
+  Object.defineProperties(config, {
+    CORS_ALLOWED_ORIGINS: {
+      enumerable: true,
+      value: 'https://app.example.com',
+    },
+    NODE_ENV: {
+      enumerable: true,
+      value: 'production',
+    },
+  });
+
+  const options = buildCorsOptions(config);
+
+  assert.equal(typeof options.origin, 'function');
+  assert.deepEqual(
+    await runOriginDecision(options, 'https://app.example.com'),
+    { error: null, allowed: true },
+  );
+});
+
+test('buildCorsOptions supports null-prototype config objects', async () => {
+  const config = Object.create(null);
   Object.defineProperties(config, {
     CORS_ALLOWED_ORIGINS: {
       enumerable: true,

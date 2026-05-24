@@ -1,3 +1,5 @@
+const { getOwnDataPropertyValue } = require('./recordDataProperty');
+
 const DEFAULT_SECURITY_HEADERS = Object.freeze({
   'Cache-Control': 'no-store',
   'X-Content-Type-Options': 'nosniff',
@@ -44,20 +46,8 @@ function validateHeaderValue(name, value) {
   }
 }
 
-function getOwnConfigValue(config, fieldName) {
-  if (config === null || typeof config !== 'object' || Array.isArray(config)) {
-    return undefined;
-  }
-
-  // Accept only own data properties; accessors are ignored without invoking getters.
-  const descriptor = Object.getOwnPropertyDescriptor(config, fieldName);
-  return descriptor !== undefined && Object.hasOwn(descriptor, 'value')
-    ? descriptor.value
-    : undefined;
-}
-
 function isProductionEnvironment(config) {
-  return getOwnConfigValue(config, 'NODE_ENV') === 'production';
+  return getOwnDataPropertyValue(config, 'NODE_ENV') === 'production';
 }
 
 function buildSecurityHeaders(options, config) {

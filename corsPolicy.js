@@ -1,3 +1,5 @@
+const { getOwnDataPropertyValue } = require('./recordDataProperty');
+
 const CORS_ALLOWED_ORIGINS_ENV = 'CORS_ALLOWED_ORIGINS';
 const CORS_ORIGIN_REJECTED_CODE = 'CORS_ORIGIN_REJECTED';
 const CORS_ORIGIN_REJECTED_ERROR = 'CORS origin is not allowed';
@@ -57,24 +59,12 @@ function isCorsOriginRejectedError(error) {
   return Boolean(error && error.code === CORS_ORIGIN_REJECTED_CODE);
 }
 
-function getOwnConfigValue(config, fieldName) {
-  if (config === null || typeof config !== 'object' || Array.isArray(config)) {
-    return undefined;
-  }
-
-  // Accept only own data properties; accessors are ignored without invoking getters.
-  const descriptor = Object.getOwnPropertyDescriptor(config, fieldName);
-  return descriptor !== undefined && Object.hasOwn(descriptor, 'value')
-    ? descriptor.value
-    : undefined;
-}
-
 function buildCorsOptions(config) {
   const environmentConfig = arguments.length === 0 ? process.env : config;
   const configuredAllowedOriginEntries = getConfiguredAllowedOriginEntries(
-    getOwnConfigValue(environmentConfig, CORS_ALLOWED_ORIGINS_ENV)
+    getOwnDataPropertyValue(environmentConfig, CORS_ALLOWED_ORIGINS_ENV)
   );
-  const nodeEnv = getOwnConfigValue(environmentConfig, 'NODE_ENV');
+  const nodeEnv = getOwnDataPropertyValue(environmentConfig, 'NODE_ENV');
   const allowedOrigins = configuredAllowedOriginEntries
     .map(normalizeAllowedOrigin)
     .filter(Boolean);
