@@ -1,6 +1,13 @@
 const { validateCardContent } = require('./cardContentValidation');
 const { validateDeckName } = require('./deckNameValidation');
 const { isValidIsoTimestamp } = require('./isoTimestampValidation');
+const {
+  getOwnDataPropertyValue,
+  getOwnRecordPropertyDescriptor,
+  hasOwnDataProperty,
+  isDataPropertyDescriptor,
+  isObjectRecord,
+} = require('./recordDataProperty');
 const { MAX_INTERVAL_DAYS, MIN_EASE_FACTOR } = require('./spacedRepetition');
 
 const BROWSE_CARDS_DEFAULT_LIMIT = 50;
@@ -154,20 +161,14 @@ function toAuthenticatedUserId(value) {
 
 function getAuthenticatedUserId(req) {
   if (
-    req === null
-    || typeof req !== 'object'
-    || Array.isArray(req)
-    || !Object.hasOwn(req, 'user')
+    !isObjectRecord(req)
+    || !hasOwnDataProperty(req, 'user')
   ) {
     throw new TypeError(INVALID_AUTH_PRINCIPAL_ERROR);
   }
 
   const user = getOwnDataPropertyValue(req, 'user');
-  if (
-    user === null
-    || typeof user !== 'object'
-    || Array.isArray(user)
-  ) {
+  if (!isObjectRecord(user)) {
     throw new TypeError(INVALID_AUTH_PRINCIPAL_ERROR);
   }
 
@@ -223,8 +224,8 @@ function assertStudySessionCardReadResult(row, expectedCardId, expectedUserId) {
 
   if (
     validatePositiveIntegerIdentifier(row.id, 'cardId').value !== expectedCardId
-    || !Object.hasOwn(row, '__is_due')
-    || typeof row.__is_due !== 'boolean'
+    || !hasOwnDataProperty(row, '__is_due')
+    || typeof getOwnDataPropertyValue(row, '__is_due') !== 'boolean'
   ) {
     throw new TypeError(INVALID_STUDY_SESSION_CARD_READ_RESULT_ERROR);
   }
@@ -413,7 +414,7 @@ function getDueCardPredicate(tableAlias = 'c') {
 }
 
 function assertObjectHasOwnFields(row, fields, errorMessage) {
-  if (row === null || typeof row !== 'object' || Array.isArray(row)) {
+  if (!isObjectRecord(row)) {
     throw new TypeError(errorMessage);
   }
 
@@ -424,25 +425,13 @@ function assertObjectHasOwnFields(row, fields, errorMessage) {
   }
 }
 
-function hasOwnDataProperty(object, fieldName) {
-  const descriptor = Object.getOwnPropertyDescriptor(object, fieldName);
-  return descriptor !== undefined && Object.hasOwn(descriptor, 'value');
-}
-
-function getOwnDataPropertyValue(object, fieldName) {
-  const descriptor = Object.getOwnPropertyDescriptor(object, fieldName);
-  return descriptor !== undefined && Object.hasOwn(descriptor, 'value')
-    ? descriptor.value
-    : undefined;
-}
-
 function getOptionalOwnDataProperty(object, fieldName, errorMessage) {
-  const descriptor = Object.getOwnPropertyDescriptor(object, fieldName);
+  const descriptor = getOwnRecordPropertyDescriptor(object, fieldName);
   if (descriptor === undefined) {
     return { exists: false, value: undefined };
   }
 
-  if (!Object.hasOwn(descriptor, 'value')) {
+  if (!isDataPropertyDescriptor(descriptor)) {
     throw new TypeError(errorMessage);
   }
 
@@ -960,23 +949,10 @@ function toRecommendedDailyReviewTarget(focusLoad) {
 }
 
 function assertQueryResultShape(result, errorMessage) {
-  if (result === null || typeof result !== 'object' || Array.isArray(result)) {
-    throw new TypeError(errorMessage);
-  }
+  assertObjectHasOwnFields(result, ['rows', 'rowCount'], errorMessage);
 
-  const rowsDescriptor = Object.getOwnPropertyDescriptor(result, 'rows');
-  const rowCountDescriptor = Object.getOwnPropertyDescriptor(result, 'rowCount');
-  if (
-    rowsDescriptor === undefined
-    || rowCountDescriptor === undefined
-    || !Object.hasOwn(rowsDescriptor, 'value')
-    || !Object.hasOwn(rowCountDescriptor, 'value')
-  ) {
-    throw new TypeError(errorMessage);
-  }
-
-  const rows = rowsDescriptor.value;
-  const rowCount = rowCountDescriptor.value;
+  const rows = getOwnDataPropertyValue(result, 'rows');
+  const rowCount = getOwnDataPropertyValue(result, 'rowCount');
   if (
     !Array.isArray(rows)
     || !Number.isSafeInteger(rowCount)
@@ -1064,8 +1040,8 @@ function toCardReadPayload(row) {
   const card = {};
 
   for (const field of CARD_READ_FIELDS) {
-    if (Object.hasOwn(row, field)) {
-      card[field] = row[field];
+    if (hasOwnDataProperty(row, field)) {
+      card[field] = getOwnDataPropertyValue(row, field);
     }
   }
 
@@ -1076,8 +1052,8 @@ function toDeckReadPayload(row) {
   const deck = {};
 
   for (const field of DECK_READ_FIELDS) {
-    if (Object.hasOwn(row, field)) {
-      deck[field] = row[field];
+    if (hasOwnDataProperty(row, field)) {
+      deck[field] = getOwnDataPropertyValue(row, field);
     }
   }
 
@@ -1116,8 +1092,8 @@ function toStudySessionResponseCardPayload(row) {
   const card = {};
 
   for (const field of STUDY_SESSION_RESPONSE_CARD_FIELDS) {
-    if (Object.hasOwn(row, field)) {
-      card[field] = row[field];
+    if (hasOwnDataProperty(row, field)) {
+      card[field] = getOwnDataPropertyValue(row, field);
     }
   }
 
@@ -1128,8 +1104,8 @@ function toDeleteCardResponseCardPayload(row) {
   const card = {};
 
   for (const field of DELETE_CARD_RESPONSE_CARD_FIELDS) {
-    if (Object.hasOwn(row, field)) {
-      card[field] = row[field];
+    if (hasOwnDataProperty(row, field)) {
+      card[field] = getOwnDataPropertyValue(row, field);
     }
   }
 
@@ -1193,16 +1169,12 @@ function validateDueCardsLimit(value) {
 }
 
 function getOwnRequestContainer(req, fieldName) {
-  if (
-    req === null
-    || typeof req !== 'object'
-    || Array.isArray(req)
-  ) {
+  if (!isObjectRecord(req)) {
     return {};
   }
 
   const value = getOwnDataPropertyValue(req, fieldName);
-  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  return isObjectRecord(value) ? value : {};
 }
 
 function getRequestQueryObject(req) {

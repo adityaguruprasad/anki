@@ -60,27 +60,38 @@ function createQueryResultWithInheritedShape(rowCount, rows) {
 
 function createQueryResultWithAccessorShape(rowCount, rows) {
   const result = {};
+  const accessCounts = { rowCount: 0, rows: 0 };
   Object.defineProperties(result, {
     rowCount: {
       enumerable: true,
-      get: () => rowCount,
+      get() {
+        accessCounts.rowCount += 1;
+        return rowCount;
+      },
     },
     rows: {
       enumerable: true,
-      get: () => rows,
+      get() {
+        accessCounts.rows += 1;
+        return rows;
+      },
     },
   });
-  return result;
+  return { accessCounts, result };
 }
 
 function createRowWithAccessorField(row, fieldName) {
   const accessorRow = { ...row };
   const value = accessorRow[fieldName];
+  const accessCounts = { [fieldName]: 0 };
   Object.defineProperty(accessorRow, fieldName, {
     enumerable: true,
-    get: () => value,
+    get() {
+      accessCounts[fieldName] += 1;
+      return value;
+    },
   });
-  return accessorRow;
+  return { accessCounts, row: accessorRow };
 }
 
 function createUniqueViolation(constraint) {
@@ -759,10 +770,14 @@ test('API query result helpers fail closed when rows and rowCount are accessors'
     weekReviews: '7',
     monthReviews: '10',
   };
+  const optionalSingleResult = createQueryResultWithAccessorShape(1, [deck]);
+  const listResult = createQueryResultWithAccessorShape(1, [deckListRow]);
+  const aggregateResult = createQueryResultWithAccessorShape(1, [stats]);
   const cases = [
     {
       name: 'optional single result',
-      result: createQueryResultWithAccessorShape(1, [deck]),
+      result: optionalSingleResult.result,
+      accessCounts: optionalSingleResult.accessCounts,
       run: (db, res) => createDeck(
         { body: { name: 'Biology' }, user: { userId: 1 } },
         res,
@@ -771,12 +786,14 @@ test('API query result helpers fail closed when rows and rowCount are accessors'
     },
     {
       name: 'list result',
-      result: createQueryResultWithAccessorShape(1, [deckListRow]),
+      result: listResult.result,
+      accessCounts: listResult.accessCounts,
       run: (db, res) => getDecks({ user: { userId: 1 } }, res, db),
     },
     {
       name: 'aggregate result',
-      result: createQueryResultWithAccessorShape(1, [stats]),
+      result: aggregateResult.result,
+      accessCounts: aggregateResult.accessCounts,
       run: (db, res) => getStats({ user: { userId: 1 } }, res, db),
     },
   ];
@@ -791,6 +808,8 @@ test('API query result helpers fail closed when rows and rowCount are accessors'
 
       assert.equal(res.statusCode, 500);
       assert.deepEqual(res.body, { error: 'Internal server error' });
+      assert.equal(testCase.accessCounts.rowCount, 0);
+      assert.equal(testCase.accessCounts.rows, 0);
       assert.equal(db.calls.length, 1);
     });
   }
@@ -804,10 +823,11 @@ test('API row validators fail closed when required result fields are accessors',
     description: null,
     created_at: '2026-05-08T00:00:00.000Z',
   };
+  const accessorRow = createRowWithAccessorField(deck, 'id');
   const db = createDb([
     {
       rowCount: 1,
-      rows: [createRowWithAccessorField(deck, 'id')],
+      rows: [accessorRow.row],
     },
   ]);
   const req = { body: { name: 'Biology' }, user: { userId: 1 } };
@@ -818,6 +838,7 @@ test('API row validators fail closed when required result fields are accessors',
 
   assert.equal(res.statusCode, 500);
   assert.deepEqual(res.body, { error: 'Internal server error' });
+  assert.equal(accessorRow.accessCounts.id, 0);
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, [1, 'Biology']);
 });
@@ -6198,6 +6219,58 @@ test('POST /api/study-session rolls back before scheduling when the locked card 
     assert.match(db.calls[2].sql, /^\s*ROLLBACK\s*$/i);
     assert.doesNotMatch(db.calls.map(({ sql }) => sql).join('\n'), /\bUPDATE\s+cards\b|\bCOMMIT\b/i);
   }
+});
+
+test('POST /api/study-session rejects accessor due proof without invoking it before scheduling', async (t) => {
+  const sourceCard = createStudySessionCardReadRow({
+    id: 7,
+    deck_id: 1,
+    front_content: 'Front',
+    back_content: 'Back',
+    created_at: '2026-05-01T12:00:00.000Z',
+    last_reviewed: null,
+    next_review: '2026-05-08T12:00:00.000Z',
+    ease_factor: 2.5,
+    interval: 2,
+    review_count: 2,
+    __is_due: true,
+  });
+  let dueProofAccesses = 0;
+  Object.defineProperty(sourceCard, '__is_due', {
+    enumerable: true,
+    get() {
+      dueProofAccesses += 1;
+      return true;
+    },
+  });
+  const db = createTransactionDb([
+    { rowCount: 1, rows: [sourceCard] },
+  ]);
+  const req = { body: { cardId: 7, quality: 4 }, user: { userId: 1 } };
+  const res = createRes();
+  let schedulerCalled = false;
+  t.mock.method(console, 'error', () => {});
+
+  await submitStudySession(req, res, db, () => {
+    schedulerCalled = true;
+    return {
+      ease_factor: 2.6,
+      interval: 3,
+      next_review: '2026-05-08T12:00:00.000Z',
+    };
+  });
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Internal server error' });
+  assert.equal(dueProofAccesses, 0);
+  assert.equal(schedulerCalled, false);
+  assert.equal(db.connectCalls, 1);
+  assert.equal(db.client.released, true);
+  assert.equal(db.calls.length, 3);
+  assert.match(db.calls[0].sql, /^\s*BEGIN\s*$/i);
+  assertStudySessionCardReadSql(db.calls[1].sql);
+  assert.match(db.calls[2].sql, /^\s*ROLLBACK\s*$/i);
+  assert.doesNotMatch(db.calls.map(({ sql }) => sql).join('\n'), /\bUPDATE\s+cards\b|\bCOMMIT\b/i);
 });
 
 test('POST /api/study-session rolls back before scheduling when the locked card read cardinality is malformed', async (t) => {
