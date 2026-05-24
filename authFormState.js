@@ -5,6 +5,7 @@ const {
   validateRegistrationPassword,
 } = require('./authPasswordValidation');
 const { normalizeAuthToken } = require('./authTokenValidation');
+const { getOwnDataPropertyValue } = require('./recordDataProperty');
 const { getStorageGetItem } = require('./storageGetItem');
 
 const AUTH_MODES = Object.freeze({
@@ -93,14 +94,7 @@ function normalizeAbsoluteApiBaseUrl(value) {
 }
 
 function getOwnConfigValue(config, fieldName) {
-  if (config === null || typeof config !== 'object' || Array.isArray(config)) {
-    return undefined;
-  }
-
-  const descriptor = Object.getOwnPropertyDescriptor(config, fieldName);
-  return descriptor !== undefined && Object.hasOwn(descriptor, 'value')
-    ? descriptor.value
-    : undefined;
+  return getOwnDataPropertyValue(config, fieldName);
 }
 
 function normalizeConfiguredApiBaseUrl(value) {
@@ -156,11 +150,8 @@ function normalizeBackendAuthError(value) {
 }
 
 function getBackendAuthError(body) {
-  if (body === null || typeof body !== 'object') {
-    return '';
-  }
-
-  return normalizeBackendAuthError(body.error) || normalizeBackendAuthError(body.message);
+  return normalizeBackendAuthError(getOwnDataPropertyValue(body, 'error'))
+    || normalizeBackendAuthError(getOwnDataPropertyValue(body, 'message'));
 }
 
 function parseAuthResponse({ mode, ok, body, bodyParseError }) {

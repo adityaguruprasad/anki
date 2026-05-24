@@ -928,6 +928,120 @@ test('parseAuthResponse uses bounded backend error copy for non-2xx registration
   );
 });
 
+test('parseAuthResponse ignores inherited backend error copy for non-2xx registration responses', () => {
+  const payload = Object.create({
+    error: 'Inherited error should not surface.',
+    message: 'Inherited message should not surface.',
+  });
+
+  assert.deepEqual(
+    parseAuthResponse({
+      mode: AUTH_MODES.REGISTER,
+      ok: false,
+      body: payload,
+    }),
+    {
+      ok: false,
+      error: 'Could not create account. Please check your email and password.',
+    }
+  );
+});
+
+test('parseAuthResponse ignores accessor-backed backend error copy without invoking getters', () => {
+  let ownErrorGetterCalls = 0;
+  let ownMessageGetterCalls = 0;
+  const ownAccessorPayload = {};
+
+  Object.defineProperty(ownAccessorPayload, 'error', {
+    enumerable: true,
+    get() {
+      ownErrorGetterCalls += 1;
+      throw new Error('own error getter should not run');
+    },
+  });
+  Object.defineProperty(ownAccessorPayload, 'message', {
+    enumerable: true,
+    get() {
+      ownMessageGetterCalls += 1;
+      throw new Error('own message getter should not run');
+    },
+  });
+
+  assert.deepEqual(
+    parseAuthResponse({
+      mode: AUTH_MODES.REGISTER,
+      ok: false,
+      body: ownAccessorPayload,
+    }),
+    {
+      ok: false,
+      error: 'Could not create account. Please check your email and password.',
+    }
+  );
+  assert.equal(ownErrorGetterCalls, 0);
+  assert.equal(ownMessageGetterCalls, 0);
+
+  let inheritedErrorGetterCalls = 0;
+  let inheritedMessageGetterCalls = 0;
+  const prototype = {};
+  Object.defineProperty(prototype, 'error', {
+    enumerable: true,
+    get() {
+      inheritedErrorGetterCalls += 1;
+      throw new Error('inherited error getter should not run');
+    },
+  });
+  Object.defineProperty(prototype, 'message', {
+    enumerable: true,
+    get() {
+      inheritedMessageGetterCalls += 1;
+      throw new Error('inherited message getter should not run');
+    },
+  });
+
+  assert.deepEqual(
+    parseAuthResponse({
+      mode: AUTH_MODES.REGISTER,
+      ok: false,
+      body: Object.create(prototype),
+    }),
+    {
+      ok: false,
+      error: 'Could not create account. Please check your email and password.',
+    }
+  );
+  assert.equal(inheritedErrorGetterCalls, 0);
+  assert.equal(inheritedMessageGetterCalls, 0);
+});
+
+test('parseAuthResponse accepts null-prototype backend error payloads for non-2xx registration responses', () => {
+  const payload = Object.create(null);
+  payload.message = '  Email is already registered.\nPlease sign in instead.  ';
+
+  assert.deepEqual(
+    parseAuthResponse({
+      mode: AUTH_MODES.REGISTER,
+      ok: false,
+      body: payload,
+    }),
+    { ok: false, error: 'Email is already registered. Please sign in instead.' }
+  );
+});
+
+test('parseAuthResponse prefers own backend error over own message for non-2xx registration responses', () => {
+  assert.deepEqual(
+    parseAuthResponse({
+      mode: AUTH_MODES.REGISTER,
+      ok: false,
+      body: {
+        error: '  Email is invalid.\nTry another address.  ',
+        message: 'Email is already registered.',
+      },
+    }),
+    { ok: false, error: 'Email is invalid. Try another address.' }
+  );
+});
+
 test('parseAuthResponse falls back to mode-specific generic copy for unusable non-2xx payloads', () => {
   assert.deepEqual(
     parseAuthResponse({
