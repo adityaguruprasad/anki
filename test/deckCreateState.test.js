@@ -82,12 +82,89 @@ test('getCreateDeckFailureMessage surfaces server errors when present', () => {
     getCreateDeckFailureMessage({ error: 'Deck name already exists for this user' }),
     'Deck name already exists for this user'
   );
+  assert.equal(
+    getCreateDeckFailureMessage({ error: '  Deck name already exists for this user  ' }),
+    '  Deck name already exists for this user  '
+  );
+});
+
+test('getCreateDeckFailureMessage preserves null-prototype own data server errors', () => {
+  const payload = Object.create(null);
+  payload.error = 'Deck name already exists for this user';
+
+  assert.equal(
+    getCreateDeckFailureMessage(payload),
+    'Deck name already exists for this user'
+  );
+});
+
+test('getCreateDeckFailureMessage ignores inherited server errors without invoking getters', () => {
+  const dataBackedPayload = Object.create({
+    error: 'Inherited error should not surface.',
+  });
+
+  assert.equal(
+    getCreateDeckFailureMessage(dataBackedPayload),
+    CREATE_DECK_MESSAGES.createFailed
+  );
+
+  let getterCalls = 0;
+  const prototype = {};
+  Object.defineProperty(prototype, 'error', {
+    get() {
+      getterCalls += 1;
+      throw new Error('prototype error getter should not run');
+    },
+  });
+
+  assert.equal(
+    getCreateDeckFailureMessage(Object.create(prototype)),
+    CREATE_DECK_MESSAGES.createFailed
+  );
+  assert.equal(getterCalls, 0);
+});
+
+test('getCreateDeckFailureMessage ignores own accessor server errors without invoking getters', () => {
+  let getterCalls = 0;
+  const payload = {};
+
+  Object.defineProperty(payload, 'error', {
+    get() {
+      getterCalls += 1;
+      throw new Error('own error getter should not run');
+    },
+  });
+
+  assert.equal(
+    getCreateDeckFailureMessage(payload),
+    CREATE_DECK_MESSAGES.createFailed
+  );
+  assert.equal(getterCalls, 0);
 });
 
 test('getCreateDeckFailureMessage falls back when response has no usable server error', () => {
-  assert.equal(getCreateDeckFailureMessage({}), CREATE_DECK_MESSAGES.createFailed);
-  assert.equal(getCreateDeckFailureMessage({ error: '   ' }), CREATE_DECK_MESSAGES.createFailed);
-  assert.equal(getCreateDeckFailureMessage(null), CREATE_DECK_MESSAGES.createFailed);
+  const arrayPayload = [];
+  arrayPayload.error = 'Array error should not surface.';
+
+  [
+    undefined,
+    null,
+    'Deck name already exists for this user',
+    409,
+    true,
+    {},
+    arrayPayload,
+    { error: '' },
+    { error: '   ' },
+    { error: 409 },
+    { error: { message: 'Deck name already exists for this user' } },
+    { error: ['Deck name already exists for this user'] },
+  ].forEach((payload) => {
+    assert.equal(
+      getCreateDeckFailureMessage(payload),
+      CREATE_DECK_MESSAGES.createFailed
+    );
+  });
 });
 
 test('create-deck response completion ignores stale responses before parsing payloads', () => {

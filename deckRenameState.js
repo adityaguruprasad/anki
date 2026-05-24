@@ -4,6 +4,7 @@ const {
   validateDeckName,
 } = require('./deckNameValidation');
 const { parseDeckMutationResponsePayload } = require('./deckMutationResponse');
+const { getOwnDataPropertyValue } = require('./recordDataProperty');
 
 const RENAME_DECK_MESSAGES = Object.freeze({
   blankName: 'Deck name is required.',
@@ -68,8 +69,10 @@ function renameDeckSubmission({ name, currentName, isSubmitting }) {
 }
 
 function getRenameDeckFailureMessage(payload) {
-  if (payload && typeof payload.error === 'string' && payload.error.trim()) {
-    return payload.error;
+  const serverError = getOwnDataPropertyValue(payload, 'error');
+
+  if (typeof serverError === 'string' && serverError.trim()) {
+    return serverError;
   }
 
   return RENAME_DECK_MESSAGES.renameFailed;

@@ -4,6 +4,7 @@ const {
   validateDeckName,
 } = require('./deckNameValidation');
 const { parseDeckMutationResponsePayload } = require('./deckMutationResponse');
+const { getOwnDataPropertyValue } = require('./recordDataProperty');
 
 const CREATE_DECK_MESSAGES = Object.freeze({
   blankName: 'Deck name is required.',
@@ -58,8 +59,10 @@ function createDeckSubmission({ name, isSubmitting }) {
 }
 
 function getCreateDeckFailureMessage(payload) {
-  if (payload && typeof payload.error === 'string' && payload.error.trim()) {
-    return payload.error;
+  const serverError = getOwnDataPropertyValue(payload, 'error');
+
+  if (typeof serverError === 'string' && serverError.trim()) {
+    return serverError;
   }
 
   return CREATE_DECK_MESSAGES.createFailed;

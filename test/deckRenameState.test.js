@@ -142,12 +142,89 @@ test('getRenameDeckFailureMessage surfaces server errors when present', () => {
     getRenameDeckFailureMessage({ error: 'Deck name already exists for this user' }),
     'Deck name already exists for this user',
   );
+  assert.equal(
+    getRenameDeckFailureMessage({ error: '  Deck name already exists for this user  ' }),
+    '  Deck name already exists for this user  ',
+  );
+});
+
+test('getRenameDeckFailureMessage preserves null-prototype own data server errors', () => {
+  const payload = Object.create(null);
+  payload.error = 'Deck name already exists for this user';
+
+  assert.equal(
+    getRenameDeckFailureMessage(payload),
+    'Deck name already exists for this user',
+  );
+});
+
+test('getRenameDeckFailureMessage ignores inherited server errors without invoking getters', () => {
+  const dataBackedPayload = Object.create({
+    error: 'Inherited error should not surface.',
+  });
+
+  assert.equal(
+    getRenameDeckFailureMessage(dataBackedPayload),
+    RENAME_DECK_MESSAGES.renameFailed,
+  );
+
+  let getterCalls = 0;
+  const prototype = {};
+  Object.defineProperty(prototype, 'error', {
+    get() {
+      getterCalls += 1;
+      throw new Error('prototype error getter should not run');
+    },
+  });
+
+  assert.equal(
+    getRenameDeckFailureMessage(Object.create(prototype)),
+    RENAME_DECK_MESSAGES.renameFailed,
+  );
+  assert.equal(getterCalls, 0);
+});
+
+test('getRenameDeckFailureMessage ignores own accessor server errors without invoking getters', () => {
+  let getterCalls = 0;
+  const payload = {};
+
+  Object.defineProperty(payload, 'error', {
+    get() {
+      getterCalls += 1;
+      throw new Error('own error getter should not run');
+    },
+  });
+
+  assert.equal(
+    getRenameDeckFailureMessage(payload),
+    RENAME_DECK_MESSAGES.renameFailed,
+  );
+  assert.equal(getterCalls, 0);
 });
 
 test('getRenameDeckFailureMessage falls back when response has no usable server error', () => {
-  assert.equal(getRenameDeckFailureMessage({}), RENAME_DECK_MESSAGES.renameFailed);
-  assert.equal(getRenameDeckFailureMessage({ error: '   ' }), RENAME_DECK_MESSAGES.renameFailed);
-  assert.equal(getRenameDeckFailureMessage(null), RENAME_DECK_MESSAGES.renameFailed);
+  const arrayPayload = [];
+  arrayPayload.error = 'Array error should not surface.';
+
+  [
+    undefined,
+    null,
+    'Deck name already exists for this user',
+    409,
+    true,
+    {},
+    arrayPayload,
+    { error: '' },
+    { error: '   ' },
+    { error: 409 },
+    { error: { message: 'Deck name already exists for this user' } },
+    { error: ['Deck name already exists for this user'] },
+  ].forEach((payload) => {
+    assert.equal(
+      getRenameDeckFailureMessage(payload),
+      RENAME_DECK_MESSAGES.renameFailed,
+    );
+  });
 });
 
 test('rename-deck response completion ignores stale responses before parsing payloads', () => {
