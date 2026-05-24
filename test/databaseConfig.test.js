@@ -171,6 +171,24 @@ test('database config trusts own data properties that shadow polluted prototypes
   assert.deepEqual(buildDatabasePoolConfig(config), { connectionString });
 });
 
+test('database config accepts null-prototype env records with own data properties', () => {
+  const connectionString = 'postgres://null-prototype.example.com/anki';
+  const config = Object.create(null);
+
+  Object.defineProperties(config, {
+    DATABASE_URL: {
+      value: connectionString,
+      enumerable: true,
+    },
+    NODE_ENV: {
+      value: 'production',
+      enumerable: true,
+    },
+  });
+
+  assert.deepEqual(buildDatabasePoolConfig(config), { connectionString });
+});
+
 test('database config ignores arrays and primitives supplied as configs', () => {
   const arrayConfig = [];
   arrayConfig.DATABASE_URL = 'postgres://array.example.com/anki';
