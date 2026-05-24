@@ -20,6 +20,36 @@ function createValidDashboardStats(overrides = {}) {
   };
 }
 
+const DASHBOARD_TOTAL_FIELD_NAMES = Object.freeze([
+  'totalCards',
+  'totalDecks',
+]);
+
+const DASHBOARD_STATS_FIELD_NAMES = Object.freeze([
+  ...DASHBOARD_TOTAL_FIELD_NAMES,
+  'todayReviews',
+  'weekReviews',
+  'monthReviews',
+]);
+
+function createNullPrototypeDashboardStats(overrides = {}) {
+  return Object.assign(Object.create(null), createValidDashboardStats(), overrides);
+}
+
+function defineThrowingGetter(object, fieldName) {
+  let getterCalls = 0;
+
+  Object.defineProperty(object, fieldName, {
+    configurable: true,
+    get() {
+      getterCalls += 1;
+      throw new Error(`${fieldName} getter should not run`);
+    },
+  });
+
+  return () => getterCalls;
+}
+
 test('hasStatsPayload requires valid dashboard total count fields', () => {
   [
     { totalCards: 0, totalDecks: 0 },
@@ -102,6 +132,60 @@ test('hasDashboardStatsPayload requires the full stats endpoint contract', () =>
   ].forEach((stats) => {
     assert.equal(hasDashboardStatsPayload(stats), false);
   });
+});
+
+test('dashboard stats payload accepts null-prototype stats with own data fields', () => {
+  const stats = createNullPrototypeDashboardStats({
+    totalCards: ' 00012 ',
+    totalDecks: '0003',
+    todayReviews: '0001',
+    weekReviews: '0004',
+    monthReviews: '0009',
+  });
+
+  assert.equal(hasStatsPayload(stats), true);
+  assert.equal(hasDashboardStatsPayload(stats), true);
+
+  const state = buildDashboardStatsDisplayState({ stats });
+  assert.equal(state.hasStats, true);
+  assert.equal(state.totalCards.kind, 'value');
+  assert.equal(state.totalCards.text, '12');
+  assert.equal(state.totalDecks.text, '3');
+});
+
+test('dashboard stats payload rejects inherited and accessor-backed fields without invoking getters', () => {
+  assert.equal(hasStatsPayload(Object.create({ totalCards: 12, totalDecks: 3 })), false);
+  assert.equal(hasDashboardStatsPayload(Object.create(createValidDashboardStats())), false);
+
+  for (const fieldName of DASHBOARD_STATS_FIELD_NAMES) {
+    const ownAccessorStats = createNullPrototypeDashboardStats();
+    const ownGetterCalls = defineThrowingGetter(ownAccessorStats, fieldName);
+
+    assert.equal(hasDashboardStatsPayload(ownAccessorStats), false);
+    const ownAccessorState = buildDashboardStatsDisplayState({
+      stats: ownAccessorStats,
+      statsLoadFailed: true,
+    });
+    const isTotalField = DASHBOARD_TOTAL_FIELD_NAMES.includes(fieldName);
+    assert.equal(ownAccessorState.hasStats, !isTotalField);
+    assert.equal(ownAccessorState.totalCards.kind, isTotalField ? 'unavailable' : 'value');
+    assert.equal(ownGetterCalls(), 0);
+
+    const prototype = {};
+    const prototypeGetterCalls = defineThrowingGetter(prototype, fieldName);
+    const prototypeBackedStats = createNullPrototypeDashboardStats();
+    delete prototypeBackedStats[fieldName];
+    Object.setPrototypeOf(prototypeBackedStats, prototype);
+
+    assert.equal(hasDashboardStatsPayload(prototypeBackedStats), false);
+    const prototypeBackedState = buildDashboardStatsDisplayState({
+      stats: prototypeBackedStats,
+      statsLoadFailed: true,
+    });
+    assert.equal(prototypeBackedState.hasStats, !isTotalField);
+    assert.equal(prototypeBackedState.totalCards.kind, isTotalField ? 'unavailable' : 'value');
+    assert.equal(prototypeGetterCalls(), 0);
+  }
 });
 
 test('hasDashboardStatsPayload mirrors the server card-count-by-last_reviewed invariant', () => {

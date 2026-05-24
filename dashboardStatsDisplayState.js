@@ -2,6 +2,10 @@ const {
   hasReviewActivityStats,
   toReviewActivityCount,
 } = require('./dashboardReviewActivityDisplayState');
+const {
+  getOwnDataPropertyValue,
+  isObjectRecord,
+} = require('./recordDataProperty');
 
 const DASHBOARD_STATS_COPY = Object.freeze({
   loading: 'Loading stats...',
@@ -43,12 +47,9 @@ function isStatsCount(value) {
 
 function hasStatsPayload(stats) {
   return (
-    Boolean(stats)
-    && typeof stats === 'object'
-    && !Array.isArray(stats)
+    isObjectRecord(stats)
     && DASHBOARD_STATS_COUNT_KEYS.every((key) => (
-      Object.prototype.hasOwnProperty.call(stats, key)
-      && isStatsCount(stats[key])
+      isStatsCount(getOwnDataPropertyValue(stats, key))
     ))
   );
 }
@@ -65,8 +66,8 @@ function isNormalizedCountLessThanOrEqual(left, right) {
 }
 
 function hasStatsAggregateInvariants(stats) {
-  const totalCards = normalizeStatsCount(stats.totalCards);
-  const monthReviews = toReviewActivityCount(stats.monthReviews);
+  const totalCards = normalizeStatsCount(getOwnDataPropertyValue(stats, 'totalCards'));
+  const monthReviews = toReviewActivityCount(getOwnDataPropertyValue(stats, 'monthReviews'));
 
   return (
     totalCards !== null
@@ -112,7 +113,7 @@ function buildStatCardDisplay(stats, key, isLoadingStats) {
 
   return {
     kind: 'value',
-    text: toDisplayCount(stats[key]),
+    text: toDisplayCount(getOwnDataPropertyValue(stats, key)),
     isLoading: false,
     isUnavailable: false,
     isValue: true,

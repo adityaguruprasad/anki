@@ -1,3 +1,8 @@
+const {
+  getOwnDataPropertyValue,
+  isObjectRecord,
+} = require('./recordDataProperty');
+
 const DASHBOARD_REVIEW_ACTIVITY_COPY = Object.freeze({
   loading: 'Loading review activity...',
   unavailable: 'Review activity is unavailable.',
@@ -38,20 +43,12 @@ function normalizeReviewActivityCount(value) {
 }
 
 function hasReviewActivityStats(stats) {
-  if (
-    !stats
-    || typeof stats !== 'object'
-    || Array.isArray(stats)
-  ) {
+  if (!isObjectRecord(stats)) {
     return false;
   }
 
   const reviewCounts = REVIEW_ACTIVITY_CHART_BUCKETS.map(({ key }) => {
-    if (!Object.prototype.hasOwnProperty.call(stats, key)) {
-      return null;
-    }
-
-    return normalizeReviewActivityCount(stats[key]);
+    return normalizeReviewActivityCount(getOwnDataPropertyValue(stats, key));
   });
 
   return reviewCounts.every((count, index) => (
@@ -71,7 +68,7 @@ function buildReviewActivityChartData(stats) {
 
   return REVIEW_ACTIVITY_CHART_BUCKETS.map(({ name, key }) => ({
     name,
-    cards: toReviewActivityCount(stats[key]),
+    cards: toReviewActivityCount(getOwnDataPropertyValue(stats, key)),
   }));
 }
 

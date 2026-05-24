@@ -11,6 +11,35 @@ const {
   toReviewActivityCount,
 } = reviewActivityDisplayState;
 
+const REVIEW_ACTIVITY_FIELD_NAMES = Object.freeze([
+  'todayReviews',
+  'weekReviews',
+  'monthReviews',
+]);
+
+function createNullPrototypeReviewActivityStats(overrides = {}) {
+  return Object.assign(Object.create(null), {
+    todayReviews: 1,
+    weekReviews: 2,
+    monthReviews: 3,
+    ...overrides,
+  });
+}
+
+function defineThrowingGetter(object, fieldName) {
+  let getterCalls = 0;
+
+  Object.defineProperty(object, fieldName, {
+    configurable: true,
+    get() {
+      getterCalls += 1;
+      throw new Error(`${fieldName} getter should not run`);
+    },
+  });
+
+  return () => getterCalls;
+}
+
 test('exports toReviewActivityCount for dashboard stats validation', () => {
   assert.equal(typeof reviewActivityDisplayState.toReviewActivityCount, 'function');
   assert.equal(reviewActivityDisplayState.toReviewActivityCount(' 00012 '), 12);
@@ -46,6 +75,41 @@ test('hasReviewActivityStats requires valid review activity count fields', () =>
   ].forEach((stats) => {
     assert.equal(hasReviewActivityStats(stats), false);
   });
+});
+
+test('hasReviewActivityStats accepts null-prototype stats with own data fields', () => {
+  const stats = createNullPrototypeReviewActivityStats({
+    todayReviews: ' 00001 ',
+    weekReviews: '0002',
+  });
+
+  assert.equal(hasReviewActivityStats(stats), true);
+  assert.deepEqual(buildReviewActivityChartData(stats), [
+    { name: 'Today', cards: 1 },
+    { name: 'This Week', cards: 2 },
+    { name: 'This Month', cards: 3 },
+  ]);
+});
+
+test('hasReviewActivityStats rejects inherited and accessor-backed fields without invoking getters', () => {
+  for (const fieldName of REVIEW_ACTIVITY_FIELD_NAMES) {
+    const ownAccessorStats = createNullPrototypeReviewActivityStats();
+    const ownGetterCalls = defineThrowingGetter(ownAccessorStats, fieldName);
+
+    assert.equal(hasReviewActivityStats(ownAccessorStats), false);
+    assert.equal(buildReviewActivityChartData(ownAccessorStats), null);
+    assert.equal(ownGetterCalls(), 0);
+
+    const prototype = {};
+    const prototypeGetterCalls = defineThrowingGetter(prototype, fieldName);
+    const prototypeBackedStats = createNullPrototypeReviewActivityStats();
+    delete prototypeBackedStats[fieldName];
+    Object.setPrototypeOf(prototypeBackedStats, prototype);
+
+    assert.equal(hasReviewActivityStats(prototypeBackedStats), false);
+    assert.equal(buildReviewActivityChartData(prototypeBackedStats), null);
+    assert.equal(prototypeGetterCalls(), 0);
+  }
 });
 
 test('toReviewActivityCount accepts safe integer numbers and digit strings', () => {
