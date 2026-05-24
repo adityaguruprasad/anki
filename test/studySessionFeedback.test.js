@@ -23,6 +23,21 @@ function createValidSubmissionCard(overrides = {}) {
   };
 }
 
+function createNullPrototypeRecord(properties) {
+  const record = Object.create(null);
+
+  Object.entries(properties).forEach(([fieldName, value]) => {
+    Object.defineProperty(record, fieldName, {
+      value,
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
+  });
+
+  return record;
+}
+
 function defineThrowingGetter(object, fieldName) {
   Object.defineProperty(object, fieldName, {
     configurable: true,
@@ -147,6 +162,21 @@ test('getStudySessionSubmissionRecovery maps validated stale-card conflicts to n
   });
 });
 
+test('getStudySessionSubmissionRecovery reads stale conflict errors from own data properties only', () => {
+  const prototype = {};
+  defineThrowingGetter(prototype, 'error');
+  const payload = Object.create(prototype);
+  Object.defineProperty(payload, 'error', {
+    value: 'Card is not due',
+    enumerable: false,
+  });
+
+  assert.deepEqual(getStudySessionSubmissionRecovery({ status: 409 }, payload), {
+    action: STUDY_SESSION_SUBMISSION_RECOVERY_ACTIONS.LOAD_NEXT_DUE_CARD,
+    message: 'This card was already rescheduled and is no longer due. Moving to the next due card.',
+  });
+});
+
 test('getStudySessionSubmissionRecovery ignores non-conflict or malformed submission responses', () => {
   const throwingStatusResponse = {};
   Object.defineProperty(throwingStatusResponse, 'status', {
@@ -248,17 +278,57 @@ test('getValidatedStudySessionSubmissionResponse preserves valid submission payl
   assert.equal(getValidatedStudySessionSubmissionResponse(boundaryResponse), boundaryResponse);
 });
 
-test('getValidatedStudySessionSubmissionResponse rejects inherited response fields without invoking getters', () => {
+test('getValidatedStudySessionSubmissionResponse accepts null-prototype response and card records', () => {
+  const card = createNullPrototypeRecord(createValidSubmissionCard());
+  const response = createNullPrototypeRecord({
+    success: true,
+    card,
+    message: 'Answer submitted',
+  });
+
+  assert.equal(getValidatedStudySessionSubmissionResponse(response), response);
+  assert.equal(
+    getValidatedStudySessionSubmissionResponse(response, { expectedId: ' 0007 ' }),
+    response,
+  );
+});
+
+test('getValidatedStudySessionSubmissionResponse rejects inherited response and card fields without invoking getters', () => {
   const inheritedResponse = Object.create({
     success: true,
     card: createValidSubmissionCard(),
   });
   assert.equal(getValidatedStudySessionSubmissionResponse(inheritedResponse), null);
 
+  assert.equal(
+    getValidatedStudySessionSubmissionResponse({
+      success: true,
+      card: Object.create(createValidSubmissionCard()),
+    }),
+    null,
+  );
+
   const accessorPrototype = {};
   defineThrowingGetter(accessorPrototype, 'success');
   defineThrowingGetter(accessorPrototype, 'card');
   assert.equal(getValidatedStudySessionSubmissionResponse(Object.create(accessorPrototype)), null);
+
+  const validCard = createValidSubmissionCard();
+  ['id', 'next_review', 'last_reviewed', 'interval', 'ease_factor', 'review_count'].forEach(
+    (fieldName) => {
+      const accessorCardPrototype = {};
+      defineThrowingGetter(accessorCardPrototype, fieldName);
+      const card = { ...validCard };
+      delete card[fieldName];
+      Object.setPrototypeOf(card, accessorCardPrototype);
+
+      assert.equal(
+        getValidatedStudySessionSubmissionResponse({ success: true, card }),
+        null,
+        fieldName,
+      );
+    },
+  );
 });
 
 test('getValidatedStudySessionSubmissionResponse rejects accessor-backed response and card fields without invoking getters', () => {

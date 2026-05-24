@@ -3,6 +3,10 @@ const {
   hasSameRouteSafeCardId,
 } = require('./cardIdentifier');
 const { isValidIsoTimestamp } = require('./isoTimestampValidation');
+const {
+  getOwnDataPropertyValue,
+  isObjectRecord,
+} = require('./recordDataProperty');
 
 const QUALITY_LABELS = Object.freeze({
   1: 'Hard',
@@ -20,25 +24,6 @@ const STALE_CARD_CONFLICT_API_ERROR = 'Card is not due';
 // Mirrors the backend scheduler/response contract; keep aligned with spacedRepetition/apiHandlers.
 const MIN_STUDY_SESSION_EASE_FACTOR = 1.3;
 const MAX_STUDY_SESSION_INTERVAL_DAYS = 36500;
-
-function isObjectRecord(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function descriptorHasValue(descriptor) {
-  return (
-    descriptor !== undefined
-    && Object.prototype.hasOwnProperty.call(descriptor, 'value')
-  );
-}
-
-function getOwnDataPropertyValue(value, key) {
-  const descriptor = isObjectRecord(value)
-    ? Object.getOwnPropertyDescriptor(value, key)
-    : undefined;
-
-  return descriptorHasValue(descriptor) ? descriptor.value : undefined;
-}
 
 function parseStudySessionSubmissionResponse(responseText) {
   if (typeof responseText !== 'string' || responseText.trim() === '') {
