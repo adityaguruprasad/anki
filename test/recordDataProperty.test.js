@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const {
   getOwnDataPropertyDescriptor,
   getOwnDataPropertyValue,
+  getOwnEnumerableDataProperties,
   getOwnRecordPropertyDescriptor,
   hasOwnDataProperty,
   isDataPropertyDescriptor,
@@ -97,5 +98,104 @@ test('record data-property helper does not invoke throwing getters', () => {
   assert.doesNotThrow(() => {
     assert.equal(hasOwnDataProperty(record, 'value'), false);
     assert.equal(getOwnDataPropertyValue(record, 'value'), undefined);
+  });
+});
+
+test('enumerable data-property helper copies only own enumerable data fields', () => {
+  const symbolKey = Symbol('symbolKey');
+  const inheritedSymbolKey = Symbol('inheritedSymbolKey');
+  let getterCalls = 0;
+  const prototype = {
+    inherited: 'skip inherited string key',
+  };
+
+  Object.defineProperty(prototype, inheritedSymbolKey, {
+    enumerable: true,
+    value: 'skip inherited symbol key',
+  });
+
+  const record = Object.create(prototype);
+  Object.defineProperties(record, {
+    visible: {
+      enumerable: true,
+      value: 'copy me',
+    },
+    hidden: {
+      enumerable: false,
+      value: 'skip non-enumerable data',
+    },
+    undefinedValue: {
+      enumerable: true,
+      value: undefined,
+    },
+    accessor: {
+      enumerable: true,
+      get() {
+        getterCalls += 1;
+        throw new Error('getter should not run');
+      },
+    },
+    [symbolKey]: {
+      enumerable: true,
+      value: 'copy symbol',
+    },
+  });
+
+  const properties = getOwnEnumerableDataProperties(record);
+
+  assert.equal(Object.getPrototypeOf(properties), Object.prototype);
+  assert.deepEqual(Object.keys(properties), ['visible', 'undefinedValue']);
+  assert.equal(properties.visible, 'copy me');
+  assert.equal(Object.prototype.hasOwnProperty.call(properties, 'undefinedValue'), true);
+  assert.equal(properties.undefinedValue, undefined);
+  assert.equal(Object.prototype.hasOwnProperty.call(properties, 'hidden'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(properties, 'accessor'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(properties, 'inherited'), false);
+  assert.deepEqual(Object.getOwnPropertySymbols(properties), [symbolKey]);
+  assert.equal(properties[symbolKey], 'copy symbol');
+  assert.equal(Object.prototype.hasOwnProperty.call(properties, inheritedSymbolKey), false);
+  assert.equal(getterCalls, 0);
+});
+
+test('enumerable data-property helper accepts null-prototype records', () => {
+  const record = Object.create(null);
+  record.value = 'safe';
+
+  assert.deepEqual(getOwnEnumerableDataProperties(record), { value: 'safe' });
+});
+
+test('enumerable data-property helper defines __proto__ as data without changing prototype', () => {
+  const unsafePrototype = { polluted: true };
+  const record = {};
+
+  Object.defineProperty(record, '__proto__', {
+    enumerable: true,
+    value: unsafePrototype,
+  });
+
+  const properties = getOwnEnumerableDataProperties(record);
+  const descriptor = Object.getOwnPropertyDescriptor(properties, '__proto__');
+
+  assert.equal(Object.getPrototypeOf(properties), Object.prototype);
+  assert.equal(descriptor.value, unsafePrototype);
+  assert.equal(descriptor.enumerable, true);
+  assert.equal(Object.prototype.hasOwnProperty.call(properties, '__proto__'), true);
+  assert.notEqual(Object.getPrototypeOf(properties), unsafePrototype);
+});
+
+test('enumerable data-property helper rejects arrays and non-objects', () => {
+  const array = [];
+  array.value = 'array value';
+
+  [
+    array,
+    null,
+    undefined,
+    'value',
+    42,
+    true,
+    function value() {},
+  ].forEach((payload) => {
+    assert.deepEqual(Reflect.ownKeys(getOwnEnumerableDataProperties(payload)), []);
   });
 });

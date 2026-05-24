@@ -1,46 +1,10 @@
+const {
+  getOwnDataPropertyValue,
+  getOwnEnumerableDataProperties,
+} = require('./recordDataProperty');
+
 function hasSameDeckId(leftId, rightId) {
   return String(leftId) === String(rightId);
-}
-
-function isObjectRecord(value) {
-  return value !== null && typeof value === 'object';
-}
-
-function descriptorHasValue(descriptor) {
-  return descriptor !== undefined && Object.hasOwn(descriptor, 'value');
-}
-
-function getOwnDataPropertyValue(value, key) {
-  if (!isObjectRecord(value)) {
-    return undefined;
-  }
-
-  const descriptor = Object.getOwnPropertyDescriptor(value, key);
-  return descriptorHasValue(descriptor) ? descriptor.value : undefined;
-}
-
-function getOwnEnumerableDataProperties(value) {
-  if (!isObjectRecord(value)) {
-    return {};
-  }
-
-  const properties = {};
-  for (const key of Reflect.ownKeys(value)) {
-    const descriptor = Object.getOwnPropertyDescriptor(value, key);
-    if (!descriptorHasValue(descriptor) || !descriptor.enumerable) {
-      continue;
-    }
-
-    // Define descriptor values directly so keys like __proto__ cannot invoke setters.
-    Object.defineProperty(properties, key, {
-      value: descriptor.value,
-      enumerable: true,
-      configurable: true,
-      writable: true,
-    });
-  }
-
-  return properties;
 }
 
 function isDeckObject(deck) {
