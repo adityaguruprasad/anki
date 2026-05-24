@@ -12,8 +12,14 @@ const {
   hasSchedulingInsightsSummaryPayload,
 } = require('../schedulingInsightsSummary');
 
-const SCHEDULING_INSIGHTS_ENDPOINT_FIELD_NAMES = Object.freeze([
+const SCHEDULING_INSIGHTS_DISPLAY_STATE_FIELD_NAMES = Object.freeze([
   'totalCards',
+  'overdue',
+  'dueToday',
+  'dueTomorrow',
+  'dueNext7Days',
+  'averageEaseFactor',
+  'recommendedDailyReviewTarget',
   'leechCandidates',
   'suggestedNewCards',
 ]);
@@ -38,12 +44,31 @@ function createNullPrototypeSchedulingInsightsPayload(overrides = {}) {
 }
 
 function defineThrowingGetter(object, fieldName) {
+  let getterCalls = 0;
+
   Object.defineProperty(object, fieldName, {
     get() {
+      getterCalls += 1;
       throw new Error(`${fieldName} getter should not run`);
     },
     configurable: true,
   });
+
+  return () => getterCalls;
+}
+
+function assertSchedulingInsightsHiddenWithError(schedulingInsights) {
+  assert.equal(hasSchedulingInsightsPayload(schedulingInsights), false);
+
+  const state = buildSchedulingInsightsDisplayState({
+    schedulingInsights,
+    isLoadingSchedulingInsights: false,
+    schedulingInsightsLoadFailed: true,
+  });
+
+  assert.equal(state.hasInsights, false);
+  assert.equal(state.showSummary, false);
+  assert.equal(state.showError, true);
 }
 
 test('buildDeckAvailabilityDisplayState shows accessible loading and disables actions while checking decks', () => {
@@ -179,10 +204,11 @@ test('hasSchedulingInsightsPayload accepts null-prototype endpoint records with 
 
   assert.equal(state.hasInsights, true);
   assert.equal(state.showSummary, true);
+  assert.equal(state.showLoadingBody, false);
 });
 
-test('hasSchedulingInsightsPayload rejects prototype-backed endpoint fields without invoking inherited accessors', () => {
-  for (const fieldName of SCHEDULING_INSIGHTS_ENDPOINT_FIELD_NAMES) {
+test('hasSchedulingInsightsPayload rejects inherited scheduling insights fields', () => {
+  for (const fieldName of SCHEDULING_INSIGHTS_DISPLAY_STATE_FIELD_NAMES) {
     const dataPrototype = { [fieldName]: createSchedulingInsightsPayload()[fieldName] };
     const prototypeBackedPayload = Object.assign(
       Object.create(dataPrototype),
@@ -190,24 +216,30 @@ test('hasSchedulingInsightsPayload rejects prototype-backed endpoint fields with
     );
     delete prototypeBackedPayload[fieldName];
 
-    assert.equal(hasSchedulingInsightsPayload(prototypeBackedPayload), false);
+    assertSchedulingInsightsHiddenWithError(prototypeBackedPayload);
+  }
+});
 
+test('hasSchedulingInsightsPayload ignores inherited accessors without invoking getters', () => {
+  for (const fieldName of SCHEDULING_INSIGHTS_DISPLAY_STATE_FIELD_NAMES) {
     const accessorPrototype = {};
-    defineThrowingGetter(accessorPrototype, fieldName);
+    const getterCalls = defineThrowingGetter(accessorPrototype, fieldName);
     const accessorPayload = createSchedulingInsightsPayload();
     Object.setPrototypeOf(accessorPayload, accessorPrototype);
     delete accessorPayload[fieldName];
 
-    assert.equal(hasSchedulingInsightsPayload(accessorPayload), false);
+    assertSchedulingInsightsHiddenWithError(accessorPayload);
+    assert.equal(getterCalls(), 0);
   }
 });
 
-test('hasSchedulingInsightsPayload rejects accessor-backed endpoint fields without invoking getters', () => {
-  for (const fieldName of SCHEDULING_INSIGHTS_ENDPOINT_FIELD_NAMES) {
+test('hasSchedulingInsightsPayload rejects accessor-backed scheduling insights fields without invoking getters', () => {
+  for (const fieldName of SCHEDULING_INSIGHTS_DISPLAY_STATE_FIELD_NAMES) {
     const payload = createSchedulingInsightsPayload();
-    defineThrowingGetter(payload, fieldName);
+    const getterCalls = defineThrowingGetter(payload, fieldName);
 
-    assert.equal(hasSchedulingInsightsPayload(payload), false);
+    assertSchedulingInsightsHiddenWithError(payload);
+    assert.equal(getterCalls(), 0);
   }
 });
 

@@ -1,4 +1,5 @@
 const { hasDueCards } = require('./dashboardDeckTarget');
+const { getOwnDataPropertyValue } = require('./recordDataProperty');
 const {
   hasSchedulingInsightsSummaryPayload,
 } = require('./schedulingInsightsSummary');
@@ -35,25 +36,6 @@ const SCHEDULING_INSIGHTS_ENDPOINT_COUNT_KEYS = Object.freeze([
   'leechCandidates',
   'suggestedNewCards',
 ]);
-
-function isObjectRecord(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function descriptorHasValue(descriptor) {
-  return (
-    descriptor !== undefined
-    && Object.prototype.hasOwnProperty.call(descriptor, 'value')
-  );
-}
-
-function getOwnDataPropertyValue(value, key) {
-  const descriptor = isObjectRecord(value)
-    ? Object.getOwnPropertyDescriptor(value, key)
-    : undefined;
-
-  return descriptorHasValue(descriptor) ? descriptor.value : undefined;
-}
 
 function isNonNegativeSafeInteger(value) {
   return Number.isSafeInteger(value) && value >= 0;
