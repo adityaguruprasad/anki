@@ -44,6 +44,19 @@ test('selectValidatedStudySessionDueCard selects a valid card and preserves extr
   assert.equal(selectValidatedStudySessionDueCard([card]), card);
 });
 
+test('selectValidatedStudySessionDueCard accepts null-prototype cards with own data fields', () => {
+  const card = Object.create(null);
+  Object.defineProperties(card, {
+    id: { value: '42', enumerable: true },
+    deck_id: { value: '7', enumerable: true },
+    front_content: { value: 'Question', enumerable: true },
+    back_content: { value: 'Answer', enumerable: true },
+  });
+
+  assert.equal(selectValidatedStudySessionDueCard([card], { expectedDeckId: 7 }), card);
+  assert.equal(hasStudySessionDueCardRowPayload(card, { expectedDeckId: '7' }), true);
+});
+
 test('selectValidatedStudySessionDueCard accepts cards anchored to the requested deck', () => {
   const card = {
     id: '42',

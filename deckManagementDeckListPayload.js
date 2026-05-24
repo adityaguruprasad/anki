@@ -1,24 +1,6 @@
 const MALFORMED_DECK_MANAGEMENT_DECK_LIST_PAYLOAD_ERROR = 'Malformed deck-management deck-list payload';
 const { MAX_POSTGRES_SERIAL_ID } = require('./cardIdentifier');
-
-function isObjectRecord(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function descriptorHasValue(descriptor) {
-  return (
-    descriptor !== undefined
-    && Object.prototype.hasOwnProperty.call(descriptor, 'value')
-  );
-}
-
-function getOwnDataPropertyValue(value, key) {
-  const descriptor = isObjectRecord(value)
-    ? Object.getOwnPropertyDescriptor(value, key)
-    : undefined;
-
-  return descriptorHasValue(descriptor) ? descriptor.value : undefined;
-}
+const { getOwnDataPropertyValue, isObjectRecord } = require('./recordDataProperty');
 
 function isNonBlankString(value) {
   return typeof value === 'string' && value.trim().length > 0;
