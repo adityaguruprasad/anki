@@ -4,29 +4,14 @@ const {
   normalizeRouteSafeId,
 } = require('./cardIdentifier');
 const { isValidIsoTimestamp } = require('./isoTimestampValidation');
+const {
+  getOwnDataPropertyValue,
+  isObjectRecord,
+} = require('./recordDataProperty');
 const MAX_POSTGRES_SERIAL_ID_STRING = String(MAX_POSTGRES_SERIAL_ID);
-
-function isObjectRecord(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
 
 function isNonBlankString(value) {
   return typeof value === 'string' && value.trim().length > 0;
-}
-
-function descriptorHasValue(descriptor) {
-  return (
-    descriptor !== undefined
-    && Object.prototype.hasOwnProperty.call(descriptor, 'value')
-  );
-}
-
-function getOwnDataPropertyValue(value, key) {
-  // API response fields are untrusted: ignore inherited or accessor-backed
-  // properties without invoking getters.
-  const descriptor = Object.getOwnPropertyDescriptor(value, key);
-
-  return descriptorHasValue(descriptor) ? descriptor.value : undefined;
 }
 
 function normalizeDeckResponseId(value) {
