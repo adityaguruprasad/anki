@@ -247,6 +247,123 @@ test('Cache-Control override replaces the default while preserving other securit
   });
 });
 
+test('security header overrides ignore inherited enumerable properties', () => {
+  const inheritedHeaderName = 'X-Inherited-Security-Test';
+  const previousDescriptor = Object.getOwnPropertyDescriptor(Object.prototype, inheritedHeaderName);
+
+  Object.defineProperty(Object.prototype, inheritedHeaderName, {
+    enumerable: true,
+    configurable: true,
+    value: 'unsafe',
+  });
+
+  try {
+    const headers = buildSecurityHeaders(
+      { 'Referrer-Policy': 'same-origin' },
+      { NODE_ENV: 'test' },
+    );
+
+    assert.equal(Object.hasOwn(headers, inheritedHeaderName), false);
+    assert.equal(headers['Referrer-Policy'], 'same-origin');
+    assert.deepEqual(headers, {
+      ...EXPECTED_DEFAULT_SECURITY_HEADERS,
+      'Referrer-Policy': 'same-origin',
+    });
+  } finally {
+    if (previousDescriptor === undefined) {
+      delete Object.prototype[inheritedHeaderName];
+    } else {
+      Object.defineProperty(Object.prototype, inheritedHeaderName, previousDescriptor);
+    }
+  }
+});
+
+test('security header overrides ignore non-enumerable data properties', () => {
+  const options = {
+    'Referrer-Policy': 'same-origin',
+  };
+  Object.defineProperty(options, 'Cache-Control', {
+    enumerable: false,
+    value: 'public, max-age=3600',
+  });
+
+  const headers = buildSecurityHeaders(options, { NODE_ENV: 'test' });
+
+  assert.equal(headers['Cache-Control'], 'no-store');
+  assert.equal(headers['Referrer-Policy'], 'same-origin');
+  assert.deepEqual(headers, {
+    ...EXPECTED_DEFAULT_SECURITY_HEADERS,
+    'Referrer-Policy': 'same-origin',
+  });
+});
+
+test('security header overrides ignore own accessor properties without invoking getters', () => {
+  let getterCalls = 0;
+  const options = {};
+  Object.defineProperty(options, 'Cache-Control', {
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      return 'public, max-age=3600';
+    },
+  });
+  Object.defineProperty(options, 'X-Accessor-Security-Test', {
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      return 'unsafe';
+    },
+  });
+
+  const headers = buildSecurityHeaders(options, { NODE_ENV: 'test' });
+
+  assert.equal(getterCalls, 0);
+  assert.equal(Object.hasOwn(headers, 'X-Accessor-Security-Test'), false);
+  assert.deepEqual(headers, EXPECTED_DEFAULT_SECURITY_HEADERS);
+});
+
+test('security header overrides accept null-prototype objects with enumerable data properties', () => {
+  const options = Object.create(null);
+  Object.defineProperty(options, 'Cache-Control', {
+    enumerable: true,
+    value: 'private, max-age=60',
+  });
+  Object.defineProperty(options, 'X-Frame-Options', {
+    enumerable: true,
+    value: false,
+  });
+  Object.defineProperty(options, 'X-Robots-Tag', {
+    enumerable: true,
+    value: 'noindex',
+  });
+
+  const headers = buildSecurityHeaders(options, { NODE_ENV: 'test' });
+  const expectedHeaders = {
+    ...EXPECTED_DEFAULT_SECURITY_HEADERS,
+    'Cache-Control': 'private, max-age=60',
+    'X-Robots-Tag': 'noindex',
+  };
+  delete expectedHeaders['X-Frame-Options'];
+
+  assert.equal(headers['Cache-Control'], 'private, max-age=60');
+  assert.equal(Object.hasOwn(headers, 'X-Frame-Options'), false);
+  assert.equal(headers['X-Robots-Tag'], 'noindex');
+  assert.deepEqual(headers, expectedHeaders);
+});
+
+test('security header overrides preserve blank header names and blank string values', () => {
+  const headers = buildSecurityHeaders(
+    {
+      '': 'blank-name',
+      'X-Blank-Value': '',
+    },
+    { NODE_ENV: 'test' },
+  );
+
+  assert.equal(headers[''], 'blank-name');
+  assert.equal(headers['X-Blank-Value'], '');
+});
+
 test('security headers middleware emits production HSTS from injected environment config', () => {
   const res = createRes();
 

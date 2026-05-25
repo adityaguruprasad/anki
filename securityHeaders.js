@@ -1,4 +1,7 @@
-const { getOwnDataPropertyValue } = require('./recordDataProperty');
+const {
+  getOwnDataPropertyValue,
+  getOwnEnumerableDataProperties,
+} = require('./recordDataProperty');
 
 const DEFAULT_SECURITY_HEADERS = Object.freeze({
   'Cache-Control': 'no-store',
@@ -59,7 +62,7 @@ function buildSecurityHeaders(options, config) {
     Object.assign(headers, PRODUCTION_SECURITY_HEADERS);
   }
 
-  const overrides = options || {};
+  const overrides = getOwnEnumerableDataProperties(options);
 
   for (const [name, value] of Object.entries(overrides)) {
     validateHeaderValue(name, value);
