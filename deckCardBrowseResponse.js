@@ -7,6 +7,7 @@ const {
   normalizeRouteSafeId,
 } = require('./cardIdentifier');
 const {
+  getOwnArrayDataPropertyValue,
   getOwnDataPropertyValue,
   getOwnRecordPropertyDescriptor,
   hasOwnDataProperty,
@@ -161,7 +162,10 @@ function parseDeckCardBrowseResponsePayload(payload, options = {}) {
   }
 
   const cards = cardsDescriptor.value;
-  for (const card of cards) {
+  // Use an index loop so sparse, inherited, or accessor-backed entries are
+  // validated as own data entries before card fields are inspected.
+  for (let index = 0; index < cards.length; index += 1) {
+    const card = getOwnArrayDataPropertyValue(cards, index);
     if (!hasDeckCardBrowseRowPayload(card, options)) {
       throw new Error(MALFORMED_DECK_CARD_BROWSE_PAYLOAD_ERROR);
     }

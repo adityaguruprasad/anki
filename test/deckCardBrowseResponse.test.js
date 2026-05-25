@@ -35,6 +35,21 @@ function createAccessorPayload(fields) {
   return { payload, accessCounts };
 }
 
+function defineThrowingGetter(object, fieldName) {
+  let accessCount = 0;
+
+  Object.defineProperty(object, fieldName, {
+    configurable: true,
+    enumerable: true,
+    get() {
+      accessCount += 1;
+      throw new Error(`${fieldName} getter should not run`);
+    },
+  });
+
+  return () => accessCount;
+}
+
 test('parseDeckCardBrowseResponsePayload accepts an empty page without a cursor', () => {
   const payload = { cards: [] };
 
@@ -67,6 +82,22 @@ test('parseDeckCardBrowseResponsePayload preserves valid card rows and extra fie
   assert.equal(parsed.cards[0], cardWithStringId);
   assert.deepEqual(parsed.cards[0], cardWithStringId);
   assert.equal(parsed.nextCursor, null);
+});
+
+test('parseDeckCardBrowseResponsePayload accepts null-prototype card rows with own data fields', () => {
+  const card = Object.create(null);
+  Object.defineProperties(card, {
+    id: { value: '42', enumerable: true },
+    deck_id: { value: '7', enumerable: true },
+    front_content: { value: 'Front', enumerable: true },
+    back_content: { value: 'Back', enumerable: true },
+  });
+  const payload = { cards: [card], nextCursor: null };
+  const parsed = parseDeckCardBrowseResponsePayload(payload, { expectedDeckId: 7 });
+
+  assert.equal(parsed.cards, payload.cards);
+  assert.equal(parsed.cards[0], card);
+  assert.equal(hasDeckCardBrowseRowPayload(card, { expectedDeckId: '7' }), true);
 });
 
 test('parseDeckCardBrowseResponsePayload accepts matching expected deck ids', () => {
@@ -202,6 +233,58 @@ test('parseDeckCardBrowseResponsePayload requires cards to be an own data proper
   assertMalformed(inheritedPayload);
   assertMalformed(accessorPayload);
   assert.equal(accessCounts.cards, 0);
+});
+
+test('parseDeckCardBrowseResponsePayload rejects sparse, inherited, and accessor card entries without invoking getters', () => {
+  const validCard = {
+    id: 1,
+    deck_id: 7,
+    front_content: 'Front',
+    back_content: 'Back',
+  };
+  const options = { expectedDeckId: validCard.deck_id };
+
+  const sparseCards = [];
+  sparseCards.length = 1;
+
+  const inheritedDataCards = [];
+  const inheritedDataPrototype = Object.create(Array.prototype);
+  inheritedDataCards.length = 1;
+  Object.defineProperty(inheritedDataPrototype, '0', {
+    configurable: true,
+    enumerable: true,
+    value: validCard,
+  });
+  Object.setPrototypeOf(inheritedDataCards, inheritedDataPrototype);
+
+  const ownAccessorCards = [];
+  const getOwnAccessCount = defineThrowingGetter(ownAccessorCards, '0');
+
+  const inheritedAccessorCards = [];
+  const inheritedAccessorPrototype = Object.create(Array.prototype);
+  inheritedAccessorCards.length = 1;
+  const getInheritedAccessCount = defineThrowingGetter(inheritedAccessorPrototype, '0');
+  Object.setPrototypeOf(inheritedAccessorCards, inheritedAccessorPrototype);
+
+  [
+    { label: 'sparse array entry', cards: sparseCards },
+    { label: 'inherited data array entry', cards: inheritedDataCards },
+    { label: 'own accessor array entry', cards: ownAccessorCards },
+    { label: 'inherited accessor array entry', cards: inheritedAccessorCards },
+  ].forEach(({ label, cards }) => {
+    assert.equal(cards.length, 1, `${label} fixture should keep one logical entry`);
+    assert.throws(
+      () => parseDeckCardBrowseResponsePayload({ cards, nextCursor: null }, options),
+      new RegExp(MALFORMED_DECK_CARD_BROWSE_PAYLOAD_ERROR),
+      `${label} should be rejected as malformed`,
+    );
+  });
+  assert.equal(getOwnAccessCount(), 0, 'own accessor array entry getter should not run');
+  assert.equal(
+    getInheritedAccessCount(),
+    0,
+    'inherited accessor array entry getter should not run',
+  );
 });
 
 test('parseDeckCardBrowseResponsePayload rejects accessor-backed top-level nextCursor without invoking it', () => {
