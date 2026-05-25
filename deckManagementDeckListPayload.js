@@ -1,6 +1,10 @@
 const MALFORMED_DECK_MANAGEMENT_DECK_LIST_PAYLOAD_ERROR = 'Malformed deck-management deck-list payload';
 const { MAX_POSTGRES_SERIAL_ID } = require('./cardIdentifier');
-const { getOwnDataPropertyValue, isObjectRecord } = require('./recordDataProperty');
+const {
+  getOwnArrayDataPropertyValue,
+  getOwnDataPropertyValue,
+  isObjectRecord,
+} = require('./recordDataProperty');
 
 function isNonBlankString(value) {
   return typeof value === 'string' && value.trim().length > 0;
@@ -50,7 +54,17 @@ function hasDeckManagementDeckRowPayload(deck) {
 }
 
 function hasDeckManagementDeckListPayload(payload) {
-  return Array.isArray(payload) && payload.every(hasDeckManagementDeckRowPayload);
+  if (!Array.isArray(payload)) {
+    return false;
+  }
+
+  for (let index = 0; index < payload.length; index += 1) {
+    if (!hasDeckManagementDeckRowPayload(getOwnArrayDataPropertyValue(payload, index))) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function parseDeckManagementDeckListPayload(payload) {

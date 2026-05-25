@@ -74,6 +74,59 @@ test('parseDeckManagementDeckListPayload preserves null-prototype rows with own 
   assert.equal(hasDeckManagementDeckListPayload(decks), true);
 });
 
+test('parseDeckManagementDeckListPayload rejects sparse deck arrays', () => {
+  const decks = [];
+  decks.length = 1;
+
+  assert.equal(hasDeckManagementDeckListPayload(decks), false);
+  assert.throws(
+    () => parseDeckManagementDeckListPayload(decks),
+    { message: MALFORMED_DECK_MANAGEMENT_DECK_LIST_PAYLOAD_ERROR },
+  );
+});
+
+test('parseDeckManagementDeckListPayload rejects accessor-backed array rows without invoking getters', () => {
+  let getterCalls = 0;
+  const decks = [];
+  Object.defineProperty(decks, '0', {
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      throw new Error('deck row getter should not run');
+    },
+  });
+
+  assert.equal(hasDeckManagementDeckListPayload(decks), false);
+  assert.throws(
+    () => parseDeckManagementDeckListPayload(decks),
+    { message: MALFORMED_DECK_MANAGEMENT_DECK_LIST_PAYLOAD_ERROR },
+  );
+  assert.equal(getterCalls, 0);
+});
+
+test('parseDeckManagementDeckListPayload rejects prototype-backed array rows without invoking getters', () => {
+  let getterCalls = 0;
+  const prototype = Object.create(Array.prototype);
+  Object.defineProperty(prototype, '0', {
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      throw new Error('prototype deck row getter should not run');
+    },
+  });
+
+  const decks = [];
+  decks.length = 1;
+  Object.setPrototypeOf(decks, prototype);
+
+  assert.equal(hasDeckManagementDeckListPayload(decks), false);
+  assert.throws(
+    () => parseDeckManagementDeckListPayload(decks),
+    { message: MALFORMED_DECK_MANAGEMENT_DECK_LIST_PAYLOAD_ERROR },
+  );
+  assert.equal(getterCalls, 0);
+});
+
 test('parseDeckManagementDeckListPayload rejects accessor-backed row fields without invoking getters', () => {
   let getterCalls = 0;
   const deck = {
