@@ -974,10 +974,14 @@ function getRowArrayDataEntry(rows, index, errorMessage) {
   return value;
 }
 
-function assertRowArrayDataEntries(rows, errorMessage) {
+function toSafeRowArrayEntries(rows, errorMessage) {
+  const entries = new Array(rows.length);
+
   for (let index = 0; index < rows.length; index += 1) {
-    getRowArrayDataEntry(rows, index, errorMessage);
+    entries[index] = getRowArrayDataEntry(rows, index, errorMessage);
   }
+
+  return entries;
 }
 
 function getRequiredSingleAggregateQueryRow(result, errorMessage) {
@@ -990,17 +994,17 @@ function getRequiredSingleAggregateQueryRow(result, errorMessage) {
   return getRowArrayDataEntry(rows, 0, errorMessage);
 }
 
-function assertListQueryResult(result, errorMessage) {
+function getValidatedListQueryRows(result, errorMessage) {
   const { rows, rowCount } = assertQueryResultShape(result, errorMessage);
 
   if (rowCount !== rows.length) {
     throw new TypeError(errorMessage);
   }
 
-  assertRowArrayDataEntries(rows, errorMessage);
+  return toSafeRowArrayEntries(rows, errorMessage);
 }
 
-function assertBoundedListQueryResult(result, errorMessage, maxRows) {
+function getValidatedBoundedListQueryRows(result, errorMessage, maxRows) {
   const { rows, rowCount } = assertQueryResultShape(result, errorMessage);
 
   // Keep list-shape checks inline so maxRows cannot mask rowCount/rows mismatches.
@@ -1013,7 +1017,7 @@ function assertBoundedListQueryResult(result, errorMessage, maxRows) {
     throw new TypeError(errorMessage);
   }
 
-  assertRowArrayDataEntries(rows, errorMessage);
+  return toSafeRowArrayEntries(rows, errorMessage);
 }
 
 function getOptionalSingleQueryRow(result, errorMessage) {
@@ -1389,12 +1393,11 @@ async function getDueCardsByDeck(req, res, db) {
        LIMIT $3`,
       params
     );
-    assertBoundedListQueryResult(
+    const rows = getValidatedBoundedListQueryRows(
       result,
       INVALID_CARD_READ_RESULT_ERROR,
       limitValidation.value
     );
-    const { rows } = result;
 
     if (rows.length === 0) {
       return res.status(404).json({ error: 'Deck not found for user' });
@@ -1494,12 +1497,11 @@ async function getCardsByDeck(req, res, db) {
        LIMIT ${limitPlaceholder}`,
       params
     );
-    assertBoundedListQueryResult(
+    const rows = getValidatedBoundedListQueryRows(
       result,
       INVALID_CARD_READ_RESULT_ERROR,
       requestedRowLimit
     );
-    const { rows } = result;
 
     if (rows.length === 0) {
       return res.status(404).json({ error: 'Deck not found for user' });
@@ -2050,8 +2052,8 @@ async function getDecks(req, res, db) {
       [userId]
     );
 
-    assertListQueryResult(result, INVALID_DECK_LIST_RESULT_ERROR);
-    return res.json(result.rows.map((row) => toDeckListPayload(row, {
+    const rows = getValidatedListQueryRows(result, INVALID_DECK_LIST_RESULT_ERROR);
+    return res.json(rows.map((row) => toDeckListPayload(row, {
       expectedUserId: userId,
     })));
   } catch (err) {

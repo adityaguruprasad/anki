@@ -144,6 +144,57 @@ function createSparseRows(length) {
   return rows;
 }
 
+function createRowsWithBlockedArrayOperations(entries) {
+  const rows = entries.slice();
+  const calls = {
+    iterator: 0,
+    map: 0,
+    filter: 0,
+    slice: 0,
+    at: 0,
+  };
+
+  Object.defineProperties(rows, {
+    [Symbol.iterator]: {
+      configurable: true,
+      value() {
+        calls.iterator += 1;
+        throw new Error('row iterator should not run');
+      },
+    },
+    map: {
+      configurable: true,
+      value() {
+        calls.map += 1;
+        throw new Error('row map should not run');
+      },
+    },
+    filter: {
+      configurable: true,
+      value() {
+        calls.filter += 1;
+        throw new Error('row filter should not run');
+      },
+    },
+    slice: {
+      configurable: true,
+      value() {
+        calls.slice += 1;
+        throw new Error('row slice should not run');
+      },
+    },
+    at: {
+      configurable: true,
+      value() {
+        calls.at += 1;
+        throw new Error('row at should not run');
+      },
+    },
+  });
+
+  return { rows, calls };
+}
+
 function createRowWithAccessorField(row, fieldName) {
   const accessorRow = { ...row };
   const value = accessorRow[fieldName];
@@ -976,6 +1027,84 @@ test('API query result helpers accept dense row arrays with null-prototype recor
     created_at: '2026-05-08T00:00:00.000Z',
   });
   assert.equal(db.calls.length, 1);
+});
+
+test('API list handlers transform descriptor-copied rows instead of adapter-owned array operations', async (t) => {
+  const deck = {
+    id: 12,
+    user_id: 1,
+    name: 'Biology',
+    description: null,
+    created_at: '2026-05-08T00:00:00.000Z',
+  };
+  const browseCard = createCardReadRow({
+    id: 3,
+    deck_id: 42,
+    front_content: 'Future card',
+    back_content: 'Answer',
+    created_at: '2026-05-08T13:00:00.000Z',
+    next_review: '2026-05-20T12:00:00.000Z',
+  });
+  const dueCard = createCardReadRow({
+    id: 11,
+    deck_id: 42,
+    front_content: 'Due card',
+    back_content: 'Answer',
+    next_review: '2026-05-08T12:00:00.000Z',
+  });
+  const cases = [
+    {
+      name: 'deck list',
+      rows: [{ ...deck, totalCards: '3', dueCards: '1' }],
+      run: (db, res) => getDecks({ user: { userId: 1 } }, res, db),
+      expectedBody: [{ ...deck, totalCards: 3, dueCards: 1 }],
+    },
+    {
+      name: 'browse card list',
+      rows: [{
+        ...browseCard,
+        __cursor_created_at: '2026-05-08T13:00:00.000000Z',
+        __owned_deck_id: 42,
+        __owned_user_id: 1,
+      }],
+      run: (db, res) => getCardsByDeck(
+        { params: { deckId: '42' }, user: { userId: 1 } },
+        res,
+        db
+      ),
+      expectedBody: { cards: [browseCard], nextCursor: null },
+    },
+    {
+      name: 'due card list',
+      rows: [createDueCardQueryRow(dueCard)],
+      run: (db, res) => getDueCardsByDeck(
+        { params: { deckId: '42' }, user: { userId: 1 } },
+        res,
+        db
+      ),
+      expectedBody: [dueCard],
+    },
+  ];
+
+  for (const testCase of cases) {
+    await t.test(testCase.name, async () => {
+      const { rows, calls } = createRowsWithBlockedArrayOperations(testCase.rows);
+      const db = createDb([{ rowCount: rows.length, rows }]);
+      const res = createRes();
+
+      await testCase.run(db, res);
+
+      assert.equal(res.statusCode, 200);
+      assert.deepEqual(res.body, testCase.expectedBody);
+      assert.deepEqual(calls, {
+        iterator: 0,
+        map: 0,
+        filter: 0,
+        slice: 0,
+        at: 0,
+      });
+    });
+  }
 });
 
 test('API row validators fail closed when required result fields are accessors', async (t) => {
