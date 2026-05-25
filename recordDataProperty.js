@@ -2,6 +2,11 @@ function isObjectRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+function isObjectLike(value) {
+  return value !== null && (typeof value === 'object' || typeof value === 'function');
+}
+
+// Object-like descriptor helpers support request/function boundary inspection without changing stricter record semantics.
 function isDataPropertyDescriptor(descriptor) {
   // Any own value slot is a data property, including value: undefined or non-writable fields.
   // Accessors do not have a value slot, so getters are rejected without invoking them.
@@ -13,6 +18,29 @@ function isDataPropertyDescriptor(descriptor) {
 
 function getOwnRecordPropertyDescriptor(value, key) {
   return isObjectRecord(value) ? Object.getOwnPropertyDescriptor(value, key) : undefined;
+}
+
+function getOwnObjectLikePropertyDescriptor(value, key) {
+  return isObjectLike(value) ? Object.getOwnPropertyDescriptor(value, key) : undefined;
+}
+
+function getInheritedObjectLikePropertyDescriptor(value, key) {
+  if (!isObjectLike(value)) {
+    return undefined;
+  }
+
+  let prototype = Object.getPrototypeOf(value);
+
+  while (prototype !== null) {
+    const descriptor = Object.getOwnPropertyDescriptor(prototype, key);
+    if (descriptor !== undefined) {
+      return descriptor;
+    }
+
+    prototype = Object.getPrototypeOf(prototype);
+  }
+
+  return undefined;
 }
 
 function getOwnDataPropertyDescriptor(value, key) {
@@ -55,9 +83,11 @@ function getOwnEnumerableDataProperties(value) {
 }
 
 module.exports = {
+  getInheritedObjectLikePropertyDescriptor,
   getOwnDataPropertyDescriptor,
   getOwnDataPropertyValue,
   getOwnEnumerableDataProperties,
+  getOwnObjectLikePropertyDescriptor,
   getOwnRecordPropertyDescriptor,
   hasOwnDataProperty,
   isDataPropertyDescriptor,

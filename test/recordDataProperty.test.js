@@ -2,9 +2,11 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  getInheritedObjectLikePropertyDescriptor,
   getOwnDataPropertyDescriptor,
   getOwnDataPropertyValue,
   getOwnEnumerableDataProperties,
+  getOwnObjectLikePropertyDescriptor,
   getOwnRecordPropertyDescriptor,
   hasOwnDataProperty,
   isDataPropertyDescriptor,
@@ -39,6 +41,76 @@ test('record data-property helper rejects arrays and non-objects as records', ()
     assert.equal(getOwnDataPropertyValue(payload, 'value'), undefined);
     assert.equal(getOwnRecordPropertyDescriptor(payload, 'value'), undefined);
   });
+});
+
+test('object-like descriptor helper accepts arrays and functions without changing record semantics', () => {
+  const array = [];
+  function request() {}
+
+  Object.defineProperty(array, 'value', {
+    configurable: true,
+    enumerable: true,
+    value: 'array value',
+    writable: true,
+  });
+  Object.defineProperty(request, 'value', {
+    configurable: true,
+    enumerable: true,
+    value: 'function value',
+    writable: true,
+  });
+
+  assert.equal(isObjectRecord(array), false);
+  assert.equal(isObjectRecord(request), false);
+  assert.equal(getOwnRecordPropertyDescriptor(array, 'value'), undefined);
+  assert.equal(getOwnRecordPropertyDescriptor(request, 'value'), undefined);
+  assert.equal(getOwnObjectLikePropertyDescriptor(array, 'value').value, 'array value');
+  assert.equal(getOwnObjectLikePropertyDescriptor(request, 'value').value, 'function value');
+});
+
+test('object-like descriptor helper inspects own accessors without invoking getters', () => {
+  let getterCalls = 0;
+  const record = {};
+
+  Object.defineProperty(record, 'value', {
+    configurable: true,
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      throw new Error('getter should not run');
+    },
+  });
+
+  const descriptor = getOwnObjectLikePropertyDescriptor(record, 'value');
+
+  assert.equal(isDataPropertyDescriptor(descriptor), false);
+  assert.equal(typeof descriptor.get, 'function');
+  assert.equal(getterCalls, 0);
+});
+
+test('inherited object-like descriptor helper walks prototype chains without invoking getters', () => {
+  let getterCalls = 0;
+  const grandparent = {};
+  const parent = Object.create(grandparent);
+  const record = Object.create(parent);
+
+  Object.defineProperty(grandparent, 'value', {
+    configurable: true,
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      throw new Error('getter should not run');
+    },
+  });
+
+  const descriptor = getInheritedObjectLikePropertyDescriptor(record, 'value');
+
+  assert.equal(getOwnObjectLikePropertyDescriptor(record, 'value'), undefined);
+  assert.equal(isDataPropertyDescriptor(descriptor), false);
+  assert.equal(typeof descriptor.get, 'function');
+  assert.equal(getterCalls, 0);
+  assert.equal(getInheritedObjectLikePropertyDescriptor(null, 'value'), undefined);
+  assert.equal(getInheritedObjectLikePropertyDescriptor('value', 'value'), undefined);
 });
 
 test('record data-property helper ignores inherited fields', () => {

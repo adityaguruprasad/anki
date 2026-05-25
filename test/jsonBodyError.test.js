@@ -266,6 +266,38 @@ test('rejectJsonArrayBody leaves ordinary absent request bodies absent', () => {
   assert.equal(Object.hasOwn(req, 'body'), false);
 });
 
+test('rejectJsonArrayBody treats primitive request values as absent bodies', () => {
+  for (const req of [null, undefined, 'request', 42, true]) {
+    const res = createRes();
+    let nextCalls = 0;
+
+    rejectJsonArrayBody(req, res, () => {
+      nextCalls += 1;
+    });
+
+    assert.equal(nextCalls, 1);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body, null);
+  }
+});
+
+test('rejectJsonArrayBody accepts function request objects with own data bodies', () => {
+  function req() {}
+  req.body = { frontContent: 'Front', backContent: 'Back' };
+  const res = createRes();
+  let nextCalls = 0;
+
+  rejectJsonArrayBody(req, res, () => {
+    nextCalls += 1;
+  });
+
+  assert.equal(nextCalls, 1);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body, null);
+  assert.equal(Object.getPrototypeOf(req.body), null);
+  assert.deepEqual(Object.keys(req.body), ['frontContent', 'backContent']);
+});
+
 test('rejectJsonArrayBody strips inherited fields from parsed object bodies', () => {
   const inheritedFields = {
     deckId: 42,

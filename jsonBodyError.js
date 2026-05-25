@@ -1,4 +1,9 @@
-const { getOwnDataPropertyValue } = require('./recordDataProperty');
+const {
+  getInheritedObjectLikePropertyDescriptor,
+  getOwnDataPropertyValue,
+  getOwnObjectLikePropertyDescriptor,
+  isDataPropertyDescriptor,
+} = require('./recordDataProperty');
 
 const INVALID_JSON_REQUEST_BODY_ERROR = 'Invalid JSON request body';
 const JSON_REQUEST_BODY_ARRAY_ERROR = 'JSON request body must be an object';
@@ -60,38 +65,16 @@ function handleJsonBodyError(error, req, res, next) {
   return next(error);
 }
 
-function isObjectLike(value) {
-  return value !== null && (typeof value === 'object' || typeof value === 'function');
-}
-
-function hasInheritedBodyProperty(req) {
-  let prototype = Object.getPrototypeOf(req);
-
-  while (prototype !== null) {
-    if (Object.getOwnPropertyDescriptor(prototype, 'body')) {
-      return true;
-    }
-
-    prototype = Object.getPrototypeOf(prototype);
-  }
-
-  return false;
-}
-
 function describeBodyProperty(req) {
-  if (!isObjectLike(req)) {
-    return { kind: 'absent' };
-  }
-
-  const descriptor = Object.getOwnPropertyDescriptor(req, 'body');
+  const descriptor = getOwnObjectLikePropertyDescriptor(req, 'body');
 
   if (!descriptor) {
-    return hasInheritedBodyProperty(req)
+    return getInheritedObjectLikePropertyDescriptor(req, 'body')
       ? { enumerable: false, kind: 'unsafe' }
       : { kind: 'absent' };
   }
 
-  if (!Object.hasOwn(descriptor, 'value')) {
+  if (!isDataPropertyDescriptor(descriptor)) {
     return { enumerable: descriptor.enumerable, kind: 'unsafe' };
   }
 
