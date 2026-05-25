@@ -10,6 +10,31 @@ const {
 } = require('../dashboardDeckTarget');
 const { MAX_POSTGRES_SERIAL_ID } = require('../cardIdentifier');
 
+function createValidDashboardDeck(overrides = {}) {
+  return {
+    id: 1,
+    name: 'Math',
+    totalCards: 4,
+    dueCards: 2,
+    ...overrides,
+  };
+}
+
+function defineThrowingGetter(object, fieldName, message) {
+  let getterCalls = 0;
+
+  Object.defineProperty(object, fieldName, {
+    configurable: true,
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      throw new Error(message);
+    },
+  });
+
+  return () => getterCalls;
+}
+
 test('normalizeStudyDeckId canonicalizes PostgreSQL SERIAL route ids', () => {
   assert.equal(normalizeStudyDeckId(42), '42');
   assert.equal(normalizeStudyDeckId(MAX_POSTGRES_SERIAL_ID), String(MAX_POSTGRES_SERIAL_ID));
@@ -63,6 +88,21 @@ test('hasDashboardDeckListPayload accepts arrays of deck-like objects with usabl
   ]), true);
 });
 
+test('dashboard deck targeting preserves plain and null-prototype own data entries', () => {
+  const plainDeck = createValidDashboardDeck({ id: 7, dueCards: 1 });
+  const nullPrototypeDeck = Object.create(null);
+  Object.defineProperties(nullPrototypeDeck, {
+    id: { value: ' 0008 ', enumerable: true },
+    totalCards: { value: 5, enumerable: true },
+    dueCards: { value: 3, enumerable: true },
+  });
+  const decks = [plainDeck, nullPrototypeDeck];
+
+  assert.equal(hasDashboardDeckListPayload(decks), true);
+  assert.equal(selectStudyDeckTarget(decks), nullPrototypeDeck);
+  assert.equal(getStudyDeckTargetPath(nullPrototypeDeck), '/study?deckId=8');
+});
+
 test('dashboard deck targeting preserves null-prototype rows with own data fields', () => {
   const deck = Object.create(null);
   Object.defineProperties(deck, {
@@ -74,6 +114,53 @@ test('dashboard deck targeting preserves null-prototype rows with own data field
   assert.equal(hasDashboardDeckListPayload([deck]), true);
   assert.equal(selectStudyDeckTarget([deck]), deck);
   assert.equal(getStudyDeckTargetPath(deck), '/study?deckId=7');
+});
+
+test('dashboard deck targeting rejects sparse, inherited, and accessor-backed entries without invoking getters', () => {
+  const deck = createValidDashboardDeck();
+
+  const sparsePayload = [];
+  sparsePayload.length = 1;
+
+  const inheritedDataPayload = [];
+  inheritedDataPayload.length = 1;
+  const inheritedDataPrototype = Object.create(Array.prototype);
+  Object.defineProperty(inheritedDataPrototype, '0', {
+    configurable: true,
+    enumerable: true,
+    value: deck,
+  });
+  Object.setPrototypeOf(inheritedDataPayload, inheritedDataPrototype);
+
+  const ownAccessorPayload = [];
+  const getOwnAccessCount = defineThrowingGetter(
+    ownAccessorPayload,
+    '0',
+    'own deck entry getter should not run',
+  );
+
+  const inheritedAccessorPayload = [];
+  inheritedAccessorPayload.length = 1;
+  const inheritedAccessorPrototype = Object.create(Array.prototype);
+  const getInheritedAccessCount = defineThrowingGetter(
+    inheritedAccessorPrototype,
+    '0',
+    'prototype deck entry getter should not run',
+  );
+  Object.setPrototypeOf(inheritedAccessorPayload, inheritedAccessorPrototype);
+
+  [
+    sparsePayload,
+    inheritedDataPayload,
+    ownAccessorPayload,
+    inheritedAccessorPayload,
+  ].forEach((payload) => {
+    assert.equal(payload.length, 1);
+    assert.equal(hasDashboardDeckListPayload(payload), false);
+    assert.equal(selectStudyDeckTarget(payload), null);
+  });
+  assert.equal(getOwnAccessCount(), 0);
+  assert.equal(getInheritedAccessCount(), 0);
 });
 
 test('dashboard deck targeting rejects accessor-backed row fields without invoking getters', () => {

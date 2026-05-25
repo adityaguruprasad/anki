@@ -1,5 +1,6 @@
 const { MAX_POSTGRES_SERIAL_ID } = require('./cardIdentifier');
 const {
+  getOwnArrayDataPropertyValue,
   getOwnDataPropertyValue,
   isObjectRecord,
 } = require('./recordDataProperty');
@@ -65,12 +66,23 @@ function hasUsableDeckId(deck) {
 }
 
 function hasDashboardDeckListPayload(decks) {
-  return Array.isArray(decks)
-    && decks.every((deck) => (
-      isObjectRecord(deck)
-      && hasUsableDeckId(deck)
-      && hasConsistentDeckCounts(deck)
-    ));
+  if (!Array.isArray(decks)) {
+    return false;
+  }
+
+  for (let index = 0; index < decks.length; index += 1) {
+    const deck = getOwnArrayDataPropertyValue(decks, index);
+
+    if (
+      !isObjectRecord(deck)
+      || !hasUsableDeckId(deck)
+      || !hasConsistentDeckCounts(deck)
+    ) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function hasDueCards(deck) {
@@ -80,7 +92,9 @@ function hasDueCards(deck) {
 function selectDeckWithMostDueCards(decks) {
   let selectedDeck = null;
 
-  for (const deck of decks) {
+  for (let index = 0; index < decks.length; index += 1) {
+    const deck = getOwnArrayDataPropertyValue(decks, index);
+
     if (!hasUsableDeckId(deck) || !hasDueCards(deck)) {
       continue;
     }
@@ -103,15 +117,25 @@ function selectStudyDeckTarget(decks) {
     return null;
   }
 
-  return (
-    selectDeckWithMostDueCards(decks) ||
-    decks.find((deck) => (
+  const dueDeck = selectDeckWithMostDueCards(decks);
+
+  if (dueDeck) {
+    return dueDeck;
+  }
+
+  for (let index = 0; index < decks.length; index += 1) {
+    const deck = getOwnArrayDataPropertyValue(decks, index);
+
+    if (
       hasUsableDeckId(deck)
       && hasConsistentDeckCounts(deck)
       && hasPositiveSafeIntegerCount(deck, 'totalCards')
-    )) ||
-    null
-  );
+    ) {
+      return deck;
+    }
+  }
+
+  return null;
 }
 
 function getStudyDeckTargetPath(deck) {
