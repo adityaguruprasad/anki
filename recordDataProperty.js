@@ -57,6 +57,11 @@ function getOwnDataPropertyValue(value, key) {
   return descriptor === undefined ? undefined : descriptor.value;
 }
 
+function hasOwnDataPropertyValue(value, key, expectedValue) {
+  const descriptor = getOwnDataPropertyDescriptor(value, key);
+  return descriptor !== undefined && descriptor.value === expectedValue;
+}
+
 /**
  * Returns undefined for non-arrays, missing entries, and non-data entries, so
  * do not use this when undefined is a valid array element to distinguish.
@@ -103,6 +108,7 @@ module.exports = {
   getOwnObjectLikePropertyDescriptor,
   getOwnRecordPropertyDescriptor,
   hasOwnDataProperty,
+  hasOwnDataPropertyValue,
   isDataPropertyDescriptor,
   isObjectRecord,
 };

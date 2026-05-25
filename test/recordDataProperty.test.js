@@ -10,6 +10,7 @@ const {
   getOwnObjectLikePropertyDescriptor,
   getOwnRecordPropertyDescriptor,
   hasOwnDataProperty,
+  hasOwnDataPropertyValue,
   isDataPropertyDescriptor,
   isObjectRecord,
 } = require('../recordDataProperty');
@@ -20,8 +21,69 @@ test('record data-property helper accepts null-prototype records with own data f
 
   assert.equal(isObjectRecord(record), true);
   assert.equal(hasOwnDataProperty(record, 'value'), true);
+  assert.equal(hasOwnDataPropertyValue(record, 'value', 'safe'), true);
   assert.equal(getOwnDataPropertyValue(record, 'value'), 'safe');
   assert.equal(getOwnDataPropertyDescriptor(record, 'value').value, 'safe');
+});
+
+test('record data-property value helper matches only own data field values', () => {
+  let getterCalls = 0;
+  const record = Object.create({ inherited: 'safe' });
+  record.value = 'safe';
+  Object.defineProperty(record, 'accessor', {
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      throw new Error('getter should not run');
+    },
+  });
+
+  assert.equal(hasOwnDataPropertyValue(record, 'value', 'safe'), true);
+  assert.equal(hasOwnDataPropertyValue(record, 'value', 'unsafe'), false);
+  assert.equal(hasOwnDataPropertyValue(record, 'missing', 'safe'), false);
+  assert.equal(hasOwnDataPropertyValue(record, 'inherited', 'safe'), false);
+  assert.equal(hasOwnDataPropertyValue(record, 'accessor', 'safe'), false);
+  assert.equal(getterCalls, 0);
+});
+
+test('record data-property value helper distinguishes own undefined from absent fields', () => {
+  let getterCalls = 0;
+  const record = {};
+
+  Object.defineProperty(record, 'value', {
+    enumerable: true,
+    value: undefined,
+  });
+  Object.defineProperty(record, 'accessor', {
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      return undefined;
+    },
+  });
+
+  assert.equal(hasOwnDataPropertyValue(record, 'value', undefined), true);
+  assert.equal(hasOwnDataPropertyValue(record, 'missing', undefined), false);
+  assert.equal(hasOwnDataPropertyValue(record, 'accessor', undefined), false);
+  assert.equal(getterCalls, 0);
+});
+
+test('record data-property value helper rejects non-records even when apparent values match', () => {
+  const array = ['array entry'];
+  array.value = 'array value';
+
+  [
+    { payload: array, key: '0', expectedValue: array[0] },
+    { payload: array, key: 'value', expectedValue: array.value },
+    { payload: 'value', key: '0', expectedValue: 'value'[0] },
+    { payload: 'value', key: 'length', expectedValue: 'value'.length },
+    { payload: 42, key: 'toString', expectedValue: Number.prototype.toString },
+    { payload: true, key: 'valueOf', expectedValue: Boolean.prototype.valueOf },
+    { payload: null, key: 'value', expectedValue: undefined },
+    { payload: undefined, key: 'value', expectedValue: undefined },
+  ].forEach(({ payload, key, expectedValue }) => {
+    assert.equal(hasOwnDataPropertyValue(payload, key, expectedValue), false);
+  });
 });
 
 test('record data-property helper rejects arrays and non-objects as records', () => {
@@ -205,6 +267,7 @@ test('record data-property helper accepts own data fields with undefined values'
   assert.equal(hasOwnDataProperty(record, 'value'), true);
   assert.equal(Object.prototype.hasOwnProperty.call(descriptor, 'value'), true);
   assert.equal(getOwnDataPropertyValue(record, 'value'), undefined);
+  assert.equal(hasOwnDataPropertyValue(record, 'value', undefined), true);
 });
 
 test('record data-property helper rejects own accessor-backed fields without invoking them', () => {

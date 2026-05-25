@@ -1,7 +1,7 @@
 const {
   getInheritedObjectLikePropertyDescriptor,
-  getOwnDataPropertyValue,
   getOwnObjectLikePropertyDescriptor,
+  hasOwnDataPropertyValue,
   isDataPropertyDescriptor,
 } = require('./recordDataProperty');
 
@@ -18,10 +18,6 @@ function createJsonBodyParser(expressModule) {
   }
 
   return expressModule.json({ inflate: false, limit: JSON_BODY_LIMIT });
-}
-
-function hasOwnDataPropertyValue(object, propertyName, expectedValue) {
-  return getOwnDataPropertyValue(object, propertyName) === expectedValue;
 }
 
 function isMalformedJsonBodyError(error) {
