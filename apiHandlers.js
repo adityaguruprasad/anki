@@ -6,6 +6,7 @@ const {
   getOwnDataPropertyValue,
   getOwnRecordPropertyDescriptor,
   hasOwnDataProperty,
+  hasOwnDataPropertyValue,
   isDataPropertyDescriptor,
   isObjectRecord,
 } = require('./recordDataProperty');
@@ -1349,8 +1350,8 @@ function getSchedulingInsightDateBoundaries(now = new Date()) {
 
 function isDuplicateDeckNameError(error) {
   return (
-    error?.code === '23505'
-    && DUPLICATE_DECK_NAME_CONSTRAINTS.has(error.constraint)
+    hasOwnDataPropertyValue(error, 'code', '23505')
+    && DUPLICATE_DECK_NAME_CONSTRAINTS.has(getOwnDataPropertyValue(error, 'constraint'))
   );
 }
 

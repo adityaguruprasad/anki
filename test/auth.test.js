@@ -214,6 +214,33 @@ function createUniqueViolation(constraint) {
   return error;
 }
 
+function createAccessorBackedUniqueViolation(constraint, { inherited = false } = {}) {
+  const target = new Error('duplicate key value violates unique constraint');
+  const accessCounts = { code: 0, constraint: 0 };
+
+  Object.defineProperties(target, {
+    code: {
+      enumerable: true,
+      get() {
+        accessCounts.code += 1;
+        throw new Error('unique violation code getter should not run');
+      },
+    },
+    constraint: {
+      enumerable: true,
+      get() {
+        accessCounts.constraint += 1;
+        throw new Error('unique violation constraint getter should not run');
+      },
+    },
+  });
+
+  return {
+    accessCounts,
+    error: inherited ? Object.create(target) : target,
+  };
+}
+
 function createPasswordHasher({ compareResult = true } = {}) {
   return {
     hashCalls: [],
@@ -1069,6 +1096,78 @@ test('register returns 409 for duplicate username or email unique violations wit
         'ada@example.com',
         'hashed:correct horse battery staple',
       ]);
+    });
+  }
+});
+
+test('register ignores accessor-backed duplicate markers without invoking getters', async () => {
+  const { accessCounts, error } = createAccessorBackedUniqueViolation('users_email_key');
+  const db = createDb([error]);
+  const passwordHasher = createPasswordHasher();
+  const { register } = createAuthHandlers(db, {
+    jwtSecret: 'accessor-duplicate-register-secret',
+    passwordHasher,
+  });
+  const req = {
+    body: {
+      username: 'ada',
+      email: 'ada@example.com',
+      password: 'correct horse battery staple',
+    },
+  };
+  const res = createRes();
+
+  await register(req, res);
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Error registering user' });
+  assert.deepEqual(accessCounts, { code: 0, constraint: 0 });
+  assert.equal(db.calls.length, 1);
+});
+
+test('register ignores prototype-backed duplicate markers without invoking prototype getters', async (t) => {
+  const inheritedDataError = Object.create(createUniqueViolation('users_email_key'));
+  const inheritedAccessor = createAccessorBackedUniqueViolation('users_email_key', {
+    inherited: true,
+  });
+  const cases = [
+    {
+      name: 'inherited data markers',
+      error: inheritedDataError,
+      accessCounts: null,
+    },
+    {
+      name: 'inherited accessor markers',
+      error: inheritedAccessor.error,
+      accessCounts: inheritedAccessor.accessCounts,
+    },
+  ];
+
+  for (const { name, error, accessCounts } of cases) {
+    await t.test(name, async () => {
+      const db = createDb([error]);
+      const passwordHasher = createPasswordHasher();
+      const { register } = createAuthHandlers(db, {
+        jwtSecret: `${name}-register-secret`,
+        passwordHasher,
+      });
+      const req = {
+        body: {
+          username: 'ada',
+          email: 'ada@example.com',
+          password: 'correct horse battery staple',
+        },
+      };
+      const res = createRes();
+
+      await register(req, res);
+
+      assert.equal(res.statusCode, 500);
+      assert.deepEqual(res.body, { error: 'Error registering user' });
+      if (accessCounts) {
+        assert.deepEqual(accessCounts, { code: 0, constraint: 0 });
+      }
+      assert.equal(db.calls.length, 1);
     });
   }
 });

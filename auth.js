@@ -11,6 +11,7 @@ const {
   getOwnArrayDataPropertyValue,
   getOwnDataPropertyDescriptor,
   getOwnDataPropertyValue,
+  hasOwnDataPropertyValue,
   isObjectRecord,
 } = require('./recordDataProperty');
 
@@ -383,7 +384,10 @@ function normalizeEmail(value) {
 }
 
 function isDuplicateAccountError(error) {
-  return error?.code === '23505' && DUPLICATE_ACCOUNT_CONSTRAINTS.has(error.constraint);
+  return (
+    hasOwnDataPropertyValue(error, 'code', '23505')
+    && DUPLICATE_ACCOUNT_CONSTRAINTS.has(getOwnDataPropertyValue(error, 'constraint'))
+  );
 }
 
 function validatePasswordHash(passwordHash) {

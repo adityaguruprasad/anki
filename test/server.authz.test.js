@@ -216,6 +216,33 @@ function createUniqueViolation(constraint) {
   return error;
 }
 
+function createAccessorBackedUniqueViolation(constraint, { inherited = false } = {}) {
+  const target = new Error('duplicate key value violates unique constraint');
+  const accessCounts = { code: 0, constraint: 0 };
+
+  Object.defineProperties(target, {
+    code: {
+      enumerable: true,
+      get() {
+        accessCounts.code += 1;
+        throw new Error('unique violation code getter should not run');
+      },
+    },
+    constraint: {
+      enumerable: true,
+      get() {
+        accessCounts.constraint += 1;
+        throw new Error('unique violation constraint getter should not run');
+      },
+    },
+  });
+
+  return {
+    accessCounts,
+    error: inherited ? Object.create(target) : target,
+  };
+}
+
 function createTransactionDb(results) {
   let index = 0;
   const calls = [];
@@ -1439,6 +1466,51 @@ test('PATCH /api/decks/:deckId maps deck-name unique races to 409', async () => 
   assert.equal(db.calls.length, 1);
   assert.deepEqual(db.calls[0].params, [42, 1, 'biology']);
   assert.match(db.calls[0].sql, /WITH\s+target\s+AS/i);
+});
+
+test('PATCH /api/decks/:deckId ignores untrusted duplicate error markers', async (t) => {
+  const inheritedAccessor = createAccessorBackedUniqueViolation(
+    'decks_user_id_normalized_name_unique_idx',
+    { inherited: true }
+  );
+  const cases = [
+    {
+      name: 'accessor markers',
+      error: createAccessorBackedUniqueViolation('decks_user_id_normalized_name_unique_idx'),
+    },
+    {
+      name: 'inherited data markers',
+      error: {
+        error: Object.create(createUniqueViolation('decks_user_id_normalized_name_unique_idx')),
+        accessCounts: null,
+      },
+    },
+    {
+      name: 'inherited accessor markers',
+      error: inheritedAccessor,
+    },
+  ];
+
+  for (const { name, error: { error, accessCounts } } of cases) {
+    await t.test(name, async (t) => {
+      const db = createDb([error]);
+      const req = { params: { deckId: '42' }, body: { name: 'Biology' }, user: { userId: 1 } };
+      const res = createRes();
+      const consoleError = t.mock.method(console, 'error', () => {});
+
+      await renameDeck(req, res, db);
+
+      assert.equal(res.statusCode, 500);
+      assert.deepEqual(res.body, { error: 'Internal server error' });
+      assert.equal(consoleError.mock.callCount(), 1);
+      assert.deepEqual(consoleError.mock.calls[0].arguments, [error]);
+      if (accessCounts) {
+        assert.deepEqual(accessCounts, { code: 0, constraint: 0 });
+      }
+      assert.equal(db.calls.length, 1);
+      assert.deepEqual(db.calls[0].params, [42, 1, 'Biology']);
+    });
+  }
 });
 
 test('PATCH /api/decks/:deckId fails closed for unrelated unique violations', async (t) => {
