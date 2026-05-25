@@ -7,6 +7,12 @@ const {
   validateRegistrationPassword,
 } = require('./authPasswordValidation');
 const { MAX_POSTGRES_SERIAL_ID } = require('./cardIdentifier');
+const {
+  getOwnDataPropertyDescriptor,
+  getOwnDataPropertyValue,
+  isDataPropertyDescriptor,
+  isObjectRecord,
+} = require('./recordDataProperty');
 
 const DEFAULT_DEV_JWT_SECRET = 'your_secret_key';
 const DEFAULT_JWT_EXPIRES_IN_SECONDS = 60 * 60 * 24;
@@ -74,8 +80,8 @@ function base64UrlJson(value) {
 }
 
 function resolveJwtSecret(env = process.env) {
-  const jwtSecretValue = getOwnConfigValue(env, 'JWT_SECRET');
-  const nodeEnv = getOwnConfigValue(env, 'NODE_ENV');
+  const jwtSecretValue = getOwnDataPropertyValue(env, 'JWT_SECRET');
+  const nodeEnv = getOwnDataPropertyValue(env, 'NODE_ENV');
 
   if (jwtSecretValue !== undefined) {
     if (typeof jwtSecretValue !== 'string') {
@@ -108,17 +114,6 @@ function resolveJwtSecret(env = process.env) {
   return DEFAULT_DEV_JWT_SECRET;
 }
 
-function getOwnConfigValue(config, fieldName) {
-  if (config === null || typeof config !== 'object' || Array.isArray(config)) {
-    return undefined;
-  }
-
-  const descriptor = Object.getOwnPropertyDescriptor(config, fieldName);
-  return descriptor !== undefined && Object.hasOwn(descriptor, 'value')
-    ? descriptor.value
-    : undefined;
-}
-
 function validateJwtExpiresInSeconds(value) {
   if (typeof value === 'number') {
     if (!Number.isSafeInteger(value) || value <= 0) {
@@ -146,7 +141,7 @@ function validateJwtExpiresInSeconds(value) {
 }
 
 function resolveJwtExpiresInSeconds(env = process.env) {
-  const expiresInSeconds = getOwnConfigValue(env, 'JWT_EXPIRES_IN_SECONDS');
+  const expiresInSeconds = getOwnDataPropertyValue(env, 'JWT_EXPIRES_IN_SECONDS');
   if (expiresInSeconds == null || expiresInSeconds === '') {
     return DEFAULT_JWT_EXPIRES_IN_SECONDS;
   }
@@ -183,16 +178,12 @@ function validateJwtIssuedAtTimestamp(iat) {
 }
 
 function validateJwtPayloadUserId(payload) {
-  if (
-    payload === null ||
-    typeof payload !== 'object' ||
-    Array.isArray(payload)
-  ) {
+  if (!isObjectRecord(payload)) {
     throw new Error('Token userId is required');
   }
 
   const userIdDescriptor = getOwnDataPropertyDescriptor(payload, 'userId');
-  const normalizedUserId = userIdDescriptor === null
+  const normalizedUserId = userIdDescriptor === undefined
     ? null
     : normalizeTokenUserId(userIdDescriptor.value);
   if (normalizedUserId == null) {
@@ -226,7 +217,7 @@ function validateJwtTokenText(token) {
 }
 
 function validateJwtHeader(header) {
-  if (header === null || typeof header !== 'object' || Array.isArray(header)) {
+  if (!isObjectRecord(header)) {
     throw new Error('Invalid token header');
   }
 
@@ -282,7 +273,7 @@ function verifyToken(token, secret = resolveJwtSecret(), options = {}) {
   }
 
   const payload = decodeJsonPart(encodedPayload);
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+  if (!isObjectRecord(payload)) {
     throw new Error('Invalid token payload');
   }
   validateJwtPayloadFields(payload);
@@ -356,27 +347,11 @@ function extractBearerToken(authHeader) {
   return match ? match[1] : null;
 }
 
-function getOwnAuthorizationHeader(headers) {
-  if (headers === null || typeof headers !== 'object' || Array.isArray(headers)) {
-    return undefined;
-  }
-
-  const descriptor = getOwnDataPropertyDescriptor(headers, 'authorization');
-  return descriptor === null ? undefined : descriptor.value;
-}
-
 function getRequestHeadersObject(req) {
-  if (req === null || typeof req !== 'object' || Array.isArray(req)) {
-    return {};
-  }
-
   // Auth must inspect the own data-property descriptor for req.headers only;
   // inherited or accessor-backed headers containers must not be invoked.
-  const headersDescriptor = getOwnDataPropertyDescriptor(req, 'headers');
-  const headers = headersDescriptor === null ? undefined : headersDescriptor.value;
-  return headers !== null && typeof headers === 'object' && !Array.isArray(headers)
-    ? headers
-    : {};
+  const headers = getOwnDataPropertyValue(req, 'headers');
+  return isObjectRecord(headers) ? headers : {};
 }
 
 function getDefaultPasswordHasher() {
@@ -422,29 +397,17 @@ function isPasswordCompareMatch(result) {
   return result === true;
 }
 
-function getOwnDataPropertyDescriptor(object, fieldName) {
-  const descriptor = Object.getOwnPropertyDescriptor(object, fieldName);
-  return descriptor !== undefined && Object.hasOwn(descriptor, 'value')
-    ? descriptor
-    : null;
-}
-
 function getRequiredAuthRowValue(row, fieldName, errorMessage) {
   const descriptor = getOwnDataPropertyDescriptor(row, fieldName);
-  if (descriptor === null) {
+  if (descriptor === undefined) {
     throw new Error(errorMessage);
   }
 
   return descriptor.value;
 }
 
-function getOptionalAuthRowValue(row, fieldName) {
-  const descriptor = getOwnDataPropertyDescriptor(row, fieldName);
-  return descriptor === null ? undefined : descriptor.value;
-}
-
 function normalizeLoginUserRow(row, normalizedEmail) {
-  if (row === null || typeof row !== 'object' || Array.isArray(row)) {
+  if (!isObjectRecord(row)) {
     throw new Error(INVALID_LOGIN_USER_LOOKUP_RESULT_ERROR);
   }
 
@@ -459,7 +422,7 @@ function normalizeLoginUserRow(row, normalizedEmail) {
   return {
     id: normalizedUserId,
     email: normalizedEmail,
-    password_hash: getOptionalAuthRowValue(row, 'password_hash'),
+    password_hash: getOwnDataPropertyValue(row, 'password_hash'),
   };
 }
 
@@ -469,17 +432,13 @@ function getOptionalSingleAuthQueryRow(result, errorMessage) {
   // The array and own data-property checks intentionally reject
   // prototype-polluted, accessor-shaped, or array-shaped query result objects
   // before trusting rows/rowCount.
-  if (
-    result === null
-    || typeof result !== 'object'
-    || Array.isArray(result)
-  ) {
+  if (!isObjectRecord(result)) {
     throw new Error(errorMessage);
   }
 
   const rowsDescriptor = getOwnDataPropertyDescriptor(result, 'rows');
   const rowCountDescriptor = getOwnDataPropertyDescriptor(result, 'rowCount');
-  if (rowsDescriptor === null || rowCountDescriptor === null) {
+  if (rowsDescriptor === undefined || rowCountDescriptor === undefined) {
     throw new Error(errorMessage);
   }
 
@@ -502,8 +461,8 @@ function getOptionalSingleAuthQueryRow(result, errorMessage) {
     throw new Error(errorMessage);
   }
 
-  const rowDescriptor = getOwnDataPropertyDescriptor(rows, '0');
-  if (rowDescriptor === null) {
+  const rowDescriptor = Object.getOwnPropertyDescriptor(rows, '0');
+  if (!isDataPropertyDescriptor(rowDescriptor)) {
     throw new Error(errorMessage);
   }
 
@@ -512,11 +471,7 @@ function getOptionalSingleAuthQueryRow(result, errorMessage) {
 
 function getSingleRegistrationUserId(result, normalizedEmail) {
   const row = getOptionalSingleAuthQueryRow(result, INVALID_REGISTRATION_INSERT_RESULT_ERROR);
-  if (
-    row === null
-    || typeof row !== 'object'
-    || Array.isArray(row)
-  ) {
+  if (!isObjectRecord(row)) {
     throw new Error(INVALID_REGISTRATION_INSERT_RESULT_ERROR);
   }
 
@@ -676,22 +631,13 @@ function resolveRegistrationRateLimitOptions(registrationRateLimitOptions) {
   };
 }
 
-function getOwnNonArrayObjectValue(value, fieldName) {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-    return undefined;
-  }
-
-  const descriptor = getOwnDataPropertyDescriptor(value, fieldName);
-  return descriptor === null ? undefined : descriptor.value;
-}
-
 function getRequestIp(req = {}) {
-  const socket = getOwnNonArrayObjectValue(req, 'socket');
-  const connection = getOwnNonArrayObjectValue(req, 'connection');
+  const socket = getOwnDataPropertyValue(req, 'socket');
+  const connection = getOwnDataPropertyValue(req, 'connection');
   const candidates = [
-    getOwnNonArrayObjectValue(req, 'ip'),
-    getOwnNonArrayObjectValue(socket, 'remoteAddress'),
-    getOwnNonArrayObjectValue(connection, 'remoteAddress'),
+    getOwnDataPropertyValue(req, 'ip'),
+    getOwnDataPropertyValue(socket, 'remoteAddress'),
+    getOwnDataPropertyValue(connection, 'remoteAddress'),
   ];
 
   for (const candidate of candidates) {
@@ -725,7 +671,7 @@ function resolveAuthHandlerJwtSecret(options = {}) {
   // Only undefined means "not provided"; other falsy values must fail closed.
   if (options.jwtSecret !== undefined) {
     return resolveJwtSecret({
-      NODE_ENV: getOwnConfigValue(options.env, 'NODE_ENV'),
+      NODE_ENV: getOwnDataPropertyValue(options.env, 'NODE_ENV'),
       JWT_SECRET: options.jwtSecret,
     });
   }
@@ -734,22 +680,8 @@ function resolveAuthHandlerJwtSecret(options = {}) {
 }
 
 function getRequestBodyObject(req) {
-  if (
-    req === null
-    || typeof req !== 'object'
-    || Array.isArray(req)
-  ) {
-    return {};
-  }
-
-  const bodyDescriptor = getOwnDataPropertyDescriptor(req, 'body');
-  const body = bodyDescriptor === null ? undefined : bodyDescriptor.value;
-  return body !== null && typeof body === 'object' && !Array.isArray(body) ? body : {};
-}
-
-function getOwnRequestBodyValue(body, fieldName) {
-  const descriptor = getOwnDataPropertyDescriptor(body, fieldName);
-  return descriptor === null ? undefined : descriptor.value;
+  const body = getOwnDataPropertyValue(req, 'body');
+  return isObjectRecord(body) ? body : {};
 }
 
 function createAuthHandlers(db, options = {}) {
@@ -777,9 +709,9 @@ function createAuthHandlers(db, options = {}) {
 
   const register = async (req, res) => {
     const body = getRequestBodyObject(req);
-    const username = getOwnRequestBodyValue(body, 'username');
-    const email = getOwnRequestBodyValue(body, 'email');
-    const password = getOwnRequestBodyValue(body, 'password');
+    const username = getOwnDataPropertyValue(body, 'username');
+    const email = getOwnDataPropertyValue(body, 'email');
+    const password = getOwnDataPropertyValue(body, 'password');
     const trimmedUsername = typeof username === 'string' ? username.trim() : '';
     const normalizedEmail = normalizeEmail(email);
     if (trimmedUsername === '') {
@@ -842,8 +774,8 @@ function createAuthHandlers(db, options = {}) {
 
   const login = async (req, res) => {
     const body = getRequestBodyObject(req);
-    const email = getOwnRequestBodyValue(body, 'email');
-    const password = getOwnRequestBodyValue(body, 'password');
+    const email = getOwnDataPropertyValue(body, 'email');
+    const password = getOwnDataPropertyValue(body, 'password');
     const normalizedEmail = normalizeEmail(email);
     if (normalizedEmail == null) {
       return res.status(400).json({ error: 'Valid email is required' });
@@ -912,7 +844,9 @@ function createAuthHandlers(db, options = {}) {
   };
 
   const authenticateToken = (req, res, next) => {
-    const token = extractBearerToken(getOwnAuthorizationHeader(getRequestHeadersObject(req)));
+    const token = extractBearerToken(
+      getOwnDataPropertyValue(getRequestHeadersObject(req), 'authorization')
+    );
     if (token == null) return res.sendStatus(401);
 
     try {

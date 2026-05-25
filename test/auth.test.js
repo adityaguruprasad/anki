@@ -181,6 +181,10 @@ function createRequestWithInheritedFields(inheritedFields, ownFields = {}) {
   return Object.assign(Object.create(inheritedFields), ownFields);
 }
 
+function createNullPrototypeRecord(fields) {
+  return Object.assign(Object.create(null), fields);
+}
+
 function createObjectWithAccessorFields(accessorFields, ownFields = {}) {
   const object = { ...ownFields };
   const accessCounts = {};
@@ -344,6 +348,47 @@ test('register uses injected db and returns a signed token with inserted user id
 
   assert.equal(nextCalled, true);
   assert.equal(authReq.user.userId, 42);
+});
+
+test('register accepts null-prototype request body and returned records', async () => {
+  const db = createDb([
+    createNullPrototypeRecord({
+      rowCount: 1,
+      rows: [
+        createNullPrototypeRecord({
+          id: 46,
+          email: 'ada@example.com',
+        }),
+      ],
+    }),
+  ]);
+  const passwordHasher = createPasswordHasher();
+  const { register } = createAuthHandlers(db, {
+    jwtSecret: 'null-prototype-register-secret',
+    passwordHasher,
+  });
+  const req = createNullPrototypeRecord({
+    body: createNullPrototypeRecord({
+      username: 'ada',
+      email: 'ada@example.com',
+      password: 'correct horse battery staple',
+    }),
+  });
+  const res = createRes();
+
+  await register(req, res);
+
+  assert.equal(res.statusCode, 201);
+  assert.equal(typeof res.body.token, 'string');
+  assert.deepEqual(passwordHasher.hashCalls, [
+    { password: 'correct horse battery staple', rounds: PASSWORD_HASH_COST },
+  ]);
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [
+    'ada',
+    'ada@example.com',
+    'hashed:correct horse battery staple',
+  ]);
 });
 
 test('register does not mint a token when the inserted user id is invalid', async () => {
@@ -3667,6 +3712,28 @@ test('authenticateToken accepts own authorization over an inherited forged heade
 
   assert.equal(nextCalled, true);
   assert.equal(req.user.userId, 306);
+});
+
+test('authenticateToken accepts null-prototype request and headers containers', () => {
+  const signedToken = signToken({ userId: 309 }, 'null-prototype-header-secret');
+  const { authenticateToken } = createAuthHandlers(createDb([]), {
+    jwtSecret: 'null-prototype-header-secret',
+    passwordHasher: createPasswordHasher(),
+  });
+  const req = createNullPrototypeRecord({
+    headers: createNullPrototypeRecord({
+      authorization: `Bearer ${signedToken}`,
+    }),
+  });
+  const res = createRes();
+  let nextCalled = false;
+
+  authenticateToken(req, res, () => {
+    nextCalled = true;
+  });
+
+  assert.equal(nextCalled, true);
+  assert.equal(req.user.userId, 309);
 });
 
 test('authenticateToken ignores array-shaped headers with an authorization property', () => {
