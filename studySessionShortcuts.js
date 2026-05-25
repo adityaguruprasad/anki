@@ -12,25 +12,29 @@ const STUDY_SESSION_SHORTCUT_ACTIONS = Object.freeze({
 });
 
 const EDITABLE_TAG_NAMES = new Set(['input', 'textarea', 'select']);
+const SHORTCUT_MODIFIER_PROPERTIES = Object.freeze(['altKey', 'ctrlKey', 'metaKey', 'shiftKey']);
 
 function getTagName(target) {
-  if (typeof target?.tagName === 'string') {
-    return target.tagName.toLowerCase();
+  const tagName = target?.tagName;
+  if (typeof tagName === 'string') {
+    return tagName.toLowerCase();
   }
 
-  if (typeof target?.nodeName === 'string') {
-    return target.nodeName.toLowerCase();
+  const nodeName = target?.nodeName;
+  if (typeof nodeName === 'string') {
+    return nodeName.toLowerCase();
   }
 
   return '';
 }
 
 function hasEditableAttribute(target) {
-  if (typeof target?.getAttribute !== 'function') {
+  const getAttribute = target?.getAttribute;
+  if (typeof getAttribute !== 'function') {
     return false;
   }
 
-  const contentEditable = target.getAttribute('contenteditable');
+  const contentEditable = getAttribute.call(target, 'contenteditable');
 
   return typeof contentEditable === 'string' && contentEditable.toLowerCase() !== 'false';
 }
@@ -40,16 +44,17 @@ function hasEditableProperty(target) {
     return true;
   }
 
-  if (typeof target?.contentEditable !== 'string') {
+  const contentEditableProperty = target?.contentEditable;
+  if (typeof contentEditableProperty !== 'string') {
     return false;
   }
 
-  const contentEditable = target.contentEditable.toLowerCase();
+  const contentEditable = contentEditableProperty.toLowerCase();
 
   return contentEditable !== '' && contentEditable !== 'false' && contentEditable !== 'inherit';
 }
 
-function isEditableShortcutTarget(target) {
+function inspectEditableShortcutTarget(target) {
   let currentTarget = target;
 
   while (currentTarget) {
@@ -67,57 +72,100 @@ function isEditableShortcutTarget(target) {
   return false;
 }
 
-function isUnmodifiedShortcutEvent(event) {
-  if (
-    !event
-    || event.altKey
-    || event.ctrlKey
-    || event.metaKey
-    || event.shiftKey
-    || isEditableShortcutTarget(event.target)
-  ) {
+function isEditableShortcutTarget(target) {
+  try {
+    return inspectEditableShortcutTarget(target);
+  } catch {
     return false;
   }
-
-  return true;
 }
 
-function isPlainShortcutEvent(event) {
-  return isUnmodifiedShortcutEvent(event) && !event.repeat;
+function getEligibleShortcutEvent(event) {
+  try {
+    if (!event) {
+      return null;
+    }
+
+    for (const modifierProperty of SHORTCUT_MODIFIER_PROPERTIES) {
+      if (event[modifierProperty]) {
+        return null;
+      }
+    }
+
+    if (inspectEditableShortcutTarget(event.target)) {
+      return null;
+    }
+
+    return {
+      key: event.key,
+      repeat: event.repeat,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function isPlainShortcutEvent(shortcutEvent) {
+  return Boolean(shortcutEvent) && !shortcutEvent.repeat;
+}
+
+function getAnswerShortcutQuality(shortcutEvent) {
+  if (!isPlainShortcutEvent(shortcutEvent)) {
+    return null;
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(ANSWER_SHORTCUT_QUALITIES, shortcutEvent.key)) {
+    return null;
+  }
+
+  return ANSWER_SHORTCUT_QUALITIES[shortcutEvent.key];
+}
+
+function getStudySessionShortcutState(state) {
+  try {
+    return {
+      hasCurrentCard: Boolean(state?.currentCard),
+      isAnswerVisible: Boolean(state?.showAnswer),
+      isLoading: Boolean(state?.isLoading),
+      isSubmitting: Boolean(state?.isSubmitting),
+    };
+  } catch {
+    return null;
+  }
 }
 
 function getStudySessionAnswerShortcutQuality(event) {
-  if (!isPlainShortcutEvent(event)) {
-    return null;
-  }
-
-  if (!Object.prototype.hasOwnProperty.call(ANSWER_SHORTCUT_QUALITIES, event.key)) {
-    return null;
-  }
-
-  return ANSWER_SHORTCUT_QUALITIES[event.key];
+  return getAnswerShortcutQuality(getEligibleShortcutEvent(event));
 }
 
 function getStudySessionShortcutAction(event, state = {}) {
-  if (!isUnmodifiedShortcutEvent(event)) {
+  const shortcutEvent = getEligibleShortcutEvent(event);
+  if (!shortcutEvent) {
     return null;
   }
 
-  const hasCurrentCard = Boolean(state.currentCard);
-  const isAnswerVisible = Boolean(state.showAnswer);
-  const isLoading = Boolean(state.isLoading);
-  const isSubmitting = Boolean(state.isSubmitting);
+  const shortcutState = getStudySessionShortcutState(state);
+  if (!shortcutState) {
+    return null;
+  }
 
-  if (event.key === ' ' && hasCurrentCard && isAnswerVisible) {
+  const {
+    hasCurrentCard,
+    isAnswerVisible,
+    isLoading,
+    isSubmitting,
+  } = shortcutState;
+
+  if (shortcutEvent.key === ' ' && hasCurrentCard && isAnswerVisible) {
     return { type: STUDY_SESSION_SHORTCUT_ACTIONS.NO_OP };
   }
 
-  if (event.repeat || isSubmitting) {
+  if (shortcutEvent.repeat || isSubmitting) {
     return null;
   }
 
   if (
-    REVEAL_SHORTCUT_KEYS.has(event.key)
+    REVEAL_SHORTCUT_KEYS.has(shortcutEvent.key)
     && hasCurrentCard
     && !isAnswerVisible
     && !isLoading
@@ -129,7 +177,7 @@ function getStudySessionShortcutAction(event, state = {}) {
     return null;
   }
 
-  const quality = getStudySessionAnswerShortcutQuality(event);
+  const quality = getAnswerShortcutQuality(shortcutEvent);
 
   if (quality === null) {
     return null;
