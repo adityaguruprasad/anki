@@ -172,7 +172,7 @@ function parseAuthResponse({ mode, ok, body, bodyParseError }) {
     return { ok: false, error: INVALID_AUTH_RESPONSE_ERROR };
   }
 
-  const token = normalizeAuthToken(body.token);
+  const token = normalizeAuthToken(getOwnDataPropertyValue(body, 'token'));
   if (token === null) {
     return { ok: false, error: INVALID_AUTH_RESPONSE_ERROR };
   }

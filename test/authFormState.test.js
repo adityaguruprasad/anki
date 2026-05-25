@@ -848,6 +848,82 @@ test('parseAuthResponse returns a trimmed token for successful auth responses', 
   );
 });
 
+test('parseAuthResponse rejects inherited tokens for successful auth responses', () => {
+  const token = createCompactJwt();
+  const payload = Object.create({ token });
+
+  assert.deepEqual(
+    parseAuthResponse({
+      mode: AUTH_MODES.LOGIN,
+      ok: true,
+      body: payload,
+    }),
+    { ok: false, error: 'Authentication response was invalid. Please try again.' }
+  );
+});
+
+test('parseAuthResponse rejects accessor-backed tokens without invoking getters', () => {
+  let getterCalls = 0;
+  const payload = {};
+
+  Object.defineProperty(payload, 'token', {
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      throw new Error('token getter should not run');
+    },
+  });
+
+  assert.deepEqual(
+    parseAuthResponse({
+      mode: AUTH_MODES.LOGIN,
+      ok: true,
+      body: payload,
+    }),
+    { ok: false, error: 'Authentication response was invalid. Please try again.' }
+  );
+  assert.equal(getterCalls, 0);
+});
+
+test('parseAuthResponse rejects valid accessor-backed tokens without invoking getters', () => {
+  const token = createCompactJwt();
+  let getterCalls = 0;
+  const payload = {};
+
+  Object.defineProperty(payload, 'token', {
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      return token;
+    },
+  });
+
+  assert.deepEqual(
+    parseAuthResponse({
+      mode: AUTH_MODES.LOGIN,
+      ok: true,
+      body: payload,
+    }),
+    { ok: false, error: 'Authentication response was invalid. Please try again.' }
+  );
+  assert.equal(getterCalls, 0);
+});
+
+test('parseAuthResponse accepts own data tokens from null-prototype successful auth responses', () => {
+  const token = createCompactJwt();
+  const payload = Object.create(null);
+  payload.token = `  ${token}  `;
+
+  assert.deepEqual(
+    parseAuthResponse({
+      mode: AUTH_MODES.LOGIN,
+      ok: true,
+      body: payload,
+    }),
+    { ok: true, token }
+  );
+});
+
 test('parseAuthResponse accepts a max-length compact JWT for successful auth responses', () => {
   const token = createMaxLengthCompactJwt();
 
