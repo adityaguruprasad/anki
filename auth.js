@@ -225,11 +225,11 @@ function validateJwtHeader(header) {
     throw new Error('Unsupported token header');
   }
 
-  if (!Object.hasOwn(header, 'alg') || header.alg !== JWT_TOKEN_ALGORITHM) {
+  if (getOwnDataPropertyValue(header, 'alg') !== JWT_TOKEN_ALGORITHM) {
     throw new Error('Invalid token algorithm');
   }
 
-  if (!Object.hasOwn(header, 'typ') || header.typ !== JWT_TOKEN_TYPE) {
+  if (getOwnDataPropertyValue(header, 'typ') !== JWT_TOKEN_TYPE) {
     throw new Error('Invalid token type');
   }
 }
@@ -278,22 +278,24 @@ function verifyToken(token, secret = resolveJwtSecret(), options = {}) {
   }
   validateJwtPayloadFields(payload);
 
-  if (!Object.hasOwn(payload, 'exp') || payload.exp == null) {
+  const expClaim = getOwnDataPropertyValue(payload, 'exp');
+  if (expClaim == null) {
     throw new Error('Token expiration is required');
   }
-  const exp = validateJwtExpirationTimestamp(payload.exp);
+  const exp = validateJwtExpirationTimestamp(expClaim);
 
-  if (!Object.hasOwn(payload, 'iat') || payload.iat == null) {
+  const iatClaim = getOwnDataPropertyValue(payload, 'iat');
+  if (iatClaim == null) {
     throw new Error('Token issued-at is required');
   }
-  const iat = validateJwtIssuedAtTimestamp(payload.iat);
+  const iat = validateJwtIssuedAtTimestamp(iatClaim);
   if (iat >= exp) {
     throw new Error('Token issued-at must be before expiration');
   }
 
-  const normalizedUserId = Object.hasOwn(payload, 'userId')
-    ? normalizeVerifiedTokenUserId(payload.userId)
-    : null;
+  const normalizedUserId = normalizeVerifiedTokenUserId(
+    getOwnDataPropertyValue(payload, 'userId')
+  );
   if (normalizedUserId == null) {
     throw new Error('Token userId is required');
   }

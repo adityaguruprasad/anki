@@ -308,6 +308,32 @@ function withObjectPrototypeProperties(properties, callback) {
   }
 }
 
+function withJsonParseResults(results, callback) {
+  const originalJsonParse = JSON.parse;
+  const pendingResults = [...results];
+
+  JSON.parse = function parseStub(...args) {
+    return pendingResults.length > 0
+      ? pendingResults.shift()
+      : originalJsonParse.apply(this, args);
+  };
+
+  try {
+    const result = callback();
+    if (
+      result !== null
+      && (typeof result === 'object' || typeof result === 'function')
+      && typeof result.then === 'function'
+    ) {
+      throw new TypeError('withJsonParseResults callback must be synchronous');
+    }
+
+    return result;
+  } finally {
+    JSON.parse = originalJsonParse;
+  }
+}
+
 test('register uses injected db and returns a signed token with inserted user id', async () => {
   const db = createDb([{ rowCount: 1, rows: [createRegistrationRow(42)] }]);
   const passwordHasher = createPasswordHasher();
@@ -3073,6 +3099,42 @@ test('verifyToken requires JWT header claims as own properties', () => {
   });
 });
 
+test('verifyToken rejects accessor-backed JWT header claims without invoking getters', () => {
+  const secret = 'accessor-header-secret';
+  const payload = { userId: 105, iat: 1000, exp: 2000 };
+  const token = signRawJwt({ alg: 'HS256', typ: 'JWT' }, payload, secret);
+  const cases = [
+    {
+      claim: 'alg',
+      value: 'HS256',
+      ownFields: { typ: 'JWT' },
+      message: /Invalid token algorithm/,
+    },
+    {
+      claim: 'typ',
+      value: 'JWT',
+      ownFields: { alg: 'HS256' },
+      message: /Invalid token type/,
+    },
+  ];
+
+  for (const { claim, value, ownFields, message } of cases) {
+    const { object: header, accessCounts } = createObjectWithAccessorFields(
+      { [claim]: value },
+      ownFields
+    );
+
+    withJsonParseResults([header], () => {
+      assert.throws(
+        () => verifyToken(token, secret, { now: 1000 }),
+        message,
+        claim
+      );
+    });
+    assert.equal(accessCounts[claim], 0, claim);
+  }
+});
+
 test('verifyToken accepts signed own claims when Object.prototype has JWT claim pollution', () => {
   const payload = { userId: 106, iat: 1000, exp: 2000 };
   const token = signRawJwt(
@@ -3090,6 +3152,22 @@ test('verifyToken accepts signed own claims when Object.prototype has JWT claim 
       );
     }
   );
+});
+
+test('verifyToken accepts decoded null-prototype JWT records with own data claims', () => {
+  const secret = 'null-prototype-decoded-jwt-secret';
+  const signedHeader = { alg: 'HS256', typ: 'JWT' };
+  const signedPayload = { userId: 106, iat: 1000, exp: 2000 };
+  const token = signRawJwt(signedHeader, signedPayload, secret);
+  const decodedHeader = createNullPrototypeRecord(signedHeader);
+  const decodedPayload = createNullPrototypeRecord(signedPayload);
+
+  withJsonParseResults([decodedHeader, decodedPayload], () => {
+    assert.deepEqual(
+      verifyToken(token, secret, { now: 1000 }),
+      signedPayload
+    );
+  });
 });
 
 test('verifyToken accepts signed tokens with exactly the allowed JWT header fields', () => {
@@ -3305,6 +3383,49 @@ test('verifyToken requires JWT payload claims as own properties', () => {
       /Token expiration is required/
     );
   });
+});
+
+test('verifyToken rejects accessor-backed JWT payload claims without invoking getters', () => {
+  const secret = 'accessor-payload-secret';
+  const header = { alg: 'HS256', typ: 'JWT' };
+  const signedPayload = { userId: 108, iat: 1000, exp: 2000 };
+  const token = signRawJwt(header, signedPayload, secret);
+  const cases = [
+    {
+      claim: 'exp',
+      value: 2000,
+      ownFields: { userId: 108, iat: 1000 },
+      message: /Token expiration is required/,
+    },
+    {
+      claim: 'iat',
+      value: 1000,
+      ownFields: { userId: 108, exp: 2000 },
+      message: /Token issued-at is required/,
+    },
+    {
+      claim: 'userId',
+      value: 108,
+      ownFields: { iat: 1000, exp: 2000 },
+      message: /Token userId is required/,
+    },
+  ];
+
+  for (const { claim, value, ownFields, message } of cases) {
+    const { object: payload, accessCounts } = createObjectWithAccessorFields(
+      { [claim]: value },
+      ownFields
+    );
+
+    withJsonParseResults([header, payload], () => {
+      assert.throws(
+        () => verifyToken(token, secret, { now: 1000 }),
+        message,
+        claim
+      );
+    });
+    assert.equal(accessCounts[claim], 0, claim);
+  }
 });
 
 test('extractBearerToken accepts only a single bearer credential', () => {
