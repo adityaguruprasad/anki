@@ -114,6 +114,46 @@ function createArrayShapedQueryResult(rowCount, rows) {
   return Object.assign([], { rowCount, rows });
 }
 
+function createRowsWithOwnAccessorEntry(row) {
+  const rows = [];
+  let accessCount = 0;
+
+  Object.defineProperty(rows, '0', {
+    configurable: true,
+    enumerable: true,
+    get() {
+      accessCount += 1;
+      return row;
+    },
+  });
+
+  return {
+    rows,
+    getAccessCount: () => accessCount,
+  };
+}
+
+function createRowsWithInheritedDataEntry(row) {
+  const rows = [];
+  const prototype = Object.create(Array.prototype);
+  rows.length = 1;
+
+  Object.defineProperty(prototype, '0', {
+    configurable: true,
+    enumerable: true,
+    value: row,
+  });
+  Object.setPrototypeOf(rows, prototype);
+
+  return rows;
+}
+
+function createSparseRows(length) {
+  const rows = [];
+  rows.length = length;
+  return rows;
+}
+
 function createRowWithAccessorField(row, fieldName) {
   const accessorRow = { ...row };
   const value = accessorRow[fieldName];
@@ -473,6 +513,57 @@ test('register fails closed when the insert result cardinality is malformed', as
         { password: 'correct horse battery staple', rounds: PASSWORD_HASH_COST },
       ]);
       assert.equal(db.calls.length, 1);
+    });
+  }
+});
+
+test('register fails closed when the insert row entry is not an own data property', async (t) => {
+  const returnedRow = createRegistrationRow(42);
+  const accessorRows = createRowsWithOwnAccessorEntry(returnedRow);
+  const cases = [
+    {
+      name: 'own accessor row entry',
+      result: { rowCount: 1, rows: accessorRows.rows },
+      getAccessCount: accessorRows.getAccessCount,
+    },
+    {
+      name: 'inherited row entry',
+      result: { rowCount: 1, rows: createRowsWithInheritedDataEntry(returnedRow) },
+    },
+    {
+      name: 'sparse row entry',
+      result: { rowCount: 1, rows: createSparseRows(1) },
+    },
+  ];
+
+  for (const { name, result, getAccessCount } of cases) {
+    await t.test(name, async () => {
+      const db = createDb([result]);
+      const passwordHasher = createPasswordHasher();
+      const { register } = createAuthHandlers(db, {
+        jwtSecret: 'malformed-register-row-entry-secret',
+        passwordHasher,
+      });
+      const res = createRes();
+
+      await register({
+        body: {
+          username: 'ada',
+          email: 'ada@example.com',
+          password: 'correct horse battery staple',
+        },
+      }, res);
+
+      assert.equal(res.statusCode, 500);
+      assert.deepEqual(res.body, { error: 'Error registering user' });
+      assert.equal(res.body.token, undefined);
+      assert.deepEqual(passwordHasher.hashCalls, [
+        { password: 'correct horse battery staple', rounds: PASSWORD_HASH_COST },
+      ]);
+      assert.equal(db.calls.length, 1);
+      if (getAccessCount) {
+        assert.equal(getAccessCount(), 0);
+      }
     });
   }
 });
@@ -1339,6 +1430,51 @@ test('login fails closed when the lookup result cardinality is malformed', async
       assert.equal(db.calls.length, 1);
       assert.equal(db.calls[0].sql, 'SELECT id, email, password_hash FROM users WHERE email = $1 LIMIT 2');
       assert.deepEqual(db.calls[0].params, ['ada@example.com']);
+    });
+  }
+});
+
+test('login fails closed when the lookup row entry is not an own data property', async (t) => {
+  const userRow = { id: 79, email: 'ada@example.com', password_hash: 'stored-user-hash' };
+  const accessorRows = createRowsWithOwnAccessorEntry(userRow);
+  const cases = [
+    {
+      name: 'own accessor row entry',
+      result: { rowCount: 1, rows: accessorRows.rows },
+      getAccessCount: accessorRows.getAccessCount,
+    },
+    {
+      name: 'inherited row entry',
+      result: { rowCount: 1, rows: createRowsWithInheritedDataEntry(userRow) },
+    },
+    {
+      name: 'sparse row entry',
+      result: { rowCount: 1, rows: createSparseRows(1) },
+    },
+  ];
+
+  for (const { name, result, getAccessCount } of cases) {
+    await t.test(name, async () => {
+      const db = createDb([result]);
+      const passwordHasher = createPasswordHasher({ compareResult: true });
+      const { login } = createAuthHandlers(db, {
+        jwtSecret: 'malformed-login-row-entry-secret',
+        passwordHasher,
+      });
+      const res = createRes();
+
+      await login({ body: { email: 'ada@example.com', password: 'stored-password' } }, res);
+
+      assert.equal(res.statusCode, 500);
+      assert.deepEqual(res.body, { error: 'Error logging in' });
+      assert.equal(res.body.token, undefined);
+      assert.deepEqual(passwordHasher.compareCalls, []);
+      assert.equal(db.calls.length, 1);
+      assert.equal(db.calls[0].sql, 'SELECT id, email, password_hash FROM users WHERE email = $1 LIMIT 2');
+      assert.deepEqual(db.calls[0].params, ['ada@example.com']);
+      if (getAccessCount) {
+        assert.equal(getAccessCount(), 0);
+      }
     });
   }
 });

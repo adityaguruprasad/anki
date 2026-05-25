@@ -502,7 +502,12 @@ function getOptionalSingleAuthQueryRow(result, errorMessage) {
     throw new Error(errorMessage);
   }
 
-  return rows[0];
+  const rowDescriptor = getOwnDataPropertyDescriptor(rows, '0');
+  if (rowDescriptor === null) {
+    throw new Error(errorMessage);
+  }
+
+  return rowDescriptor.value;
 }
 
 function getSingleRegistrationUserId(result, normalizedEmail) {
