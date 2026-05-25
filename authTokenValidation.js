@@ -1,4 +1,5 @@
 const { MAX_POSTGRES_SERIAL_ID } = require('./cardIdentifier');
+const { getOwnDataPropertyValue } = require('./recordDataProperty');
 
 const AUTH_TOKEN_MAX_LENGTH = 4096;
 const AUTH_TOKEN_ALGORITHM = 'HS256';
@@ -85,14 +86,6 @@ function hasOnlyAuthTokenPayloadFields(payload) {
   return Object.keys(payload).every((field) => AUTH_TOKEN_PAYLOAD_FIELDS.includes(field));
 }
 
-function getOwnDataPropertyValue(object, fieldName) {
-  // JWT claim reads must ignore inherited accessors instead of invoking them.
-  const descriptor = Object.getOwnPropertyDescriptor(object, fieldName);
-  return descriptor !== undefined && Object.hasOwn(descriptor, 'value')
-    ? descriptor.value
-    : undefined;
-}
-
 function hasUsableJwtEnvelope(token) {
   const parts = token.split('.');
   if (
@@ -104,6 +97,8 @@ function hasUsableJwtEnvelope(token) {
 
   const [encodedHeader, encodedPayload] = parts;
   const header = parseBase64UrlJsonObject(encodedHeader);
+  // JWT header and payload claim reads intentionally use the shared descriptor
+  // helper to ignore inherited or accessor-backed claims without invoking getters.
   if (
     header === null
     || !hasOnlyAuthTokenHeaderFields(header)
