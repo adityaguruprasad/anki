@@ -2,6 +2,7 @@ const {
   getOwnDataPropertyValue,
   isObjectRecord,
 } = require('./recordDataProperty');
+const { MIN_EASE_FACTOR } = require('./spacedRepetition');
 
 const MALFORMED_SCHEDULING_INSIGHTS_PAYLOAD = 'Malformed scheduling insights payload';
 
@@ -18,7 +19,10 @@ function isNonNegativeSafeInteger(value) {
 }
 
 function hasSchedulingInsightsAverageEaseFactor(value) {
-  return value === null || (typeof value === 'number' && Number.isFinite(value) && value > 0);
+  return (
+    value === null
+    || (typeof value === 'number' && Number.isFinite(value) && value >= MIN_EASE_FACTOR)
+  );
 }
 
 function hasSchedulingInsightsSummaryCountInvariants(insights) {

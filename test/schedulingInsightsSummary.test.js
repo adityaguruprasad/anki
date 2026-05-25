@@ -73,7 +73,8 @@ test('formatDecimal returns a clear unavailable label for missing averages', () 
   assert.equal(formatDecimal(null), 'Unavailable');
 });
 
-test('formatDecimal formats finite positive averages with two decimal places', () => {
+test('formatDecimal formats valid averages with two decimal places', () => {
+  assert.equal(formatDecimal(1.3), '1.30');
   assert.equal(formatDecimal(2.35), '2.35');
   assert.equal(formatDecimal(2.3), '2.30');
 });
@@ -83,6 +84,7 @@ test('formatDecimal rejects malformed non-null averages', () => {
     undefined,
     '',
     '2.3',
+    1.29,
     0,
     -1,
     Number.NaN,
@@ -202,6 +204,16 @@ test('buildSchedulingInsightsSummary maps endpoint response into dashboard displ
       { key: 'dueNext7Days', label: 'Next 7 days', value: 12 },
     ],
   });
+});
+
+test('scheduling insights summary enforces the minimum average ease factor', () => {
+  const belowFloorPayload = createSchedulingInsightsPayload({ averageEaseFactor: 1.29 });
+  const atFloorPayload = createSchedulingInsightsPayload({ averageEaseFactor: 1.3 });
+
+  assert.equal(hasSchedulingInsightsSummaryPayload(belowFloorPayload), false);
+  assert.throws(() => buildSchedulingInsightsSummary(belowFloorPayload), MALFORMED_PAYLOAD_ERROR);
+  assert.equal(hasSchedulingInsightsSummaryPayload(atFloorPayload), true);
+  assert.equal(buildSchedulingInsightsSummary(atFloorPayload).averageEaseFactorLabel, '1.30');
 });
 
 test('buildSchedulingInsightsSummary preserves the allowed null average label', () => {
