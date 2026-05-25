@@ -90,15 +90,34 @@ test('getAuthReturnDestinationFromLocation normalizes unsafe location shapes', (
 });
 
 test('getAuthReturnDestinationFromLocation ignores inherited and accessor-backed fields', () => {
-  const inheritedLocation = Object.create({
+  const inheritedDataLocation = Object.create({
     pathname: '/decks',
     search: '?filter=due',
     hash: '#top',
   });
   assert.equal(
+    getAuthReturnDestinationFromLocation(inheritedDataLocation),
+    DEFAULT_AUTH_RETURN_DESTINATION
+  );
+
+  let inheritedPathnameAccessCount = 0;
+  const inheritedLocation = Object.create({
+    get pathname() {
+      inheritedPathnameAccessCount += 1;
+      return '/decks';
+    },
+    get search() {
+      throw new Error('inherited search getter should not run');
+    },
+    get hash() {
+      throw new Error('inherited hash getter should not run');
+    },
+  });
+  assert.equal(
     getAuthReturnDestinationFromLocation(inheritedLocation),
     DEFAULT_AUTH_RETURN_DESTINATION
   );
+  assert.equal(inheritedPathnameAccessCount, 0);
 
   const accessorLocation = {};
   let pathnameAccessCount = 0;
@@ -115,6 +134,30 @@ test('getAuthReturnDestinationFromLocation ignores inherited and accessor-backed
     DEFAULT_AUTH_RETURN_DESTINATION
   );
   assert.equal(pathnameAccessCount, 0);
+});
+
+test('auth return destinations accept null-prototype own string data properties', () => {
+  const location = Object.create(null);
+  Object.defineProperties(location, {
+    pathname: { value: '/study' },
+    search: { value: '?deckId=1' },
+    hash: { value: '#card-2' },
+  });
+
+  assert.equal(
+    getAuthReturnDestinationFromLocation(location),
+    '/study?deckId=1#card-2'
+  );
+
+  const state = Object.create(null);
+  Object.defineProperty(state, AUTH_RETURN_DESTINATION_STATE_KEY, {
+    value: '/decks?filter=due#top',
+  });
+
+  assert.equal(
+    getAuthReturnDestinationFromState(state),
+    '/decks?filter=due#top'
+  );
 });
 
 test('auth return destinations accept non-enumerable own string data properties', () => {
@@ -185,10 +228,20 @@ test('getAuthReturnDestinationFromState reads only safe stored destinations', ()
 });
 
 test('getAuthReturnDestinationFromState ignores inherited and accessor-backed return destinations', () => {
-  const inheritedState = Object.create({
+  const inheritedDataState = Object.create({
     [AUTH_RETURN_DESTINATION_STATE_KEY]: '/decks?filter=due',
   });
+  assert.equal(getAuthReturnDestinationFromState(inheritedDataState), DEFAULT_AUTH_RETURN_DESTINATION);
+
+  let inheritedReturnToAccessCount = 0;
+  const inheritedState = Object.create({
+    get [AUTH_RETURN_DESTINATION_STATE_KEY]() {
+      inheritedReturnToAccessCount += 1;
+      return '/decks?filter=due';
+    },
+  });
   assert.equal(getAuthReturnDestinationFromState(inheritedState), DEFAULT_AUTH_RETURN_DESTINATION);
+  assert.equal(inheritedReturnToAccessCount, 0);
 
   const accessorState = {};
   let returnToAccessCount = 0;

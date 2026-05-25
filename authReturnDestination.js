@@ -1,3 +1,5 @@
+const { getOwnDataPropertyValue } = require('./recordDataProperty');
+
 const DEFAULT_AUTH_RETURN_DESTINATION = '/';
 const AUTH_RETURN_DESTINATION_STATE_KEY = 'returnTo';
 const LOGIN_ROUTE_PATHNAME = '/login';
@@ -56,29 +58,21 @@ function normalizeAuthReturnDestination(destination) {
   return normalizedDestination || DEFAULT_AUTH_RETURN_DESTINATION;
 }
 
-function getOwnStringDataProperty(value, propertyName) {
-  if (value === null || typeof value !== 'object') {
-    return '';
-  }
-
-  // Auth return destinations intentionally read only own data properties so
-  // prototype/accessor-provided navigation targets are ignored without invoking getters.
-  const descriptor = Object.getOwnPropertyDescriptor(value, propertyName);
-  return descriptor !== undefined
-    && Object.hasOwn(descriptor, 'value')
-    && typeof descriptor.value === 'string'
-    ? descriptor.value
-    : '';
-}
-
 function getAuthReturnDestinationFromLocation(location) {
-  const pathname = getOwnStringDataProperty(location, 'pathname');
-  const search = getOwnStringDataProperty(location, 'search');
-  const hash = getOwnStringDataProperty(location, 'hash');
-  const normalizedSearch = search === '' || search[0] === '?' ? search : '';
-  const normalizedHash = hash === '' || hash[0] === '#' ? hash : '';
+  // Auth return-destination fields are read via own data descriptors to avoid
+  // inherited/accessor navigation targets and attacker-controlled getters.
+  const pathname = getOwnDataPropertyValue(location, 'pathname');
+  const search = getOwnDataPropertyValue(location, 'search');
+  const hash = getOwnDataPropertyValue(location, 'hash');
+  const normalizedPathname = typeof pathname === 'string' ? pathname : '';
+  const normalizedSearch = typeof search === 'string' && (search === '' || search[0] === '?')
+    ? search
+    : '';
+  const normalizedHash = typeof hash === 'string' && (hash === '' || hash[0] === '#')
+    ? hash
+    : '';
 
-  return normalizeAuthReturnDestination(`${pathname}${normalizedSearch}${normalizedHash}`);
+  return normalizeAuthReturnDestination(`${normalizedPathname}${normalizedSearch}${normalizedHash}`);
 }
 
 function createAuthReturnState(location) {
@@ -99,7 +93,7 @@ function getAuthReturnDestinationFromState(state) {
     return DEFAULT_AUTH_RETURN_DESTINATION;
   }
 
-  const destination = getOwnStringDataProperty(state, AUTH_RETURN_DESTINATION_STATE_KEY);
+  const destination = getOwnDataPropertyValue(state, AUTH_RETURN_DESTINATION_STATE_KEY);
 
   return normalizeAuthReturnDestination(destination);
 }
