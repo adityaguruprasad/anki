@@ -8,9 +8,9 @@ const {
 } = require('./authPasswordValidation');
 const { MAX_POSTGRES_SERIAL_ID } = require('./cardIdentifier');
 const {
+  getOwnArrayDataPropertyValue,
   getOwnDataPropertyDescriptor,
   getOwnDataPropertyValue,
-  isDataPropertyDescriptor,
   isObjectRecord,
 } = require('./recordDataProperty');
 
@@ -461,12 +461,12 @@ function getOptionalSingleAuthQueryRow(result, errorMessage) {
     throw new Error(errorMessage);
   }
 
-  const rowDescriptor = Object.getOwnPropertyDescriptor(rows, '0');
-  if (!isDataPropertyDescriptor(rowDescriptor)) {
+  const row = getOwnArrayDataPropertyValue(rows, 0);
+  if (row === undefined) {
     throw new Error(errorMessage);
   }
 
-  return rowDescriptor.value;
+  return row;
 }
 
 function getSingleRegistrationUserId(result, normalizedEmail) {

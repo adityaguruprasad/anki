@@ -18,12 +18,17 @@ function assertMalformedSelection(payload, options) {
 }
 
 function defineThrowingGetter(object, fieldName) {
+  let accessCount = 0;
+
   Object.defineProperty(object, fieldName, {
     configurable: true,
     get() {
+      accessCount += 1;
       throw new Error(`Unexpected ${fieldName} getter invocation`);
     },
   });
+
+  return () => accessCount;
 }
 
 test('selectValidatedStudySessionDueCard keeps empty arrays on the no-due path', () => {
@@ -160,20 +165,59 @@ test('selectValidatedStudySessionDueCard rejects inherited row fields without in
   assertMalformedSelection([card], { expectedDeckId: 7 });
 });
 
-test('selectValidatedStudySessionDueCard rejects accessor-backed rows and array entries without invoking getters', () => {
+test('selectValidatedStudySessionDueCard rejects accessor-backed row fields without invoking getters', () => {
   const card = {};
-  ['id', 'deck_id', 'front_content', 'back_content'].forEach((fieldName) => {
-    defineThrowingGetter(card, fieldName);
-  });
+  const getAccessCounts = ['id', 'deck_id', 'front_content', 'back_content']
+    .map((fieldName) => defineThrowingGetter(card, fieldName));
 
   assert.equal(hasStudySessionDueCardRowPayload(card, { expectedDeckId: 7 }), false);
   assertMalformedSelection([card], { expectedDeckId: 7 });
+  getAccessCounts.forEach((getAccessCount) => {
+    assert.equal(getAccessCount(), 0);
+  });
+});
 
-  const payload = [];
-  defineThrowingGetter(payload, '0');
+test('selectValidatedStudySessionDueCard rejects sparse, inherited, and accessor row entries without invoking getters', () => {
+  const card = {
+    id: 42,
+    deck_id: 7,
+    front_content: 'Question',
+    back_content: 'Answer',
+  };
 
-  assert.equal(payload.length, 1);
-  assertMalformedSelection(payload);
+  const sparsePayload = [];
+  sparsePayload.length = 1;
+
+  const inheritedDataPayload = [];
+  const inheritedDataPrototype = Object.create(Array.prototype);
+  inheritedDataPayload.length = 1;
+  Object.defineProperty(inheritedDataPrototype, '0', {
+    configurable: true,
+    enumerable: true,
+    value: card,
+  });
+  Object.setPrototypeOf(inheritedDataPayload, inheritedDataPrototype);
+
+  const ownAccessorPayload = [];
+  const getOwnAccessCount = defineThrowingGetter(ownAccessorPayload, '0');
+
+  const inheritedAccessorPayload = [];
+  const inheritedAccessorPrototype = Object.create(Array.prototype);
+  inheritedAccessorPayload.length = 1;
+  const getInheritedAccessCount = defineThrowingGetter(inheritedAccessorPrototype, '0');
+  Object.setPrototypeOf(inheritedAccessorPayload, inheritedAccessorPrototype);
+
+  [
+    sparsePayload,
+    inheritedDataPayload,
+    ownAccessorPayload,
+    inheritedAccessorPayload,
+  ].forEach((payload) => {
+    assert.equal(payload.length, 1);
+    assertMalformedSelection(payload, { expectedDeckId: 7 });
+  });
+  assert.equal(getOwnAccessCount(), 0);
+  assert.equal(getInheritedAccessCount(), 0);
 });
 
 test('selectValidatedStudySessionDueCard rejects blank or missing content', () => {

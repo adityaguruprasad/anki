@@ -2,6 +2,7 @@ const { validateCardContent } = require('./cardContentValidation');
 const { validateDeckName } = require('./deckNameValidation');
 const { isValidIsoTimestamp } = require('./isoTimestampValidation');
 const {
+  getOwnArrayDataPropertyValue,
   getOwnDataPropertyValue,
   getOwnRecordPropertyDescriptor,
   hasOwnDataProperty,
@@ -965,12 +966,12 @@ function assertQueryResultShape(result, errorMessage) {
 }
 
 function getRowArrayDataEntry(rows, index, errorMessage) {
-  const descriptor = Object.getOwnPropertyDescriptor(rows, index);
-  if (!isDataPropertyDescriptor(descriptor)) {
+  const value = getOwnArrayDataPropertyValue(rows, index);
+  if (value === undefined) {
     throw new TypeError(errorMessage);
   }
 
-  return descriptor.value;
+  return value;
 }
 
 function assertRowArrayDataEntries(rows, errorMessage) {

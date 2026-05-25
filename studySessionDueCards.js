@@ -1,20 +1,12 @@
 const { isValidCardContent } = require('./cardContentValidation');
 const { hasRouteSafeCardId, normalizeRouteSafeId } = require('./cardIdentifier');
 const {
+  getOwnArrayDataPropertyValue,
   getOwnDataPropertyValue,
-  isDataPropertyDescriptor,
   isObjectRecord,
 } = require('./recordDataProperty');
 
 const MALFORMED_DUE_CARD_PAYLOAD_ERROR = 'Malformed due-card payload';
-
-function getOwnFirstArrayElementValue(value) {
-  const descriptor = Array.isArray(value)
-    ? Object.getOwnPropertyDescriptor(value, '0')
-    : undefined;
-
-  return isDataPropertyDescriptor(descriptor) ? descriptor.value : undefined;
-}
 
 function hasSafeStudySessionCardId(value) {
   return hasRouteSafeCardId(value);
@@ -58,7 +50,7 @@ function selectValidatedStudySessionDueCard(payload, options = {}) {
     return null;
   }
 
-  const card = getOwnFirstArrayElementValue(payload);
+  const card = getOwnArrayDataPropertyValue(payload, 0);
   if (!hasStudySessionDueCardRowPayload(card, options)) {
     throw new Error(MALFORMED_DUE_CARD_PAYLOAD_ERROR);
   }

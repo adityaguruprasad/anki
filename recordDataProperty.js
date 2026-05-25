@@ -57,6 +57,18 @@ function getOwnDataPropertyValue(value, key) {
   return descriptor === undefined ? undefined : descriptor.value;
 }
 
+/**
+ * Returns undefined for non-arrays, missing entries, and non-data entries, so
+ * do not use this when undefined is a valid array element to distinguish.
+ */
+function getOwnArrayDataPropertyValue(value, key) {
+  const descriptor = Array.isArray(value)
+    ? Object.getOwnPropertyDescriptor(value, key)
+    : undefined;
+
+  return isDataPropertyDescriptor(descriptor) ? descriptor.value : undefined;
+}
+
 function getOwnEnumerableDataProperties(value) {
   const properties = {};
 
@@ -84,6 +96,7 @@ function getOwnEnumerableDataProperties(value) {
 
 module.exports = {
   getInheritedObjectLikePropertyDescriptor,
+  getOwnArrayDataPropertyValue,
   getOwnDataPropertyDescriptor,
   getOwnDataPropertyValue,
   getOwnEnumerableDataProperties,

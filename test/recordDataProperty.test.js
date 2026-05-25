@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const {
   getInheritedObjectLikePropertyDescriptor,
+  getOwnArrayDataPropertyValue,
   getOwnDataPropertyDescriptor,
   getOwnDataPropertyValue,
   getOwnEnumerableDataProperties,
@@ -41,6 +42,76 @@ test('record data-property helper rejects arrays and non-objects as records', ()
     assert.equal(getOwnDataPropertyValue(payload, 'value'), undefined);
     assert.equal(getOwnRecordPropertyDescriptor(payload, 'value'), undefined);
   });
+});
+
+test('array data-property helper accepts dense own entries without changing record semantics', () => {
+  const row = Object.create(null);
+  row.id = 42;
+  const rows = [row];
+  const nullPrototypeRows = [row];
+  Object.setPrototypeOf(nullPrototypeRows, null);
+
+  assert.equal(getOwnArrayDataPropertyValue(rows, 0), row);
+  assert.equal(getOwnArrayDataPropertyValue(rows, '0'), row);
+  assert.equal(getOwnArrayDataPropertyValue(nullPrototypeRows, 0), row);
+  assert.equal(getOwnDataPropertyValue(rows, '0'), undefined);
+});
+
+test('array data-property helper rejects non-arrays and descriptor-invalid entries without invoking getters', () => {
+  let ownAccessorCalls = 0;
+  let inheritedAccessorCalls = 0;
+  const sparseRows = [];
+  sparseRows.length = 1;
+
+  const inheritedDataRows = [];
+  const inheritedDataPrototype = Object.create(Array.prototype);
+  inheritedDataRows.length = 1;
+  Object.defineProperty(inheritedDataPrototype, '0', {
+    configurable: true,
+    enumerable: true,
+    value: 'inherited row',
+  });
+  Object.setPrototypeOf(inheritedDataRows, inheritedDataPrototype);
+
+  const ownAccessorRows = [];
+  ownAccessorRows.length = 1;
+  Object.defineProperty(ownAccessorRows, '0', {
+    configurable: true,
+    enumerable: true,
+    get() {
+      ownAccessorCalls += 1;
+      throw new Error('own array entry getter should not run');
+    },
+  });
+
+  const inheritedAccessorRows = [];
+  const inheritedAccessorPrototype = Object.create(Array.prototype);
+  inheritedAccessorRows.length = 1;
+  Object.defineProperty(inheritedAccessorPrototype, '0', {
+    configurable: true,
+    enumerable: true,
+    get() {
+      inheritedAccessorCalls += 1;
+      throw new Error('inherited array entry getter should not run');
+    },
+  });
+  Object.setPrototypeOf(inheritedAccessorRows, inheritedAccessorPrototype);
+
+  [
+    { 0: 'array-like object' },
+    null,
+    undefined,
+    'value',
+    42,
+    sparseRows,
+    inheritedDataRows,
+    ownAccessorRows,
+    inheritedAccessorRows,
+  ].forEach((payload) => {
+    assert.equal(getOwnArrayDataPropertyValue(payload, 0), undefined);
+  });
+  assert.equal(ownAccessorCalls, 0);
+  assert.equal(inheritedAccessorCalls, 0);
 });
 
 test('object-like descriptor helper accepts arrays and functions without changing record semantics', () => {
