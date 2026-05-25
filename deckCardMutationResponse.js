@@ -8,10 +8,10 @@ const {
   normalizeRouteSafeId,
 } = require('./cardIdentifier');
 const { isValidIsoTimestamp } = require('./isoTimestampValidation');
-
-function isObjectRecord(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
+const {
+  getOwnDataPropertyValue,
+  isObjectRecord,
+} = require('./recordDataProperty');
 
 function hasUsableCardId(value) {
   return hasRouteSafeCardId(value);
@@ -26,21 +26,6 @@ function hasSameDeckId(leftId, rightId) {
   const normalizedRightId = normalizeRouteSafeId(rightId);
 
   return normalizedLeftId !== null && normalizedLeftId === normalizedRightId;
-}
-
-function descriptorHasValue(descriptor) {
-  return (
-    descriptor !== undefined
-    && Object.prototype.hasOwnProperty.call(descriptor, 'value')
-  );
-}
-
-function getOwnDataPropertyValue(value, key) {
-  const descriptor = isObjectRecord(value)
-    ? Object.getOwnPropertyDescriptor(value, key)
-    : undefined;
-
-  return descriptorHasValue(descriptor) ? descriptor.value : undefined;
 }
 
 function hasValidMutationNextReview(card) {

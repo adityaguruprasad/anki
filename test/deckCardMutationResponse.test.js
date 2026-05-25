@@ -99,6 +99,15 @@ test('parseDeckCardMutationResponsePayload accepts numeric ids and non-blank str
   assert.equal(parseDeckCardMutationResponsePayload(payload), payload);
 });
 
+test('parseDeckCardMutationResponsePayload accepts null-prototype payloads with own data fields', () => {
+  const payload = Object.assign(Object.create(null), createValidCardPayload({
+    deck_id: '42',
+  }));
+
+  assert.equal(parseDeckCardMutationResponsePayload(payload, { expectedDeckId: 42 }), payload);
+  assert.equal(hasDeckCardMutationPayload(payload, { expectedDeckId: 42 }), true);
+});
+
 test('parseDeckCardMutationResponsePayload accepts PostgreSQL SERIAL id boundaries', () => {
   [
     MAX_POSTGRES_SERIAL_ID,
