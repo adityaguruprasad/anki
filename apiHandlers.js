@@ -960,58 +960,75 @@ function assertQueryResultShape(result, errorMessage) {
   ) {
     throw new TypeError(errorMessage);
   }
+
+  return { rows, rowCount };
 }
 
-function assertSingleAggregateQueryResult(result, errorMessage) {
-  assertQueryResultShape(result, errorMessage);
-
-  if (
-    result.rows.length !== 1
-    || result.rowCount !== 1
-  ) {
+function getRowArrayDataEntry(rows, index, errorMessage) {
+  const descriptor = Object.getOwnPropertyDescriptor(rows, index);
+  if (!isDataPropertyDescriptor(descriptor)) {
     throw new TypeError(errorMessage);
+  }
+
+  return descriptor.value;
+}
+
+function assertRowArrayDataEntries(rows, errorMessage) {
+  for (let index = 0; index < rows.length; index += 1) {
+    getRowArrayDataEntry(rows, index, errorMessage);
   }
 }
 
 function getRequiredSingleAggregateQueryRow(result, errorMessage) {
-  assertSingleAggregateQueryResult(result, errorMessage);
-  return result.rows[0];
+  const { rows, rowCount } = assertQueryResultShape(result, errorMessage);
+
+  if (rows.length !== 1 || rowCount !== 1) {
+    throw new TypeError(errorMessage);
+  }
+
+  return getRowArrayDataEntry(rows, 0, errorMessage);
 }
 
 function assertListQueryResult(result, errorMessage) {
-  assertQueryResultShape(result, errorMessage);
+  const { rows, rowCount } = assertQueryResultShape(result, errorMessage);
 
-  if (result.rowCount !== result.rows.length) {
+  if (rowCount !== rows.length) {
     throw new TypeError(errorMessage);
   }
+
+  assertRowArrayDataEntries(rows, errorMessage);
 }
 
 function assertBoundedListQueryResult(result, errorMessage, maxRows) {
-  assertListQueryResult(result, errorMessage);
+  const { rows, rowCount } = assertQueryResultShape(result, errorMessage);
 
+  // Keep list-shape checks inline so maxRows cannot mask rowCount/rows mismatches.
   if (
     !Number.isSafeInteger(maxRows)
     || maxRows < 0
-    || result.rows.length > maxRows
+    || rowCount !== rows.length
+    || rows.length > maxRows
   ) {
     throw new TypeError(errorMessage);
   }
+
+  assertRowArrayDataEntries(rows, errorMessage);
 }
 
 function getOptionalSingleQueryRow(result, errorMessage) {
-  assertQueryResultShape(result, errorMessage);
+  const { rows, rowCount } = assertQueryResultShape(result, errorMessage);
 
-  if (result.rowCount === 0 && result.rows.length === 0) {
+  if (rowCount === 0 && rows.length === 0) {
     return null;
   }
 
   // rowCount and rows.length must agree so malformed DB adapters cannot
   // downgrade duplicate or impossible returned rows into normal 404/409 paths.
-  if (result.rowCount !== 1 || result.rows.length !== 1) {
+  if (rowCount !== 1 || rows.length !== 1) {
     throw new TypeError(errorMessage);
   }
 
-  return result.rows[0];
+  return getRowArrayDataEntry(rows, 0, errorMessage);
 }
 
 function getRequiredSingleQueryRow(result, errorMessage) {

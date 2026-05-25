@@ -80,6 +80,70 @@ function createQueryResultWithAccessorShape(rowCount, rows) {
   return { accessCounts, result };
 }
 
+function createRowsWithOwnAccessorEntry() {
+  const rows = [];
+  let accessCount = 0;
+
+  Object.defineProperty(rows, '0', {
+    configurable: true,
+    enumerable: true,
+    get() {
+      accessCount += 1;
+      throw new Error('row entry getter should not run');
+    },
+  });
+
+  return {
+    rows,
+    getAccessCount: () => accessCount,
+  };
+}
+
+function createRowsWithInheritedAccessorEntry() {
+  const rows = [];
+  const prototype = Object.create(Array.prototype);
+  let accessCount = 0;
+  // Set length first so index 0 stays inherited, not an own array entry.
+  rows.length = 1;
+
+  Object.defineProperty(prototype, '0', {
+    configurable: true,
+    enumerable: true,
+    get() {
+      accessCount += 1;
+      throw new Error('inherited row entry getter should not run');
+    },
+  });
+  Object.setPrototypeOf(rows, prototype);
+
+  return {
+    rows,
+    getAccessCount: () => accessCount,
+  };
+}
+
+function createRowsWithInheritedDataEntry(row) {
+  const rows = [];
+  const prototype = Object.create(Array.prototype);
+  // Set length first so index 0 stays inherited, not an own array entry.
+  rows.length = 1;
+
+  Object.defineProperty(prototype, '0', {
+    configurable: true,
+    enumerable: true,
+    value: row,
+  });
+  Object.setPrototypeOf(rows, prototype);
+
+  return rows;
+}
+
+function createSparseRows(length) {
+  const rows = [];
+  rows.length = length;
+  return rows;
+}
+
 function createRowWithAccessorField(row, fieldName) {
   const accessorRow = { ...row };
   const value = accessorRow[fieldName];
@@ -813,6 +877,105 @@ test('API query result helpers fail closed when rows and rowCount are accessors'
       assert.equal(db.calls.length, 1);
     });
   }
+});
+
+test('API query result helpers require own data row array entries', async (t) => {
+  const deck = {
+    id: 12,
+    user_id: 1,
+    name: 'Biology',
+    description: null,
+    created_at: '2026-05-08T00:00:00.000Z',
+  };
+  const deckListRow = {
+    ...deck,
+    totalCards: '3',
+    dueCards: '1',
+  };
+  const stats = {
+    totalCards: '12',
+    totalDecks: '3',
+    todayReviews: '4',
+    weekReviews: '7',
+    monthReviews: '10',
+  };
+  const ownAccessorRows = createRowsWithOwnAccessorEntry();
+  const inheritedAccessorRows = createRowsWithInheritedAccessorEntry();
+  const cases = [
+    {
+      name: 'optional single result with own accessor row entry',
+      result: { rowCount: 1, rows: ownAccessorRows.rows },
+      getAccessCount: ownAccessorRows.getAccessCount,
+      run: (db, res) => createDeck(
+        { body: { name: 'Biology' }, user: { userId: 1 } },
+        res,
+        db
+      ),
+    },
+    {
+      name: 'list result with inherited row entry',
+      result: { rowCount: 1, rows: createRowsWithInheritedDataEntry(deckListRow) },
+      run: (db, res) => getDecks({ user: { userId: 1 } }, res, db),
+    },
+    {
+      name: 'list result with sparse row entry',
+      result: { rowCount: 1, rows: createSparseRows(1) },
+      run: (db, res) => getDecks({ user: { userId: 1 } }, res, db),
+    },
+    {
+      name: 'aggregate result with inherited accessor row entry',
+      result: { rowCount: 1, rows: inheritedAccessorRows.rows },
+      getAccessCount: inheritedAccessorRows.getAccessCount,
+      run: (db, res) => getStats({ user: { userId: 1 } }, res, db),
+    },
+  ];
+  t.mock.method(console, 'error', () => {});
+
+  for (const testCase of cases) {
+    await t.test(testCase.name, async () => {
+      const db = createDb([testCase.result]);
+      const res = createRes();
+
+      await testCase.run(db, res);
+
+      assert.equal(res.statusCode, 500);
+      assert.deepEqual(res.body, { error: 'Internal server error' });
+      if (testCase.getAccessCount) {
+        assert.equal(testCase.getAccessCount(), 0);
+      }
+      assert.equal(db.calls.length, 1);
+    });
+  }
+});
+
+test('API query result helpers accept dense row arrays with null-prototype records', async () => {
+  const deck = Object.assign(Object.create(null), {
+    id: 12,
+    user_id: 1,
+    name: 'Biology',
+    description: null,
+    created_at: '2026-05-08T00:00:00.000Z',
+  });
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [deck],
+    },
+  ]);
+  const req = { body: { name: 'Biology' }, user: { userId: 1 } };
+  const res = createRes();
+
+  await createDeck(req, res, db);
+
+  assert.equal(res.statusCode, 201);
+  assert.deepEqual(res.body, {
+    id: 12,
+    user_id: 1,
+    name: 'Biology',
+    description: null,
+    created_at: '2026-05-08T00:00:00.000Z',
+  });
+  assert.equal(db.calls.length, 1);
 });
 
 test('API row validators fail closed when required result fields are accessors', async (t) => {
@@ -2167,6 +2330,24 @@ test('GET /api/decks/:deckId/cards fails closed when the list query result shape
     assert.equal(db.calls.length, 1);
     assert.deepEqual(db.calls[0].params, [42, 1, 51]);
   }
+});
+
+test('GET /api/decks/:deckId/cards rejects own accessor-backed row array entries without invoking them', async (t) => {
+  const accessorRows = createRowsWithOwnAccessorEntry();
+  const db = createDb([
+    { rowCount: 1, rows: accessorRows.rows },
+  ]);
+  const req = { params: { deckId: '42' }, user: { userId: 1 } };
+  const res = createRes();
+  t.mock.method(console, 'error', () => {});
+
+  await getCardsByDeck(req, res, db);
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.body, { error: 'Internal server error' });
+  assert.equal(accessorRows.getAccessCount(), 0);
+  assert.equal(db.calls.length, 1);
+  assert.deepEqual(db.calls[0].params, [42, 1, 51]);
 });
 
 test('GET /api/decks/:deckId/cards fails closed when the browse query exceeds the requested row bound', async (t) => {
