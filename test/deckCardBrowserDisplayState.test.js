@@ -237,6 +237,108 @@ test('legacy string errors normalize to replace failures', () => {
   assert.equal(state.retryRequest.q, 'history');
 });
 
+test('object errors ignore inherited data fields', () => {
+  const inheritedCursor = {
+    cursorCreatedAt: '2026-05-09T12:00:00.000Z',
+    cursorId: '9',
+  };
+  const error = Object.create({
+    kind: DECK_CARD_BROWSER_ERROR_KINDS.APPEND,
+    message: 'Inherited failure.',
+    searchQuery: 'biology',
+    cursor: inheritedCursor,
+    requestId: 9,
+  });
+
+  assert.deepEqual(normalizeDeckCardBrowserError(error), {
+    kind: DECK_CARD_BROWSER_ERROR_KINDS.REPLACE,
+    message: '',
+    searchQuery: '',
+    cursor: null,
+    requestId: 0,
+  });
+});
+
+test('object errors ignore own accessor-backed fields without invoking getters', () => {
+  let getterCalls = 0;
+  const error = {};
+
+  ['kind', 'message', 'searchQuery', 'cursor', 'requestId'].forEach((field) => {
+    Object.defineProperty(error, field, {
+      enumerable: true,
+      get() {
+        getterCalls += 1;
+        throw new Error(`${field} getter should not run`);
+      },
+    });
+  });
+
+  let normalizedError;
+  assert.doesNotThrow(() => {
+    normalizedError = normalizeDeckCardBrowserError(error);
+  });
+  assert.deepEqual(normalizedError, {
+    kind: DECK_CARD_BROWSER_ERROR_KINDS.REPLACE,
+    message: '',
+    searchQuery: '',
+    cursor: null,
+    requestId: 0,
+  });
+  assert.equal(getterCalls, 0);
+});
+
+test('object errors ignore inherited accessor-backed fields without invoking getters', () => {
+  let getterCalls = 0;
+  const prototype = {};
+
+  ['kind', 'message', 'searchQuery', 'cursor', 'requestId'].forEach((field) => {
+    Object.defineProperty(prototype, field, {
+      enumerable: true,
+      get() {
+        getterCalls += 1;
+        throw new Error(`${field} getter should not run`);
+      },
+    });
+  });
+
+  const error = Object.create(prototype);
+  let normalizedError;
+  assert.doesNotThrow(() => {
+    normalizedError = normalizeDeckCardBrowserError(error);
+  });
+  assert.deepEqual(normalizedError, {
+    kind: DECK_CARD_BROWSER_ERROR_KINDS.REPLACE,
+    message: '',
+    searchQuery: '',
+    cursor: null,
+    requestId: 0,
+  });
+  assert.equal(getterCalls, 0);
+});
+
+test('null-prototype object errors with own data fields still normalize', () => {
+  const error = Object.create(null);
+  error.kind = DECK_CARD_BROWSER_ERROR_KINDS.APPEND;
+  error.message = '  Unable to load more cards.  ';
+  error.searchQuery = '  biology  ';
+  error.cursor = {
+    beforeCreatedAt: '2026-05-09T12:00:00.000Z',
+    beforeId: 42,
+  };
+  error.requestId = 12;
+
+  assert.deepEqual(normalizeDeckCardBrowserError(error), {
+    kind: DECK_CARD_BROWSER_ERROR_KINDS.APPEND,
+    message: 'Unable to load more cards.',
+    searchQuery: 'biology',
+    cursor: {
+      cursorCreatedAt: '2026-05-09T12:00:00.000Z',
+      cursorId: '42',
+    },
+    requestId: 12,
+  });
+});
+
 test('createDeckCardBrowserFailure trims display fields and normalizes request ids', () => {
   assert.deepEqual(createDeckCardBrowserFailure({
     kind: 'unknown',

@@ -3,6 +3,10 @@ const {
   normalizeRequestId,
   normalizeSearchQuery,
 } = require('./deckCardBrowserRequestState');
+const {
+  getOwnDataPropertyValue,
+  isObjectRecord,
+} = require('./recordDataProperty');
 
 const DECK_CARD_BROWSER_ERROR_KINDS = Object.freeze({
   REPLACE: 'replace',
@@ -65,18 +69,18 @@ function normalizeDeckCardBrowserError(error) {
     };
   }
 
-  if (typeof error !== 'object' || Array.isArray(error)) {
+  if (!isObjectRecord(error)) {
     return null;
   }
 
-  const message = typeof error.message === 'string' ? error.message.trim() : '';
+  const message = getOwnDataPropertyValue(error, 'message');
 
   return {
-    kind: normalizeErrorKind(error.kind),
-    message,
-    searchQuery: normalizeSearchQuery(error.searchQuery),
-    cursor: normalizeCursor(error.cursor),
-    requestId: normalizeRequestId(error.requestId),
+    kind: normalizeErrorKind(getOwnDataPropertyValue(error, 'kind')),
+    message: typeof message === 'string' ? message.trim() : '',
+    searchQuery: normalizeSearchQuery(getOwnDataPropertyValue(error, 'searchQuery')),
+    cursor: normalizeCursor(getOwnDataPropertyValue(error, 'cursor')),
+    requestId: normalizeRequestId(getOwnDataPropertyValue(error, 'requestId')),
   };
 }
 
