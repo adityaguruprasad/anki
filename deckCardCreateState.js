@@ -1,6 +1,10 @@
 const { MAX_CARD_CONTENT_LENGTH, validateCardContent } = require('./cardContentValidation');
 const { parseDeckCardMutationResponsePayload } = require('./deckCardMutationResponse');
-const { getOwnDataPropertyValue } = require('./recordDataProperty');
+const {
+  getOwnDataPropertyValue,
+  getOwnObjectLikePropertyDescriptor,
+  isDataPropertyDescriptor,
+} = require('./recordDataProperty');
 
 const MAX_CARD_CONTENT_LENGTH_LABEL = MAX_CARD_CONTENT_LENGTH.toLocaleString('en-US');
 
@@ -118,14 +122,28 @@ function getCreateCardFailureMessage(payload) {
   return CARD_CREATE_MESSAGES.createFailed;
 }
 
+function getCardCreateOptionValue(options, key) {
+  if (Array.isArray(options)) {
+    return undefined;
+  }
+
+  const descriptor = getOwnObjectLikePropertyDescriptor(options, key);
+  return isDataPropertyDescriptor(descriptor) ? descriptor.value : undefined;
+}
+
+function getCardCreatePayloadParser(options) {
+  const parseCreatedCard = getCardCreateOptionValue(options, 'parseCreatedCard');
+  return typeof parseCreatedCard === 'function'
+    ? parseCreatedCard
+    : parseDeckCardMutationResponsePayload;
+}
+
 function getCardCreateResponseCompletion(options = {}) {
-  const {
-    expectedDeckId,
-    isCurrent,
-    responseOk,
-    payload,
-    parseCreatedCard = parseDeckCardMutationResponsePayload,
-  } = options;
+  const expectedDeckId = getCardCreateOptionValue(options, 'expectedDeckId');
+  const isCurrent = getCardCreateOptionValue(options, 'isCurrent');
+  const responseOk = getCardCreateOptionValue(options, 'responseOk');
+  const payload = getCardCreateOptionValue(options, 'payload');
+  const parseCreatedCard = getCardCreatePayloadParser(options);
 
   if (!isCurrent) {
     return createIgnoredCardCreateCompletion();
@@ -160,7 +178,7 @@ function getCardCreateResponseCompletion(options = {}) {
 }
 
 function getCardCreateNetworkFailureCompletion(options = {}) {
-  if (!options.isCurrent) {
+  if (!getCardCreateOptionValue(options, 'isCurrent')) {
     return createIgnoredCardCreateCompletion();
   }
 
@@ -172,7 +190,7 @@ function getCardCreateNetworkFailureCompletion(options = {}) {
 }
 
 function shouldRunCardCreateFinallyCleanup(options = {}) {
-  return Boolean(options.isCurrent);
+  return Boolean(getCardCreateOptionValue(options, 'isCurrent'));
 }
 
 module.exports = {

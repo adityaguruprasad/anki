@@ -14,6 +14,13 @@ const {
 } = require('../deckCardCreateState');
 
 const VALID_NEXT_REVIEW = '2026-05-10T12:00:00.000Z';
+const CARD_CREATE_RESPONSE_OPTION_FIELD_NAMES = Object.freeze([
+  'expectedDeckId',
+  'isCurrent',
+  'responseOk',
+  'payload',
+  'parseCreatedCard',
+]);
 
 function createValidCreatedCard(overrides = {}) {
   return {
@@ -27,6 +34,19 @@ function createValidCreatedCard(overrides = {}) {
     review_count: 0,
     ...overrides,
   };
+}
+
+function defineThrowingGetter(record, key) {
+  let getterCalls = 0;
+
+  Object.defineProperty(record, key, {
+    get() {
+      getterCalls += 1;
+      throw new Error(`${key} getter should not run`);
+    },
+  });
+
+  return () => getterCalls;
 }
 
 test('createCardSubmission returns trimmed content for valid input', () => {
@@ -393,6 +413,136 @@ test('card-create response completion returns current validated success plans', 
   );
 });
 
+test('card-create response completion ignores inherited option fields without invoking getters', () => {
+  const prototype = {};
+  const getterCalls = CARD_CREATE_RESPONSE_OPTION_FIELD_NAMES.map((fieldName) => (
+    defineThrowingGetter(prototype, fieldName)
+  ));
+
+  assert.deepEqual(
+    getCardCreateResponseCompletion(Object.create(prototype)),
+    {
+      type: CARD_CREATE_COMPLETION_TYPES.IGNORED,
+      ignored: true,
+    },
+  );
+
+  getterCalls.forEach((getGetterCalls) => {
+    assert.equal(getGetterCalls(), 0);
+  });
+});
+
+test('card-create response completion ignores own accessor option fields without invoking getters', () => {
+  const options = {};
+  const getterCalls = CARD_CREATE_RESPONSE_OPTION_FIELD_NAMES.map((fieldName) => (
+    defineThrowingGetter(options, fieldName)
+  ));
+
+  assert.deepEqual(
+    getCardCreateResponseCompletion(options),
+    {
+      type: CARD_CREATE_COMPLETION_TYPES.IGNORED,
+      ignored: true,
+    },
+  );
+
+  getterCalls.forEach((getGetterCalls) => {
+    assert.equal(getGetterCalls(), 0);
+  });
+});
+
+test('card-create response completion uses the default parser for non-function parser options', () => {
+  const createdCard = createValidCreatedCard();
+
+  assert.deepEqual(
+    getCardCreateResponseCompletion({
+      isCurrent: true,
+      responseOk: true,
+      payload: createdCard,
+      parseCreatedCard: 'not a parser',
+    }),
+    {
+      type: CARD_CREATE_COMPLETION_TYPES.SUCCESS,
+      ignored: false,
+      createdCard,
+      success: CARD_CREATE_MESSAGES.success,
+    },
+  );
+});
+
+test('card-create response completion ignores accessor-backed parser options without invoking getters', () => {
+  const createdCard = createValidCreatedCard();
+  const options = {
+    isCurrent: true,
+    responseOk: true,
+    payload: createdCard,
+  };
+  const getParserGetterCalls = defineThrowingGetter(options, 'parseCreatedCard');
+
+  assert.deepEqual(
+    getCardCreateResponseCompletion(options),
+    {
+      type: CARD_CREATE_COMPLETION_TYPES.SUCCESS,
+      ignored: false,
+      createdCard,
+      success: CARD_CREATE_MESSAGES.success,
+    },
+  );
+  assert.equal(getParserGetterCalls(), 0);
+});
+
+test('card-create response completion preserves null-prototype own data options', () => {
+  const createdCard = createValidCreatedCard({ deck_id: '00042' });
+  const options = Object.create(null);
+  let parseCalls = 0;
+
+  options.expectedDeckId = 42;
+  options.isCurrent = true;
+  options.responseOk = true;
+  options.payload = createdCard;
+  options.parseCreatedCard = (payload, parserOptions) => {
+    parseCalls += 1;
+    assert.equal(payload, createdCard);
+    assert.deepEqual(parserOptions, { expectedDeckId: 42 });
+    return payload;
+  };
+
+  assert.deepEqual(
+    getCardCreateResponseCompletion(options),
+    {
+      type: CARD_CREATE_COMPLETION_TYPES.SUCCESS,
+      ignored: false,
+      createdCard,
+      success: CARD_CREATE_MESSAGES.success,
+    },
+  );
+  assert.equal(parseCalls, 1);
+});
+
+test('card-create response completion treats array own data option fields as absent', () => {
+  const createdCard = createValidCreatedCard();
+  let parseCalls = 0;
+  const options = Object.assign([], {
+    expectedDeckId: 42,
+    isCurrent: true,
+    responseOk: true,
+    payload: createdCard,
+    parseCreatedCard: () => {
+      parseCalls += 1;
+      return createdCard;
+    },
+  });
+
+  assert.deepEqual(
+    getCardCreateResponseCompletion(options),
+    {
+      type: CARD_CREATE_COMPLETION_TYPES.IGNORED,
+      ignored: true,
+    },
+  );
+  assert.equal(parseCalls, 0);
+});
+
 test('card-create response completion preserves legacy parser calls without an expected deck id', () => {
   const createdCard = createValidCreatedCard();
 
@@ -576,4 +726,63 @@ test('card-create network and finally completions honor the current guard', () =
   );
   assert.equal(shouldRunCardCreateFinallyCleanup({ isCurrent: false }), false);
   assert.equal(shouldRunCardCreateFinallyCleanup({ isCurrent: true }), true);
+});
+
+test('card-create network and finally guards ignore inherited current state without invoking getters', () => {
+  const prototype = {};
+  const getGetterCalls = defineThrowingGetter(prototype, 'isCurrent');
+  const options = Object.create(prototype);
+
+  assert.deepEqual(
+    getCardCreateNetworkFailureCompletion(options),
+    {
+      type: CARD_CREATE_COMPLETION_TYPES.IGNORED,
+      ignored: true,
+    },
+  );
+  assert.equal(shouldRunCardCreateFinallyCleanup(options), false);
+  assert.equal(getGetterCalls(), 0);
+});
+
+test('card-create network and finally guards ignore own accessor current state without invoking getters', () => {
+  const options = {};
+  const getGetterCalls = defineThrowingGetter(options, 'isCurrent');
+
+  assert.deepEqual(
+    getCardCreateNetworkFailureCompletion(options),
+    {
+      type: CARD_CREATE_COMPLETION_TYPES.IGNORED,
+      ignored: true,
+    },
+  );
+  assert.equal(shouldRunCardCreateFinallyCleanup(options), false);
+  assert.equal(getGetterCalls(), 0);
+});
+
+test('card-create network and finally guards preserve null-prototype own data options', () => {
+  const options = Object.create(null);
+  options.isCurrent = true;
+
+  assert.deepEqual(
+    getCardCreateNetworkFailureCompletion(options),
+    {
+      type: CARD_CREATE_COMPLETION_TYPES.NETWORK_ERROR,
+      ignored: false,
+      error: CARD_CREATE_MESSAGES.networkFailed,
+    },
+  );
+  assert.equal(shouldRunCardCreateFinallyCleanup(options), true);
+});
+
+test('card-create network and finally guards treat array own data current state as absent', () => {
+  const options = Object.assign([], { isCurrent: true });
+
+  assert.deepEqual(
+    getCardCreateNetworkFailureCompletion(options),
+    {
+      type: CARD_CREATE_COMPLETION_TYPES.IGNORED,
+      ignored: true,
+    },
+  );
+  assert.equal(shouldRunCardCreateFinallyCleanup(options), false);
 });
