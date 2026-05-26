@@ -111,6 +111,61 @@ test('parseDeckCardRemovalSuccessPayload accepts matching expected deck ids', ()
   assert.equal(hasDeckCardRemovalSuccessPayload(payload, { expectedDeckId: '42' }), true);
 });
 
+test('parseDeckCardRemovalSuccessPayload accepts null-prototype match options', () => {
+  const payload = createValidRemovalPayload({ deck_id: '00042' });
+  const options = Object.create(null);
+  options.expectedId = '7';
+  options.expectedDeckId = 42;
+
+  assert.equal(parseDeckCardRemovalSuccessPayload(payload, options), payload);
+  assert.equal(hasDeckCardRemovalSuccessPayload(payload, options), true);
+});
+
+test('parseDeckCardRemovalSuccessPayload ignores non-enumerable data and accessor match options without invoking getters', () => {
+  const payload = createValidRemovalPayload();
+  const options = {};
+  let getterCalls = 0;
+
+  Object.defineProperty(options, 'expectedId', {
+    value: 8,
+  });
+  Object.defineProperty(options, 'expectedDeckId', {
+    get() {
+      getterCalls += 1;
+      throw new Error('expectedDeckId getter should not run');
+    },
+  });
+
+  assert.equal(parseDeckCardRemovalSuccessPayload(payload, options), payload);
+  assert.equal(hasDeckCardRemovalSuccessPayload(payload, options), true);
+  assert.equal(getterCalls, 0);
+});
+
+test('parseDeckCardRemovalSuccessPayload rejects accessor-backed match options without invoking getters', () => {
+  const payload = createValidRemovalPayload();
+
+  ['expectedId', 'expectedDeckId'].forEach((fieldName) => {
+    const options = {};
+    const getterCalls = defineThrowingGetter(options, fieldName);
+
+    assertMalformed(payload, options);
+    assert.equal(getterCalls(), 0);
+  });
+});
+
+test('parseDeckCardRemovalSuccessPayload ignores inherited match options without invoking getters', () => {
+  const payload = createValidRemovalPayload();
+  const prototype = {};
+  const expectedIdGetterCalls = defineThrowingGetter(prototype, 'expectedId');
+  const expectedDeckIdGetterCalls = defineThrowingGetter(prototype, 'expectedDeckId');
+  const options = Object.create(prototype);
+
+  assert.equal(parseDeckCardRemovalSuccessPayload(payload, options), payload);
+  assert.equal(hasDeckCardRemovalSuccessPayload(payload, options), true);
+  assert.equal(expectedIdGetterCalls(), 0);
+  assert.equal(expectedDeckIdGetterCalls(), 0);
+});
+
 test('parseDeckCardRemovalSuccessPayload rejects malformed top-level payloads', () => {
   [
     undefined,
