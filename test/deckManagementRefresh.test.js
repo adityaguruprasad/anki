@@ -6,8 +6,31 @@ const path = require('node:path');
 const {
   FRONTEND_MODULES,
 } = require('../scripts/sync-cra-src');
+const {
+  getDeckCardBrowserClearSearchQuery,
+  getDeckCardBrowserCursorSearchParams,
+  getDeckCardBrowserFetchOptions,
+} = require('../deckCardBrowserOptions');
 
 const deckSource = fs.readFileSync(path.join(__dirname, '..', 'deck.js'), 'utf8');
+
+const FETCH_OPTION_FIELD_NAMES = Object.freeze([
+  'cursor',
+  'append',
+  'retry',
+  'q',
+  'requestId',
+]);
+
+function defineThrowingGetter(record, key, onCall = () => {}) {
+  Object.defineProperty(record, key, {
+    enumerable: true,
+    get() {
+      onCall(key);
+      throw new Error(`${key} getter should not run`);
+    },
+  });
+}
 
 function extractConstFunctionBody(name) {
   const marker = `const ${name} =`;
@@ -133,10 +156,239 @@ test('clearDeckCardSearch reloads first page without a search filter through exi
   );
   assert.match(
     body,
-    /fetchDeckCards\(deckId, \{\s*q: clearSearchRequest\?\.q \|\| '',\s*\}\);/,
+    /const clearSearchQuery = getDeckCardBrowserClearSearchQuery\(clearSearchRequest\);/,
+    'Expected clear-search to normalize external request q without reading it directly',
+  );
+  assert.match(
+    body,
+    /fetchDeckCards\(deckId, \{\s*q: clearSearchQuery,\s*\}\);/,
     'Expected clear-search to use the replace fetch path with an empty query'
   );
+  assert.doesNotMatch(body, /clearSearchRequest(?:\?\.|\.)q/);
   assert.doesNotMatch(body, /append:\s*true/);
+});
+
+test('deck-card browser fetch options preserve plain and null-prototype own data options', () => {
+  const cursor = {
+    cursorCreatedAt: '2026-05-09T12:00:00.000Z',
+    cursorId: '42',
+  };
+  const plainOptions = {
+    cursor,
+    append: true,
+    retry: true,
+    q: 123,
+    requestId: 7,
+  };
+  const nullPrototypeOptions = Object.create(null);
+
+  nullPrototypeOptions.cursor = cursor;
+  nullPrototypeOptions.append = true;
+  nullPrototypeOptions.retry = false;
+  nullPrototypeOptions.q = 'biology';
+  nullPrototypeOptions.requestId = 8;
+
+  assert.deepEqual(getDeckCardBrowserFetchOptions(), {
+    cursor: null,
+    append: false,
+    retry: undefined,
+    hasExplicitQuery: false,
+    q: undefined,
+    requestId: undefined,
+  });
+  assert.deepEqual(getDeckCardBrowserFetchOptions(plainOptions), {
+    cursor,
+    append: true,
+    retry: true,
+    hasExplicitQuery: true,
+    q: 123,
+    requestId: 7,
+  });
+  assert.deepEqual(getDeckCardBrowserFetchOptions(nullPrototypeOptions), {
+    cursor,
+    append: true,
+    retry: false,
+    hasExplicitQuery: true,
+    q: 'biology',
+    requestId: 8,
+  });
+});
+
+test('deck-card browser fetch options ignore inherited, accessor, and array-shaped fields', () => {
+  const getterCalls = [];
+  const inheritedOptions = Object.create({
+    cursor: { cursorCreatedAt: '2026-05-09T12:00:00.000Z', cursorId: '42' },
+    append: true,
+    retry: true,
+    q: 'inherited',
+    requestId: 11,
+  });
+  const accessorOptions = {};
+  const arrayOptions = Object.assign([], {
+    cursor: { cursorCreatedAt: '2026-05-09T12:00:00.000Z', cursorId: '42' },
+    append: true,
+    retry: true,
+    q: 'array',
+    requestId: 12,
+  });
+  const defaultOptions = {
+    cursor: null,
+    append: false,
+    retry: undefined,
+    hasExplicitQuery: false,
+    q: undefined,
+    requestId: undefined,
+  };
+
+  for (const fieldName of FETCH_OPTION_FIELD_NAMES) {
+    defineThrowingGetter(accessorOptions, fieldName, (key) => getterCalls.push(key));
+  }
+
+  assert.deepEqual(getDeckCardBrowserFetchOptions(inheritedOptions), defaultOptions);
+  assert.deepEqual(getDeckCardBrowserFetchOptions(accessorOptions), defaultOptions);
+  assert.deepEqual(getDeckCardBrowserFetchOptions(arrayOptions), defaultOptions);
+  assert.deepEqual(getterCalls, []);
+});
+
+test('deck-card browser cursor search params preserve own data aliases', () => {
+  const cursor = {
+    cursorCreatedAt: '2026-05-09T12:00:00.000Z',
+    cursorId: '00042',
+    beforeCreatedAt: '2026-05-08T12:00:00.000Z',
+    beforeId: '41',
+  };
+  const nullPrototypeCursor = Object.create(null);
+
+  nullPrototypeCursor.cursorCreatedAt = null;
+  nullPrototypeCursor.cursorId = undefined;
+  nullPrototypeCursor.beforeCreatedAt = '2026-05-07T12:00:00.000Z';
+  nullPrototypeCursor.beforeId = '00040';
+
+  assert.deepEqual(getDeckCardBrowserCursorSearchParams(cursor), {
+    cursorCreatedAt: '2026-05-09T12:00:00.000Z',
+    cursorId: '00042',
+  });
+  assert.deepEqual(getDeckCardBrowserCursorSearchParams(nullPrototypeCursor), {
+    cursorCreatedAt: '2026-05-07T12:00:00.000Z',
+    cursorId: '00040',
+  });
+});
+
+test('deck-card browser cursor search params ignore inherited, accessor, and array-shaped aliases', () => {
+  const getterCalls = [];
+  const inheritedCursor = Object.create({
+    cursorCreatedAt: '2026-05-09T12:00:00.000Z',
+    cursorId: '00042',
+  });
+  const accessorCursor = {};
+  const arrayCursor = Object.assign([], {
+    cursorCreatedAt: '2026-05-09T12:00:00.000Z',
+    cursorId: '00042',
+  });
+  const defaultCursorSearchParams = {
+    cursorCreatedAt: undefined,
+    cursorId: undefined,
+  };
+
+  for (const fieldName of ['cursorCreatedAt', 'cursorId', 'beforeCreatedAt', 'beforeId']) {
+    defineThrowingGetter(accessorCursor, fieldName, (key) => getterCalls.push(key));
+  }
+
+  assert.deepEqual(getDeckCardBrowserCursorSearchParams(inheritedCursor), defaultCursorSearchParams);
+  assert.deepEqual(getDeckCardBrowserCursorSearchParams(accessorCursor), defaultCursorSearchParams);
+  assert.deepEqual(getDeckCardBrowserCursorSearchParams(arrayCursor), defaultCursorSearchParams);
+  assert.deepEqual(getterCalls, []);
+});
+
+test('deck-card browser clear-search query preserves own data q without direct reads', () => {
+  const nullPrototypeRequest = Object.create(null);
+
+  nullPrototypeRequest.q = 'biology';
+
+  assert.equal(getDeckCardBrowserClearSearchQuery(), '');
+  assert.equal(getDeckCardBrowserClearSearchQuery({ q: 'math' }), 'math');
+  assert.equal(getDeckCardBrowserClearSearchQuery({ q: 123 }), 123);
+  assert.equal(getDeckCardBrowserClearSearchQuery({ q: 0 }), '');
+  assert.equal(getDeckCardBrowserClearSearchQuery(nullPrototypeRequest), 'biology');
+});
+
+test('deck-card browser clear-search query ignores inherited, accessor, and array-shaped q', () => {
+  const getterCalls = [];
+  const inheritedRequest = Object.create({ q: 'inherited' });
+  const accessorRequest = {};
+  const arrayRequest = Object.assign([], { q: 'array' });
+
+  defineThrowingGetter(accessorRequest, 'q', (key) => getterCalls.push(key));
+
+  assert.equal(getDeckCardBrowserClearSearchQuery(inheritedRequest), '');
+  assert.equal(getDeckCardBrowserClearSearchQuery(accessorRequest), '');
+  assert.equal(getDeckCardBrowserClearSearchQuery(arrayRequest), '');
+  assert.deepEqual(getterCalls, []);
+});
+
+test('fetchDeckCards reads browser option fields through descriptor-safe normalization', () => {
+  const body = extractConstFunctionBody('fetchDeckCards');
+
+  assert.match(
+    deckSource,
+    /const deckCardBrowserOptions = require\('\.\/deckCardBrowserOptions'\);/,
+    'Expected deck.js to import the browser option helper',
+  );
+  assert.match(
+    deckSource,
+    /getDeckCardBrowserClearSearchQuery,\s*getDeckCardBrowserCursorSearchParams,\s*getDeckCardBrowserFetchOptions,/,
+    'Expected deck.js to destructure browser option helpers',
+  );
+  assert.match(
+    body,
+    /const deckCardBrowserFetchOptions = getDeckCardBrowserFetchOptions\(options\);/,
+    'Expected fetchDeckCards to normalize untrusted options before use',
+  );
+  assert.match(
+    body,
+    /const rawSearchQuery = hasExplicitQuery\s*\?\s*deckCardBrowserFetchOptions\.q\s*:/,
+    'Expected explicit q values to come from normalized options',
+  );
+  assert.match(
+    body,
+    /const searchQuery = typeof rawSearchQuery === 'string' \? rawSearchQuery : '';/,
+    'Expected non-string explicit q values to keep the empty-string fallback',
+  );
+  assert.match(
+    body,
+    /requestId: deckCardBrowserFetchOptions\.requestId,/,
+    'Expected append request ids to be forwarded from normalized options',
+  );
+  assert.match(
+    body,
+    /const normalizedCursor = normalizeCursor\(cursor\);/,
+    'Expected cursor URL parameters to use descriptor-safe cursor normalization',
+  );
+  assert.match(
+    body,
+    /const cursorSearchParams = getDeckCardBrowserCursorSearchParams\(cursor\);/,
+    'Expected cursor URL parameters to preserve own data cursor values without direct reads',
+  );
+  assert.doesNotMatch(
+    body,
+    /const\s+\{[^}]*\b(?:cursor|append)\b[^}]*\}\s*=\s*options\b/,
+    'Expected fetchDeckCards not to destructure untrusted options',
+  );
+  assert.doesNotMatch(
+    body,
+    /options\.(?:cursor|append|retry|q|requestId)\b/,
+    'Expected fetchDeckCards not to directly read untrusted option fields',
+  );
+  assert.doesNotMatch(
+    body,
+    /Object\.prototype\.hasOwnProperty\.call\(options,\s*['"]q['"]\)/,
+    'Expected fetchDeckCards not to treat inherited or accessor q as explicit',
+  );
+  assert.doesNotMatch(
+    body,
+    /cursor\.(?:cursorCreatedAt|beforeCreatedAt|cursorId|beforeId)\b/,
+    'Expected fetchDeckCards not to directly read cursor alias fields',
+  );
 });
 
 test('clear-search button accessible name starts with the visible label', () => {

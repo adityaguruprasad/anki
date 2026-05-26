@@ -16,6 +16,7 @@ const deckCardMutationResponse = require('./deckCardMutationResponse');
 const deckCardRemovalResponse = require('./deckCardRemovalResponse');
 const deckCardBrowserRequestState = require('./deckCardBrowserRequestState');
 const deckCardBrowserDisplayState = require('./deckCardBrowserDisplayState');
+const deckCardBrowserOptions = require('./deckCardBrowserOptions');
 const deckCardActionInFlightState = require('./deckCardActionInFlightState');
 const deckRemovalInFlightState = require('./deckRemovalInFlightState');
 const deckCardCreateState = require('./deckCardCreateState');
@@ -82,6 +83,7 @@ const {
   clearDeckCardBrowserAppendRequest,
   createDeckCardBrowserAppendRequest,
   isLatestDeckCardBrowserReplaceRequest,
+  normalizeCursor,
   setDeckCardBrowserAppendRequest,
 } = deckCardBrowserRequestState;
 const {
@@ -89,6 +91,11 @@ const {
   buildDeckCardBrowserDisplayState,
   createDeckCardBrowserFailure,
 } = deckCardBrowserDisplayState;
+const {
+  getDeckCardBrowserClearSearchQuery,
+  getDeckCardBrowserCursorSearchParams,
+  getDeckCardBrowserFetchOptions,
+} = deckCardBrowserOptions;
 const {
   beginCardRemove,
   beginCardSave,
@@ -719,17 +726,22 @@ const DeckManagement = ({ env, onAuthExpired }) => {
       return;
     }
 
+    const clearSearchQuery = getDeckCardBrowserClearSearchQuery(clearSearchRequest);
     fetchDeckCards(deckId, {
-      q: clearSearchRequest?.q || '',
+      q: clearSearchQuery,
     });
   };
 
   const fetchDeckCards = async (deckId, options = {}) => {
-    const { cursor = null, append = false } = options;
-    const isRetry = Boolean(options.retry);
-    const hasExplicitQuery = Object.prototype.hasOwnProperty.call(options, 'q');
+    const deckCardBrowserFetchOptions = getDeckCardBrowserFetchOptions(options);
+    const cursor = deckCardBrowserFetchOptions.cursor;
+    const normalizedCursor = normalizeCursor(cursor);
+    const cursorSearchParams = getDeckCardBrowserCursorSearchParams(cursor);
+    const append = deckCardBrowserFetchOptions.append;
+    const isRetry = Boolean(deckCardBrowserFetchOptions.retry);
+    const hasExplicitQuery = deckCardBrowserFetchOptions.hasExplicitQuery;
     const rawSearchQuery = hasExplicitQuery
-      ? options.q
+      ? deckCardBrowserFetchOptions.q
       : (deckCards[deckId]?.appliedSearchQuery ?? deckCards[deckId]?.searchQuery ?? '');
     const searchQuery = typeof rawSearchQuery === 'string' ? rawSearchQuery : '';
     const trimmedSearchQuery = searchQuery.trim();
@@ -742,8 +754,8 @@ const DeckManagement = ({ env, onAuthExpired }) => {
         deckId,
         {
           searchQuery: trimmedSearchQuery,
-          requestId: options.requestId,
-          cursor,
+          requestId: deckCardBrowserFetchOptions.requestId,
+          cursor: normalizedCursor,
         },
       );
       if (!canStartDeckCardBrowserAppendRequest(
@@ -860,17 +872,14 @@ const DeckManagement = ({ env, onAuthExpired }) => {
     }
 
     if (cursor) {
-      const cursorCreatedAt = cursor.cursorCreatedAt ?? cursor.beforeCreatedAt;
-      const cursorId = cursor.cursorId ?? cursor.beforeId;
-
-      if (!cursorCreatedAt || !cursorId) {
+      if (!normalizedCursor) {
         clearCurrentAppendRequest();
         setDeckCardBrowserFailure('Unable to load more cards.');
         return;
       }
 
-      searchParams.set('cursorCreatedAt', cursorCreatedAt);
-      searchParams.set('cursorId', cursorId);
+      searchParams.set('cursorCreatedAt', cursorSearchParams.cursorCreatedAt);
+      searchParams.set('cursorId', cursorSearchParams.cursorId);
     }
 
     try {
