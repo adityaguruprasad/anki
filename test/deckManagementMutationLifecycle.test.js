@@ -45,8 +45,22 @@ function extractConstFunctionBody(name) {
 test('isMountedDeckManagementMutation accepts only mounted refs', () => {
   assert.equal(isMountedDeckManagementMutation({ current: true }), true);
   assert.equal(isMountedDeckManagementMutation({ current: false }), false);
+  assert.equal(isMountedDeckManagementMutation(Object.create({ current: true })), false);
   assert.equal(isMountedDeckManagementMutation(null), false);
   assert.equal(isMountedDeckManagementMutation({}), false);
+
+  let currentGetterCalls = 0;
+  const accessorMountedRef = {};
+  Object.defineProperty(accessorMountedRef, 'current', {
+    enumerable: true,
+    get() {
+      currentGetterCalls += 1;
+      return true;
+    },
+  });
+
+  assert.equal(isMountedDeckManagementMutation(accessorMountedRef), false);
+  assert.equal(currentGetterCalls, 0);
 });
 
 test('beginDeckManagementMutation advances independent mutation keys', () => {
@@ -64,6 +78,51 @@ test('beginDeckManagementMutation advances independent mutation keys', () => {
     key: 'create-deck',
     sequence: 2,
   });
+});
+
+test('beginDeckManagementMutation treats accessor-backed sequence writes as failed claims', () => {
+  const mountedRef = { current: true };
+  const sequences = {};
+  let storedSequenceGetterCalls = 0;
+  Object.defineProperty(sequences, 'mutation:create-deck', {
+    configurable: false,
+    enumerable: true,
+    get() {
+      storedSequenceGetterCalls += 1;
+      return 1;
+    },
+  });
+
+  const sequenceRef = { current: sequences };
+  const mutation = beginDeckManagementMutation(sequenceRef, 'create-deck');
+
+  assert.deepEqual(mutation, {
+    key: 'create-deck',
+    sequence: 0,
+  });
+  assert.equal(storedSequenceGetterCalls, 0);
+  assert.equal(
+    isCurrentDeckManagementMutation({ mountedRef, sequenceRef, mutation }),
+    false,
+  );
+  assert.equal(storedSequenceGetterCalls, 0);
+});
+
+test('beginDeckManagementMutation treats frozen sequence stores as failed claims', () => {
+  const mountedRef = { current: true };
+  const sequences = Object.freeze({});
+  const sequenceRef = { current: sequences };
+  const mutation = beginDeckManagementMutation(sequenceRef, 'rename-deck:1');
+
+  assert.deepEqual(mutation, {
+    key: 'rename-deck:1',
+    sequence: 0,
+  });
+  assert.equal(Object.hasOwn(sequences, 'mutation:rename-deck:1'), false);
+  assert.equal(
+    isCurrentDeckManagementMutation({ mountedRef, sequenceRef, mutation }),
+    false,
+  );
 });
 
 test('isCurrentDeckManagementMutation requires mounted state and latest key sequence', () => {
@@ -102,6 +161,119 @@ test('isCurrentDeckManagementMutation requires mounted state and latest key sequ
     isCurrentDeckManagementMutation({ mountedRef, sequenceRef, mutation: secondCreate }),
     false,
   );
+});
+
+test('isCurrentDeckManagementMutation rejects inherited mutation lifecycle fields', () => {
+  const mountedRef = { current: true };
+  const sequenceRef = { current: {} };
+  const mutation = beginDeckManagementMutation(sequenceRef, 'create-deck');
+
+  const inheritedKeyMutation = Object.create({ key: mutation.key });
+  inheritedKeyMutation.sequence = mutation.sequence;
+  assert.equal(
+    isCurrentDeckManagementMutation({ mountedRef, sequenceRef, mutation: inheritedKeyMutation }),
+    false,
+  );
+
+  const inheritedSequenceMutation = Object.create({ sequence: mutation.sequence });
+  inheritedSequenceMutation.key = mutation.key;
+  assert.equal(
+    isCurrentDeckManagementMutation({ mountedRef, sequenceRef, mutation: inheritedSequenceMutation }),
+    false,
+  );
+
+  const inheritedStore = Object.create({ [`mutation:${mutation.key}`]: mutation.sequence });
+  assert.equal(
+    isCurrentDeckManagementMutation({
+      mountedRef,
+      sequenceRef: { current: inheritedStore },
+      mutation,
+    }),
+    false,
+  );
+});
+
+test('isCurrentDeckManagementMutation rejects accessor-backed fields without invoking getters', () => {
+  const mountedRef = { current: true };
+  const sequenceRef = { current: {} };
+  const mutation = beginDeckManagementMutation(sequenceRef, 'create-deck');
+
+  let keyGetterCalls = 0;
+  const keyAccessorMutation = {};
+  Object.defineProperty(keyAccessorMutation, 'key', {
+    enumerable: true,
+    get() {
+      keyGetterCalls += 1;
+      return mutation.key;
+    },
+  });
+  keyAccessorMutation.sequence = mutation.sequence;
+
+  assert.equal(
+    isCurrentDeckManagementMutation({ mountedRef, sequenceRef, mutation: keyAccessorMutation }),
+    false,
+  );
+  assert.equal(keyGetterCalls, 0);
+
+  let sequenceGetterCalls = 0;
+  const sequenceAccessorMutation = { key: mutation.key };
+  Object.defineProperty(sequenceAccessorMutation, 'sequence', {
+    enumerable: true,
+    get() {
+      sequenceGetterCalls += 1;
+      return mutation.sequence;
+    },
+  });
+
+  assert.equal(
+    isCurrentDeckManagementMutation({ mountedRef, sequenceRef, mutation: sequenceAccessorMutation }),
+    false,
+  );
+  assert.equal(sequenceGetterCalls, 0);
+
+  let storedSequenceGetterCalls = 0;
+  const accessorStore = {};
+  Object.defineProperty(accessorStore, `mutation:${mutation.key}`, {
+    enumerable: true,
+    get() {
+      storedSequenceGetterCalls += 1;
+      return mutation.sequence;
+    },
+  });
+
+  assert.equal(
+    isCurrentDeckManagementMutation({
+      mountedRef,
+      sequenceRef: { current: accessorStore },
+      mutation,
+    }),
+    false,
+  );
+  assert.equal(storedSequenceGetterCalls, 0);
+});
+
+test('mutation lifecycle accepts valid null-prototype records', () => {
+  const mountedRef = Object.create(null);
+  mountedRef.current = true;
+
+  const sequenceRef = Object.create(null);
+  sequenceRef.current = Object.create(null);
+
+  const mutation = beginDeckManagementMutation(sequenceRef, 'create-deck');
+  const nullPrototypeMutation = Object.create(null);
+  nullPrototypeMutation.key = mutation.key;
+  nullPrototypeMutation.sequence = mutation.sequence;
+
+  const options = Object.create(null);
+  options.mountedRef = mountedRef;
+  options.sequenceRef = sequenceRef;
+  options.mutation = nullPrototypeMutation;
+
+  assert.deepEqual(mutation, {
+    key: 'create-deck',
+    sequence: 1,
+  });
+  assert.equal(isCurrentDeckManagementMutation(options), true);
 });
 
 test('invalidateDeckManagementMutations makes pending completions stale', () => {
