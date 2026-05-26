@@ -57,3 +57,57 @@ test('normalizeAuthNotice only preserves supported auth notice state', () => {
   assert.equal(normalizeAuthNotice({ type: 'unsupported' }), null);
   assert.equal(normalizeAuthNotice('sessionExpired'), null);
 });
+
+test('normalizeAuthNotice accepts null-prototype notices with own data type fields', () => {
+  const notice = Object.create(null);
+  Object.defineProperty(notice, 'type', {
+    enumerable: true,
+    value: AUTH_NOTICE_TYPES.SESSION_EXPIRED,
+  });
+  Object.defineProperty(notice, 'message', {
+    enumerable: true,
+    value: 'ignored detail',
+  });
+
+  assert.deepEqual(normalizeAuthNotice(notice), {
+    type: AUTH_NOTICE_TYPES.SESSION_EXPIRED,
+  });
+  assert.equal(getAuthNoticeMessage(notice), AUTH_SESSION_EXPIRED_NOTICE_MESSAGE);
+});
+
+test('normalizeAuthNotice ignores inherited and accessor-backed notice types without invoking getters', () => {
+  const inheritedNotice = Object.create({
+    type: AUTH_NOTICE_TYPES.SESSION_EXPIRED,
+  });
+  let getterCalls = 0;
+  const inheritedAccessorPrototype = {};
+  Object.defineProperty(inheritedAccessorPrototype, 'type', {
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      throw new Error('inherited notice type getter should not run');
+    },
+  });
+  const ownAccessorNotice = {};
+  Object.defineProperty(ownAccessorNotice, 'type', {
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      throw new Error('own notice type getter should not run');
+    },
+  });
+
+  assert.equal(normalizeAuthNotice(inheritedNotice), null);
+  assert.equal(getAuthNoticeMessage(inheritedNotice), '');
+  assert.equal(normalizeAuthNotice(Object.create(inheritedAccessorPrototype)), null);
+  assert.equal(normalizeAuthNotice(ownAccessorNotice), null);
+  assert.equal(getterCalls, 0);
+});
+
+test('normalizeAuthNotice rejects array-shaped notices even with own type fields', () => {
+  const notice = [];
+  notice.type = AUTH_NOTICE_TYPES.SESSION_EXPIRED;
+
+  assert.equal(normalizeAuthNotice(notice), null);
+  assert.equal(getAuthNoticeMessage(notice), '');
+});

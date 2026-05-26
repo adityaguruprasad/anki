@@ -1,3 +1,8 @@
+const {
+  getOwnDataPropertyValue,
+  isObjectRecord,
+} = require('./recordDataProperty');
+
 const AUTH_LOGOUT_REASONS = Object.freeze({
   MANUAL: 'manual',
   AUTH_EXPIRED: 'authExpired',
@@ -14,11 +19,11 @@ function createAuthSessionExpiredNotice() {
 }
 
 function normalizeAuthNotice(notice) {
-  if (notice === null || typeof notice !== 'object') {
+  if (!isObjectRecord(notice)) {
     return null;
   }
 
-  return notice.type === AUTH_NOTICE_TYPES.SESSION_EXPIRED
+  return getOwnDataPropertyValue(notice, 'type') === AUTH_NOTICE_TYPES.SESSION_EXPIRED
     ? createAuthSessionExpiredNotice()
     : null;
 }
