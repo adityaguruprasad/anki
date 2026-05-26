@@ -18,6 +18,16 @@ const {
 } = require('../deckCardBrowserRequestState');
 const { MAX_POSTGRES_SERIAL_ID } = require('../cardIdentifier');
 
+function defineThrowingGetter(record, key, onCall) {
+  Object.defineProperty(record, key, {
+    enumerable: true,
+    get() {
+      onCall(key);
+      throw new Error(`${key} getter should not run`);
+    },
+  });
+}
+
 test('beginDeckCardBrowserReplaceRequest advances request ids per deck without mutating state', () => {
   const requestState = {};
   const first = beginDeckCardBrowserReplaceRequest(requestState, 2, { searchQuery: ' math ' });
@@ -37,6 +47,77 @@ test('beginDeckCardBrowserReplaceRequest advances request ids per deck without m
       requestId: 1,
       searchQuery: '',
     },
+  });
+});
+
+test('request-state reads use own data properties without invoking getters', () => {
+  const getterCalls = [];
+  const accessorEntry = {};
+  const accessorState = {};
+  const inheritedEntry = Object.create({
+    requestId: 9,
+    searchQuery: 'inherited query',
+  });
+  const inheritedState = Object.create({
+    12: {
+      requestId: 8,
+      searchQuery: 'inherited state',
+    },
+  });
+  const copySource = { 11: { requestId: 3, searchQuery: 'math' } };
+
+  defineThrowingGetter(accessorEntry, 'requestId', (key) => getterCalls.push(key));
+  defineThrowingGetter(accessorEntry, 'searchQuery', (key) => getterCalls.push(key));
+  Object.defineProperty(accessorState, '12', {
+    enumerable: true,
+    get() {
+      getterCalls.push('12');
+      throw new Error('state getter should not run');
+    },
+  });
+  defineThrowingGetter(copySource, 'accessorCopy', (key) => getterCalls.push(key));
+
+  assert.deepEqual(getLatestDeckCardBrowserRequest({ 12: accessorEntry }, 12), {
+    requestId: 0,
+    searchQuery: '',
+  });
+  assert.deepEqual(getLatestDeckCardBrowserRequest({ 12: inheritedEntry }, 12), {
+    requestId: 0,
+    searchQuery: '',
+  });
+  assert.deepEqual(getLatestDeckCardBrowserRequest(accessorState, 12), {
+    requestId: 0,
+    searchQuery: '',
+  });
+  assert.deepEqual(getLatestDeckCardBrowserRequest(inheritedState, 12), {
+    requestId: 0,
+    searchQuery: '',
+  });
+
+  const next = beginDeckCardBrowserReplaceRequest(copySource, 11, { searchQuery: 'science' });
+  assert.equal(next.requestId, 4);
+  assert.equal(Object.prototype.hasOwnProperty.call(next.requestState, 'accessorCopy'), false);
+  assert.deepEqual(getterCalls, []);
+});
+
+test('request-state reads accept null-prototype state and entries', () => {
+  const entry = Object.create(null);
+  entry.requestId = 4;
+  entry.searchQuery = '  math  ';
+
+  const requestState = Object.create(null);
+  requestState[13] = entry;
+
+  assert.deepEqual(getLatestDeckCardBrowserRequest(requestState, 13), {
+    requestId: 4,
+    searchQuery: 'math',
+  });
+
+  const next = beginDeckCardBrowserReplaceRequest(requestState, 13, { searchQuery: 'science' });
+  assert.equal(next.requestId, 5);
+  assert.deepEqual(next.requestState[13], {
+    requestId: 5,
+    searchQuery: 'science',
   });
 });
 
@@ -107,6 +188,50 @@ test('normalizeCursor follows the server cursor timestamp and card-id contract',
   });
 });
 
+test('normalizeCursor reads only own data aliases without invoking getters', () => {
+  const getterCalls = [];
+  const accessorCursor = {
+    beforeCreatedAt: '2026-05-09T12:00:00.000Z',
+    beforeId: 42,
+  };
+  const accessorCursorId = {
+    cursorCreatedAt: '2026-05-09T12:00:00.000Z',
+    beforeId: 42,
+  };
+  const inheritedCursor = Object.create({
+    cursorCreatedAt: '2026-05-09T12:00:00.000Z',
+    cursorId: 42,
+  });
+  const nullPrototypeCursor = Object.create(null);
+
+  defineThrowingGetter(accessorCursor, 'cursorCreatedAt', (key) => getterCalls.push(key));
+  defineThrowingGetter(accessorCursor, 'cursorId', (key) => getterCalls.push(key));
+  defineThrowingGetter(accessorCursorId, 'cursorId', (key) => getterCalls.push(key));
+  nullPrototypeCursor.beforeCreatedAt = '2026-05-09T12:00:00.123456Z';
+  nullPrototypeCursor.beforeId = '00042';
+
+  assert.equal(normalizeCursor(accessorCursor), null);
+  assert.equal(normalizeCursor(accessorCursorId), null);
+  assert.equal(normalizeCursor(inheritedCursor), null);
+  assert.deepEqual(normalizeCursor(nullPrototypeCursor), {
+    cursorCreatedAt: '2026-05-09T12:00:00.123456Z',
+    cursorId: '42',
+  });
+  assert.deepEqual(
+    normalizeCursor({
+      cursorCreatedAt: '2026-05-09T12:00:00.000Z',
+      cursorId: 43,
+      beforeCreatedAt: '2026-05-08T12:00:00.000Z',
+      beforeId: 42,
+    }),
+    {
+      cursorCreatedAt: '2026-05-09T12:00:00.000Z',
+      cursorId: '43',
+    },
+  );
+  assert.deepEqual(getterCalls, []);
+});
+
 test('canStartDeckCardBrowserAppendRequest blocks requests with malformed cursors', () => {
   const { requestState, requestId } = beginDeckCardBrowserReplaceRequest({}, 11, {
     searchQuery: 'biology',
@@ -123,6 +248,137 @@ test('canStartDeckCardBrowserAppendRequest blocks requests with malformed cursor
   assert.equal(malformedCursorRequest.cursor, null);
   assert.equal(
     canStartDeckCardBrowserAppendRequest(requestState, {}, 11, malformedCursorRequest),
+    false,
+  );
+});
+
+test('append request and state comparisons use own data properties without invoking getters', () => {
+  const { requestState, requestId } = beginDeckCardBrowserReplaceRequest({}, 14, {
+    searchQuery: 'biology',
+  });
+  const request = createDeckCardBrowserAppendRequest(requestState, 14, {
+    requestId,
+    searchQuery: 'biology',
+    cursor: {
+      cursorCreatedAt: '2026-05-09T12:00:00.000Z',
+      cursorId: '10',
+    },
+  });
+  const getterCalls = [];
+  const accessorRequest = {};
+  const inheritedRequest = Object.create(request);
+  const accessorAppendState = {};
+  const copySource = setDeckCardBrowserAppendRequest({}, 15, request);
+
+  defineThrowingGetter(accessorRequest, 'requestId', (key) => getterCalls.push(key));
+  defineThrowingGetter(accessorRequest, 'searchQuery', (key) => getterCalls.push(key));
+  defineThrowingGetter(accessorRequest, 'cursor', (key) => getterCalls.push(key));
+  Object.defineProperty(accessorAppendState, '14', {
+    enumerable: true,
+    get() {
+      getterCalls.push('14');
+      throw new Error('append-state getter should not run');
+    },
+  });
+  defineThrowingGetter(copySource, 'accessorCopy', (key) => getterCalls.push(key));
+
+  assert.deepEqual(createDeckCardBrowserAppendRequest(requestState, 14, accessorRequest), {
+    requestId,
+    searchQuery: '',
+    cursor: null,
+  });
+  assert.equal(hasSameAppendRequest(accessorRequest, request), false);
+  assert.equal(hasSameAppendRequest(inheritedRequest, request), false);
+  assert.equal(
+    canStartDeckCardBrowserAppendRequest(requestState, {}, 14, accessorRequest),
+    false,
+  );
+  assert.equal(
+    canStartDeckCardBrowserAppendRequest(requestState, {}, 14, inheritedRequest),
+    false,
+  );
+  assert.equal(
+    canApplyDeckCardBrowserAppendResponse(requestState, accessorAppendState, 14, request),
+    false,
+  );
+  assert.equal(
+    clearDeckCardBrowserAppendRequest(accessorAppendState, 14, request),
+    accessorAppendState,
+  );
+
+  const nextAppendState = setDeckCardBrowserAppendRequest(copySource, 14, request);
+  assert.equal(Object.prototype.hasOwnProperty.call(nextAppendState, 'accessorCopy'), false);
+  assert.deepEqual(getterCalls, []);
+});
+
+test('append response matching accepts null-prototype append requests and state', () => {
+  const { requestState, requestId } = beginDeckCardBrowserReplaceRequest({}, 16, {
+    searchQuery: 'biology',
+  });
+  const request = Object.create(null);
+  request.requestId = requestId;
+  request.searchQuery = 'biology';
+  request.cursor = {
+    beforeCreatedAt: '2026-05-09T12:00:00.000Z',
+    beforeId: '10',
+  };
+
+  const appendRequestState = Object.create(null);
+  appendRequestState[16] = request;
+
+  assert.equal(
+    canStartDeckCardBrowserAppendRequest(requestState, Object.create(null), 16, request),
+    true,
+  );
+  assert.equal(
+    canApplyDeckCardBrowserAppendResponse(requestState, appendRequestState, 16, request),
+    true,
+  );
+});
+
+test('append response matching compares cursor timestamps by microsecond UTC instant', () => {
+  const left = {
+    requestId: 1,
+    searchQuery: 'biology',
+    cursor: {
+      beforeCreatedAt: '2026-05-08T06:00:00.123-07:00',
+      beforeId: '10',
+    },
+  };
+  const equivalentRight = {
+    requestId: 1,
+    searchQuery: 'biology',
+    cursor: {
+      cursorCreatedAt: '2026-05-08T13:00:00.123000Z',
+      cursorId: '10',
+    },
+  };
+  const differentMicrosecondRight = {
+    requestId: 1,
+    searchQuery: 'biology',
+    cursor: {
+      cursorCreatedAt: '2026-05-08T13:00:00.123001Z',
+      cursorId: '10',
+    },
+  };
+  const { requestState } = beginDeckCardBrowserReplaceRequest({}, 17, {
+    searchQuery: 'biology',
+  });
+  const appendRequestState = setDeckCardBrowserAppendRequest({}, 17, left);
+
+  assert.equal(hasSameAppendRequest(left, equivalentRight), true);
+  assert.equal(
+    canApplyDeckCardBrowserAppendResponse(requestState, appendRequestState, 17, equivalentRight),
+    true,
+  );
+  assert.equal(hasSameAppendRequest(left, differentMicrosecondRight), false);
+  assert.equal(
+    canApplyDeckCardBrowserAppendResponse(
+      requestState,
+      appendRequestState,
+      17,
+      differentMicrosecondRight,
+    ),
     false,
   );
 });

@@ -1,5 +1,14 @@
 const { normalizeRouteSafeCardId } = require('./cardIdentifier');
-const { isValidIsoTimestamp } = require('./isoTimestampValidation');
+const { isSameIsoTimestampInstant, isValidIsoTimestamp } = require('./isoTimestampValidation');
+const {
+  getOwnDataPropertyDescriptor,
+  getOwnDataPropertyValue,
+  getOwnEnumerableDataProperties,
+  getOwnRecordPropertyDescriptor,
+  isDataPropertyDescriptor,
+} = require('./recordDataProperty');
+
+const INVALID_CURSOR_ALIAS = Symbol('invalidCursorAlias');
 
 function normalizeDeckId(deckId) {
   return String(deckId);
@@ -16,8 +25,8 @@ function normalizeSearchQuery(searchQuery) {
 function normalizeRequestEntry(entry) {
   if (entry && typeof entry === 'object') {
     return {
-      requestId: normalizeRequestId(entry.requestId),
-      searchQuery: normalizeSearchQuery(entry.searchQuery),
+      requestId: normalizeRequestId(getOwnDataPropertyValue(entry, 'requestId')),
+      searchQuery: normalizeSearchQuery(getOwnDataPropertyValue(entry, 'searchQuery')),
     };
   }
 
@@ -28,15 +37,16 @@ function normalizeRequestEntry(entry) {
 }
 
 function getLatestDeckCardBrowserRequest(requestState, deckId) {
-  return normalizeRequestEntry(requestState[normalizeDeckId(deckId)]);
+  return normalizeRequestEntry(getOwnDataPropertyValue(requestState, normalizeDeckId(deckId)));
 }
 
 function getLatestDeckCardBrowserRequestId(requestState, deckId) {
   return getLatestDeckCardBrowserRequest(requestState, deckId).requestId;
 }
 
-function beginDeckCardBrowserReplaceRequest(requestState, deckId, { searchQuery = '' } = {}) {
+function beginDeckCardBrowserReplaceRequest(requestState, deckId, options = {}) {
   const deckKey = normalizeDeckId(deckId);
+  const searchQuery = getOwnDataPropertyValue(options, 'searchQuery');
   const requestId = getLatestDeckCardBrowserRequest(requestState, deckId).requestId + 1;
   const request = {
     requestId,
@@ -47,10 +57,32 @@ function beginDeckCardBrowserReplaceRequest(requestState, deckId, { searchQuery 
     requestId,
     request,
     requestState: {
-      ...requestState,
+      ...getOwnEnumerableDataProperties(requestState),
       [deckKey]: request,
     },
   };
+}
+
+function getOwnNullishCoalescedDataPropertyValue(record, preferredKey, fallbackKey) {
+  const preferredDescriptor = getOwnRecordPropertyDescriptor(record, preferredKey);
+  if (preferredDescriptor !== undefined) {
+    if (!isDataPropertyDescriptor(preferredDescriptor)) {
+      return INVALID_CURSOR_ALIAS;
+    }
+
+    if (preferredDescriptor.value !== null && preferredDescriptor.value !== undefined) {
+      return preferredDescriptor.value;
+    }
+  }
+
+  const fallbackDescriptor = getOwnRecordPropertyDescriptor(record, fallbackKey);
+  if (fallbackDescriptor !== undefined) {
+    return isDataPropertyDescriptor(fallbackDescriptor)
+      ? fallbackDescriptor.value
+      : INVALID_CURSOR_ALIAS;
+  }
+
+  return preferredDescriptor === undefined ? undefined : preferredDescriptor.value;
 }
 
 function normalizeCursor(cursor) {
@@ -58,8 +90,17 @@ function normalizeCursor(cursor) {
     return null;
   }
 
-  const cursorCreatedAt = cursor.cursorCreatedAt ?? cursor.beforeCreatedAt;
-  const cursorId = cursor.cursorId ?? cursor.beforeId;
+  const cursorCreatedAt = getOwnNullishCoalescedDataPropertyValue(
+    cursor,
+    'cursorCreatedAt',
+    'beforeCreatedAt',
+  );
+  const cursorId = getOwnNullishCoalescedDataPropertyValue(cursor, 'cursorId', 'beforeId');
+
+  if (cursorCreatedAt === INVALID_CURSOR_ALIAS || cursorId === INVALID_CURSOR_ALIAS) {
+    return null;
+  }
+
   const normalizedCursorId = normalizeRouteSafeCardId(cursorId);
 
   if (!isValidIsoTimestamp(cursorCreatedAt) || normalizedCursorId === null) {
@@ -81,20 +122,21 @@ function hasSameCursor(leftCursor, rightCursor) {
   }
 
   return (
-    left.cursorCreatedAt === right.cursorCreatedAt
+    isSameIsoTimestampInstant(left.cursorCreatedAt, right.cursorCreatedAt)
     && left.cursorId === right.cursorId
   );
 }
 
-function createDeckCardBrowserAppendRequest(requestState, deckId, {
-  requestId = null,
-  searchQuery,
-  cursor,
-}) {
+function createDeckCardBrowserAppendRequest(requestState, deckId, options = {}) {
+  const requestId = getOwnDataPropertyValue(options, 'requestId');
+  const searchQuery = getOwnDataPropertyValue(options, 'searchQuery');
+  const cursor = getOwnDataPropertyValue(options, 'cursor');
   const latestRequest = getLatestDeckCardBrowserRequest(requestState, deckId);
 
   return {
-    requestId: requestId === null ? latestRequest.requestId : normalizeRequestId(requestId),
+    requestId: requestId === null || requestId === undefined
+      ? latestRequest.requestId
+      : normalizeRequestId(requestId),
     searchQuery: normalizeSearchQuery(searchQuery),
     cursor: normalizeCursor(cursor),
   };
@@ -102,26 +144,49 @@ function createDeckCardBrowserAppendRequest(requestState, deckId, {
 
 function setDeckCardBrowserAppendRequest(appendRequestState, deckId, request) {
   return {
-    ...appendRequestState,
+    ...getOwnEnumerableDataProperties(appendRequestState),
     [normalizeDeckId(deckId)]: request,
   };
 }
 
+function getOwnAppendRequestFields(request) {
+  const requestIdDescriptor = getOwnDataPropertyDescriptor(request, 'requestId');
+  const searchQueryDescriptor = getOwnDataPropertyDescriptor(request, 'searchQuery');
+  const cursorDescriptor = getOwnDataPropertyDescriptor(request, 'cursor');
+
+  if (
+    requestIdDescriptor === undefined
+    || searchQueryDescriptor === undefined
+    || cursorDescriptor === undefined
+  ) {
+    return null;
+  }
+
+  return {
+    requestId: requestIdDescriptor.value,
+    searchQuery: searchQueryDescriptor.value,
+    cursor: cursorDescriptor.value,
+  };
+}
+
 function hasSameAppendRequest(leftRequest, rightRequest) {
-  if (!leftRequest || !rightRequest) {
+  const left = getOwnAppendRequestFields(leftRequest);
+  const right = getOwnAppendRequestFields(rightRequest);
+
+  if (!left || !right) {
     return false;
   }
 
   return (
-    leftRequest.requestId === rightRequest.requestId
-    && leftRequest.searchQuery === rightRequest.searchQuery
-    && hasSameCursor(leftRequest.cursor, rightRequest.cursor)
+    left.requestId === right.requestId
+    && left.searchQuery === right.searchQuery
+    && hasSameCursor(left.cursor, right.cursor)
   );
 }
 
 function clearDeckCardBrowserAppendRequest(appendRequestState, deckId, request = null) {
   const deckKey = normalizeDeckId(deckId);
-  const currentRequest = appendRequestState[deckKey];
+  const currentRequest = getOwnDataPropertyValue(appendRequestState, deckKey);
 
   if (request && !hasSameAppendRequest(currentRequest, request)) {
     return appendRequestState;
@@ -131,7 +196,7 @@ function clearDeckCardBrowserAppendRequest(appendRequestState, deckId, request =
     return appendRequestState;
   }
 
-  const nextState = { ...appendRequestState };
+  const nextState = getOwnEnumerableDataProperties(appendRequestState);
   delete nextState[deckKey];
   return nextState;
 }
@@ -142,14 +207,15 @@ function isLatestDeckCardBrowserReplaceRequest(requestState, deckId, requestId) 
 
 function canStartDeckCardBrowserAppendRequest(requestState, appendRequestState, deckId, request) {
   const latestRequest = getLatestDeckCardBrowserRequest(requestState, deckId);
+  const appendRequest = getOwnAppendRequestFields(request);
 
   // Short-circuit append requests whose cursor normalization failed.
   return (
-    Boolean(request)
-    && Boolean(request.cursor)
-    && latestRequest.requestId === request.requestId
-    && latestRequest.searchQuery === request.searchQuery
-    && !appendRequestState[normalizeDeckId(deckId)]
+    Boolean(appendRequest)
+    && Boolean(appendRequest.cursor)
+    && latestRequest.requestId === appendRequest.requestId
+    && latestRequest.searchQuery === appendRequest.searchQuery
+    && !getOwnDataPropertyValue(appendRequestState, normalizeDeckId(deckId))
   );
 }
 
@@ -160,12 +226,16 @@ function canApplyDeckCardBrowserAppendResponse(
   request,
 ) {
   const latestRequest = getLatestDeckCardBrowserRequest(requestState, deckId);
+  const appendRequest = getOwnAppendRequestFields(request);
 
   return (
-    Boolean(request?.cursor)
-    && latestRequest.requestId === request.requestId
-    && latestRequest.searchQuery === request.searchQuery
-    && hasSameAppendRequest(appendRequestState[normalizeDeckId(deckId)], request)
+    Boolean(appendRequest?.cursor)
+    && latestRequest.requestId === appendRequest.requestId
+    && latestRequest.searchQuery === appendRequest.searchQuery
+    && hasSameAppendRequest(
+      getOwnDataPropertyValue(appendRequestState, normalizeDeckId(deckId)),
+      request,
+    )
   );
 }
 
