@@ -28,6 +28,7 @@ const { getStudySessionNotice, STUDY_SESSION_NOTICE_TYPES } = studySessionNotice
 const {
   getStudySessionRequest,
   getValidatedStudySessionDeckListRequest,
+  shouldShowNoDueNoticeForFetchNextCardOptions,
   shouldShowNoDueNoticeForInitialStudySessionRequest,
   STUDY_SESSION_REQUESTS,
 } = studySessionTarget;
@@ -129,7 +130,7 @@ const StudySession = ({ env, onAuthExpired }) => {
         setIsLoading(false);
       } else {
         setCurrentCard(null);
-        if (options.showNoDueNotice) {
+        if (shouldShowNoDueNoticeForFetchNextCardOptions(options)) {
           setSessionNotice(getStudySessionNotice(STUDY_SESSION_NOTICE_TYPES.NO_DUE_CARDS));
         }
         setSubmitInFlight(false);

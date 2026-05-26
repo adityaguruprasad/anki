@@ -6,6 +6,7 @@ const {
   getStudySessionRequest,
   getValidatedStudySessionDeckListRequest,
   parseDeckId,
+  shouldShowNoDueNoticeForFetchNextCardOptions,
   shouldShowNoDueNoticeForInitialStudySessionRequest,
 } = require('../studySessionTarget');
 const { MAX_POSTGRES_SERIAL_ID } = require('../cardIdentifier');
@@ -347,4 +348,85 @@ test('shouldShowNoDueNoticeForInitialStudySessionRequest rejects accessor-backed
   );
   assert.equal(typeGetterCalls, 0);
   assert.equal(sourceGetterCalls, 0);
+});
+
+test('shouldShowNoDueNoticeForFetchNextCardOptions preserves own data option behavior', () => {
+  const nullPrototypeOptions = Object.create(null);
+  Object.defineProperty(nullPrototypeOptions, 'showNoDueNotice', {
+    enumerable: true,
+    value: true,
+  });
+
+  assert.equal(shouldShowNoDueNoticeForFetchNextCardOptions(), false);
+  assert.equal(shouldShowNoDueNoticeForFetchNextCardOptions(null), false);
+  assert.equal(shouldShowNoDueNoticeForFetchNextCardOptions({}), false);
+  assert.equal(
+    shouldShowNoDueNoticeForFetchNextCardOptions({ showNoDueNotice: true }),
+    true,
+  );
+  assert.equal(
+    shouldShowNoDueNoticeForFetchNextCardOptions({ showNoDueNotice: 'yes' }),
+    true,
+  );
+  assert.equal(
+    shouldShowNoDueNoticeForFetchNextCardOptions({ showNoDueNotice: false }),
+    false,
+  );
+  assert.equal(
+    shouldShowNoDueNoticeForFetchNextCardOptions(nullPrototypeOptions),
+    true,
+  );
+});
+
+test('shouldShowNoDueNoticeForFetchNextCardOptions ignores inherited options without invoking getters', () => {
+  const inheritedDataOptions = Object.create({ showNoDueNotice: true });
+
+  assert.equal(
+    shouldShowNoDueNoticeForFetchNextCardOptions(inheritedDataOptions),
+    false,
+  );
+
+  let getterCalls = 0;
+  const accessorPrototype = {};
+  Object.defineProperty(accessorPrototype, 'showNoDueNotice', {
+    configurable: true,
+    get() {
+      getterCalls += 1;
+      throw new Error('inherited showNoDueNotice getter should not run');
+    },
+  });
+
+  assert.equal(
+    shouldShowNoDueNoticeForFetchNextCardOptions(Object.create(accessorPrototype)),
+    false,
+  );
+  assert.equal(getterCalls, 0);
+});
+
+test('shouldShowNoDueNoticeForFetchNextCardOptions ignores own accessors without invoking getters', () => {
+  let getterCalls = 0;
+  const options = {};
+
+  Object.defineProperty(options, 'showNoDueNotice', {
+    configurable: true,
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      throw new Error('own showNoDueNotice getter should not run');
+    },
+  });
+
+  assert.equal(shouldShowNoDueNoticeForFetchNextCardOptions(options), false);
+  assert.equal(getterCalls, 0);
+});
+
+test('shouldShowNoDueNoticeForFetchNextCardOptions rejects array-shaped options', () => {
+  const options = [];
+  Object.defineProperty(options, 'showNoDueNotice', {
+    configurable: true,
+    enumerable: true,
+    value: true,
+  });
+
+  assert.equal(shouldShowNoDueNoticeForFetchNextCardOptions(options), false);
 });

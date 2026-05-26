@@ -119,10 +119,15 @@ function shouldShowNoDueNoticeForInitialStudySessionRequest(request) {
     );
 }
 
+function shouldShowNoDueNoticeForFetchNextCardOptions(options) {
+  return Boolean(getOwnDataPropertyValue(options, 'showNoDueNotice'));
+}
+
 module.exports = {
   STUDY_SESSION_REQUESTS,
   getStudySessionRequest,
   getValidatedStudySessionDeckListRequest,
   parseDeckId,
+  shouldShowNoDueNoticeForFetchNextCardOptions,
   shouldShowNoDueNoticeForInitialStudySessionRequest,
 };
