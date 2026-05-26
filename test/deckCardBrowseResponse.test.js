@@ -2,7 +2,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  DECK_CARD_BROWSE_FAILURE_MESSAGES,
   MALFORMED_DECK_CARD_BROWSE_PAYLOAD_ERROR,
+  getDeckCardBrowseFailureMessage,
   hasDeckCardBrowseRowPayload,
   hasMatchingCursorFamilies,
   parseDeckCardBrowseResponsePayload,
@@ -49,6 +51,110 @@ function defineThrowingGetter(object, fieldName) {
 
   return () => accessCount;
 }
+
+test('getDeckCardBrowseFailureMessage surfaces own nonblank server errors', () => {
+  const paddedError = '  Deck-card browser is unavailable.  ';
+
+  assert.equal(
+    getDeckCardBrowseFailureMessage({ error: 'Deck-card browser is unavailable.' }),
+    'Deck-card browser is unavailable.',
+  );
+  assert.equal(
+    getDeckCardBrowseFailureMessage({ error: paddedError }),
+    paddedError,
+  );
+});
+
+test('getDeckCardBrowseFailureMessage falls back for missing, non-string, and blank errors', () => {
+  [
+    {},
+    { error: null },
+    { error: 0 },
+    { error: false },
+    { error: { message: 'Nested error should not surface.' } },
+    { error: '   ' },
+    null,
+  ].forEach((payload) => {
+    assert.equal(
+      getDeckCardBrowseFailureMessage(payload),
+      DECK_CARD_BROWSE_FAILURE_MESSAGES.loadFailed,
+    );
+  });
+
+  assert.equal(
+    getDeckCardBrowseFailureMessage({}, { append: true }),
+    DECK_CARD_BROWSE_FAILURE_MESSAGES.loadMoreFailed,
+  );
+  assert.equal(
+    getDeckCardBrowseFailureMessage({ error: '   ' }, { append: true }),
+    DECK_CARD_BROWSE_FAILURE_MESSAGES.loadMoreFailed,
+  );
+  assert.equal(
+    getDeckCardBrowseFailureMessage({ error: 503 }, { append: true }),
+    DECK_CARD_BROWSE_FAILURE_MESSAGES.loadMoreFailed,
+  );
+});
+
+test('getDeckCardBrowseFailureMessage accepts null-prototype own data errors', () => {
+  const payload = Object.create(null);
+  payload.error = 'Deck-card browser rejected this request.';
+
+  assert.equal(
+    getDeckCardBrowseFailureMessage(payload),
+    'Deck-card browser rejected this request.',
+  );
+});
+
+test('getDeckCardBrowseFailureMessage ignores inherited errors', () => {
+  const payload = Object.create({
+    error: 'Inherited error should not surface.',
+  });
+
+  assert.equal(
+    getDeckCardBrowseFailureMessage(payload),
+    DECK_CARD_BROWSE_FAILURE_MESSAGES.loadFailed,
+  );
+});
+
+test('getDeckCardBrowseFailureMessage ignores own accessor errors without invoking getters', () => {
+  let getterCalled = false;
+  const payload = {};
+
+  Object.defineProperty(payload, 'error', {
+    enumerable: true,
+    get() {
+      getterCalled = true;
+      return 'Getter error should not surface.';
+    },
+  });
+
+  assert.equal(
+    getDeckCardBrowseFailureMessage(payload, { append: true }),
+    DECK_CARD_BROWSE_FAILURE_MESSAGES.loadMoreFailed,
+  );
+  assert.equal(getterCalled, false);
+});
+
+test('getDeckCardBrowseFailureMessage ignores inherited accessor errors without invoking getters', () => {
+  let getterCalled = false;
+  const prototype = {};
+
+  Object.defineProperty(prototype, 'error', {
+    enumerable: true,
+    get() {
+      getterCalled = true;
+      return 'Inherited getter error should not surface.';
+    },
+  });
+
+  const payload = Object.create(prototype);
+
+  assert.equal(
+    getDeckCardBrowseFailureMessage(payload),
+    DECK_CARD_BROWSE_FAILURE_MESSAGES.loadFailed,
+  );
+  assert.equal(getterCalled, false);
+});
 
 test('parseDeckCardBrowseResponsePayload accepts an empty page without a cursor', () => {
   const payload = { cards: [] };

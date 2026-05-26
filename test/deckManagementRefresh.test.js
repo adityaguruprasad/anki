@@ -260,6 +260,10 @@ test('fetchDeckCards validates successful browse payloads before storing them', 
   const authExpiredIndex = body.indexOf('if (handleAuthExpiredResponse(response, onAuthExpired))');
   const jsonIndex = body.indexOf('const data = await response.json().catch(() => ({}));');
   const responseOkIndex = body.indexOf('if (!response.ok) {');
+  const nonOkFailureIndex = body.indexOf(
+    'setDeckCardBrowserFailure(getDeckCardBrowseFailureMessage(data, { append }));',
+    responseOkIndex,
+  );
   const validationIndex = body.indexOf('browseResponse = parseDeckCardBrowseResponsePayload(data, {');
   const expectedDeckIdIndex = body.indexOf('expectedDeckId: deckId,', validationIndex);
   const staleGuardIndex = body.lastIndexOf('if (!isCurrentDeckCardBrowserResponse()) {', validationIndex);
@@ -275,12 +279,17 @@ test('fetchDeckCards validates successful browse payloads before storing them', 
   );
   assert.match(
     deckSource,
-    /const \{ parseDeckCardBrowseResponsePayload \} = deckCardBrowseResponse;/,
-    'Expected deck.js to destructure the card-browser response parser',
+    /const \{\s*getDeckCardBrowseFailureMessage,\s*parseDeckCardBrowseResponsePayload,\s*\} = deckCardBrowseResponse;/,
+    'Expected deck.js to destructure the card-browser response helpers',
   );
   assert.notEqual(authExpiredIndex, -1, 'Expected auth-expired handling to remain in fetchDeckCards');
   assert.notEqual(jsonIndex, -1, 'Expected fetchDeckCards to parse response JSON');
   assert.notEqual(responseOkIndex, -1, 'Expected fetchDeckCards to keep non-2xx handling');
+  assert.notEqual(
+    nonOkFailureIndex,
+    -1,
+    'Expected non-2xx browse failures to use the descriptor-safe error helper',
+  );
   assert.notEqual(staleGuardIndex, -1, 'Expected fetchDeckCards to keep stale response protection');
   assert.notEqual(validationIndex, -1, 'Expected fetchDeckCards to validate successful payloads');
   assert.notEqual(
@@ -292,6 +301,8 @@ test('fetchDeckCards validates successful browse payloads before storing them', 
   assert.notEqual(setCursorIndex, -1, 'Expected fetchDeckCards to store the parsed cursor');
   assert.ok(authExpiredIndex < jsonIndex, 'Expected auth expiration handling before JSON parsing');
   assert.ok(jsonIndex < responseOkIndex, 'Expected non-2xx handling after JSON parsing');
+  assert.ok(responseOkIndex < nonOkFailureIndex, 'Expected non-2xx failures after response status check');
+  assert.ok(nonOkFailureIndex < staleGuardIndex, 'Expected successful-payload handling after non-2xx failures');
   assert.ok(responseOkIndex < staleGuardIndex, 'Expected success stale guard after non-2xx handling');
   assert.ok(staleGuardIndex < validationIndex, 'Expected validation after the stale response guard');
   assert.ok(validationIndex < expectedDeckIdIndex, 'Expected expected-deck validation to be part of parsing');
@@ -302,6 +313,7 @@ test('fetchDeckCards validates successful browse payloads before storing them', 
     /setDeckCardBrowserFailure\(append \? 'Unable to load more cards\.' : 'Unable to load cards\.'\);/,
     'Expected malformed successful payloads to use the retryable browser failure path',
   );
+  assert.doesNotMatch(body, /data\.error/);
   assert.doesNotMatch(body, /Array\.isArray\(data\.cards\) \? data\.cards : \[\]/);
   assert.doesNotMatch(body, /nextCursor: data\.nextCursor \|\| null/);
 });

@@ -16,6 +16,10 @@ const {
 } = require('./recordDataProperty');
 
 const MALFORMED_DECK_CARD_BROWSE_PAYLOAD_ERROR = 'Malformed deck-card browse payload';
+const DECK_CARD_BROWSE_FAILURE_MESSAGES = Object.freeze({
+  loadFailed: 'Unable to load cards.',
+  loadMoreFailed: 'Unable to load more cards.',
+});
 
 function hasUsableId(value) {
   return hasRouteSafeCardId(value);
@@ -118,6 +122,18 @@ function hasMatchingCursorFamilies(cursor) {
   );
 }
 
+function getDeckCardBrowseFailureMessage(payload, options = {}) {
+  const serverError = getOwnDataPropertyValue(payload, 'error');
+
+  if (typeof serverError === 'string' && serverError.trim()) {
+    return serverError;
+  }
+
+  return options.append
+    ? DECK_CARD_BROWSE_FAILURE_MESSAGES.loadMoreFailed
+    : DECK_CARD_BROWSE_FAILURE_MESSAGES.loadFailed;
+}
+
 function parseDeckCardBrowseNextCursor(payload) {
   const nextCursorDescriptor = getOwnRecordPropertyDescriptor(payload, 'nextCursor');
   if (nextCursorDescriptor === undefined) {
@@ -178,7 +194,9 @@ function parseDeckCardBrowseResponsePayload(payload, options = {}) {
 }
 
 module.exports = {
+  DECK_CARD_BROWSE_FAILURE_MESSAGES,
   MALFORMED_DECK_CARD_BROWSE_PAYLOAD_ERROR,
+  getDeckCardBrowseFailureMessage,
   hasDeckCardBrowseRowPayload,
   hasMatchingCursorFamilies,
   parseDeckCardBrowseResponsePayload,

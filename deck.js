@@ -63,7 +63,10 @@ const {
   incrementDeckCardCounts,
   mergeUniqueCards,
 } = deckCardState;
-const { parseDeckCardBrowseResponsePayload } = deckCardBrowseResponse;
+const {
+  getDeckCardBrowseFailureMessage,
+  parseDeckCardBrowseResponsePayload,
+} = deckCardBrowseResponse;
 const {
   getDeckCardMutationFailureMessage,
   parseDeckCardMutationResponsePayload,
@@ -888,7 +891,7 @@ const DeckManagement = ({ env, onAuthExpired }) => {
         }
 
         clearCurrentAppendRequest();
-        setDeckCardBrowserFailure(data.error || (append ? 'Unable to load more cards.' : 'Unable to load cards.'));
+        setDeckCardBrowserFailure(getDeckCardBrowseFailureMessage(data, { append }));
         return;
       }
 
