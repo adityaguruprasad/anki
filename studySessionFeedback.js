@@ -116,11 +116,12 @@ function getValidatedStudySessionSubmissionResponse(response, options = {}) {
   }
 
   // expectedId opts callers into submitted-card matching; omitting it preserves legacy shape validation.
+  const expectedId = getOwnDataPropertyValue(options, 'expectedId');
   if (
-    options.expectedId !== undefined
+    expectedId !== undefined
     && (
-      !hasRouteSafeCardId(options.expectedId)
-      || !hasSameRouteSafeCardId(cardId, options.expectedId)
+      !hasRouteSafeCardId(expectedId)
+      || !hasSameRouteSafeCardId(cardId, expectedId)
     )
   ) {
     return null;
@@ -141,9 +142,12 @@ function formatNextReviewDate(nextReviewDate) {
 }
 
 function getStudySessionSubmissionFeedback(options = {}) {
-  const qualityLabel = getStudySessionQualityLabel(options.quality);
+  const quality = getOwnDataPropertyValue(options, 'quality');
+  const response = getOwnDataPropertyValue(options, 'response');
+  const formatDateOption = getOwnDataPropertyValue(options, 'formatDate');
+  const qualityLabel = getStudySessionQualityLabel(quality);
   const messageStart = qualityLabel ? `Answered ${qualityLabel}.` : 'Answer submitted.';
-  const card = getOwnDataPropertyValue(options.response, 'card');
+  const card = getOwnDataPropertyValue(response, 'card');
   const nextReviewDate = getValidNextReviewDate(getOwnDataPropertyValue(card, 'next_review'));
 
   if (!nextReviewDate) {
@@ -152,8 +156,8 @@ function getStudySessionSubmissionFeedback(options = {}) {
     };
   }
 
-  const formatDate = typeof options.formatDate === 'function'
-    ? options.formatDate
+  const formatDate = typeof formatDateOption === 'function'
+    ? formatDateOption
     : formatNextReviewDate;
 
   return {

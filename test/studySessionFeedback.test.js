@@ -47,6 +47,27 @@ function defineThrowingGetter(object, fieldName) {
   });
 }
 
+function defineTrackedThrowingGetter(object, fieldName) {
+  const tracker = { calls: 0 };
+
+  Object.defineProperty(object, fieldName, {
+    configurable: true,
+    get() {
+      tracker.calls += 1;
+      throw new Error(`Unexpected ${fieldName} getter invocation`);
+    },
+  });
+
+  return tracker;
+}
+
+function getDefaultFormattedNextReview(nextReview) {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(nextReview));
+}
+
 test('getStudySessionQualityLabel maps visible study answer qualities', () => {
   assert.equal(getStudySessionQualityLabel(1), 'Hard');
   assert.equal(getStudySessionQualityLabel(3), 'Good');
@@ -153,6 +174,135 @@ test('getStudySessionSubmissionFeedback ignores accessor-backed response fields 
     }),
     { message: 'Answered Good. Review schedule updated.' },
   );
+});
+
+test('getStudySessionSubmissionFeedback accepts null-prototype own-data options', () => {
+  const nextReview = '2026-05-09T14:30:00.000Z';
+  const options = createNullPrototypeRecord({
+    quality: 3,
+    response: createNullPrototypeRecord({
+      success: true,
+      card: createNullPrototypeRecord({
+        next_review: nextReview,
+      }),
+    }),
+    formatDate: (date) => date.toISOString(),
+  });
+
+  assert.deepEqual(getStudySessionSubmissionFeedback(options), {
+    message: `Answered Good. Next review: ${nextReview}.`,
+  });
+});
+
+test('getStudySessionSubmissionFeedback ignores inherited option fields without invoking getters', () => {
+  const inheritedDataOptions = Object.create({
+    quality: 3,
+    response: {
+      success: true,
+      card: {
+        next_review: '2026-05-09T14:30:00.000Z',
+      },
+    },
+    formatDate() {
+      return 'inherited date';
+    },
+  });
+
+  assert.deepEqual(getStudySessionSubmissionFeedback(inheritedDataOptions), {
+    message: 'Answer submitted. Review schedule updated.',
+  });
+
+  const accessorPrototype = {};
+  const qualityTracker = defineTrackedThrowingGetter(accessorPrototype, 'quality');
+  const responseTracker = defineTrackedThrowingGetter(accessorPrototype, 'response');
+  const formatDateTracker = defineTrackedThrowingGetter(accessorPrototype, 'formatDate');
+
+  assert.deepEqual(getStudySessionSubmissionFeedback(Object.create(accessorPrototype)), {
+    message: 'Answer submitted. Review schedule updated.',
+  });
+  assert.equal(qualityTracker.calls, 0);
+  assert.equal(responseTracker.calls, 0);
+  assert.equal(formatDateTracker.calls, 0);
+
+  const nextReview = '2026-05-09T14:30:00.000Z';
+  const inheritedFormatDateOptions = Object.create({
+    formatDate() {
+      return 'inherited date';
+    },
+  });
+  inheritedFormatDateOptions.quality = 3;
+  inheritedFormatDateOptions.response = {
+    success: true,
+    card: {
+      next_review: nextReview,
+    },
+  };
+
+  assert.deepEqual(getStudySessionSubmissionFeedback(inheritedFormatDateOptions), {
+    message: `Answered Good. Next review: ${getDefaultFormattedNextReview(nextReview)}.`,
+  });
+});
+
+test('getStudySessionSubmissionFeedback ignores own accessor-backed option fields without invoking getters', () => {
+  const accessorOptions = {};
+  const qualityTracker = defineTrackedThrowingGetter(accessorOptions, 'quality');
+  const responseTracker = defineTrackedThrowingGetter(accessorOptions, 'response');
+  const formatDateTracker = defineTrackedThrowingGetter(accessorOptions, 'formatDate');
+
+  assert.deepEqual(getStudySessionSubmissionFeedback(accessorOptions), {
+    message: 'Answer submitted. Review schedule updated.',
+  });
+  assert.equal(qualityTracker.calls, 0);
+  assert.equal(responseTracker.calls, 0);
+  assert.equal(formatDateTracker.calls, 0);
+
+  const nextReview = '2026-05-09T14:30:00.000Z';
+  const formatDateAccessorOptions = {
+    quality: 3,
+    response: {
+      success: true,
+      card: {
+        next_review: nextReview,
+      },
+    },
+  };
+  const fallbackFormatDateTracker = defineTrackedThrowingGetter(
+    formatDateAccessorOptions,
+    'formatDate',
+  );
+
+  assert.deepEqual(getStudySessionSubmissionFeedback(formatDateAccessorOptions), {
+    message: `Answered Good. Next review: ${getDefaultFormattedNextReview(nextReview)}.`,
+  });
+  assert.equal(fallbackFormatDateTracker.calls, 0);
+});
+
+test('getStudySessionSubmissionFeedback ignores array-shaped options even with own named fields', () => {
+  const options = [];
+  options.quality = 3;
+  options.response = {
+    success: true,
+    card: {
+      next_review: '2026-05-09T14:30:00.000Z',
+    },
+  };
+  options.formatDate = () => 'array date';
+
+  assert.deepEqual(getStudySessionSubmissionFeedback(options), {
+    message: 'Answer submitted. Review schedule updated.',
+  });
+
+  const accessorOptions = [];
+  const qualityTracker = defineTrackedThrowingGetter(accessorOptions, 'quality');
+  const responseTracker = defineTrackedThrowingGetter(accessorOptions, 'response');
+  const formatDateTracker = defineTrackedThrowingGetter(accessorOptions, 'formatDate');
+
+  assert.deepEqual(getStudySessionSubmissionFeedback(accessorOptions), {
+    message: 'Answer submitted. Review schedule updated.',
+  });
+  assert.equal(qualityTracker.calls, 0);
+  assert.equal(responseTracker.calls, 0);
+  assert.equal(formatDateTracker.calls, 0);
 });
 
 test('getStudySessionSubmissionRecovery maps validated stale-card conflicts to next-card recovery', () => {
@@ -291,6 +441,81 @@ test('getValidatedStudySessionSubmissionResponse accepts null-prototype response
     getValidatedStudySessionSubmissionResponse(response, { expectedId: ' 0007 ' }),
     response,
   );
+});
+
+test('getValidatedStudySessionSubmissionResponse accepts null-prototype own-data options', () => {
+  const response = {
+    success: true,
+    card: createValidSubmissionCard(),
+  };
+
+  assert.equal(
+    getValidatedStudySessionSubmissionResponse(
+      response,
+      createNullPrototypeRecord({ expectedId: ' 0007 ' }),
+    ),
+    response,
+  );
+  assert.equal(
+    getValidatedStudySessionSubmissionResponse(
+      response,
+      createNullPrototypeRecord({ expectedId: 8 }),
+    ),
+    null,
+  );
+});
+
+test('getValidatedStudySessionSubmissionResponse ignores inherited option fields without invoking getters', () => {
+  const response = {
+    success: true,
+    card: createValidSubmissionCard(),
+  };
+
+  assert.equal(
+    getValidatedStudySessionSubmissionResponse(
+      response,
+      Object.create({ expectedId: 8 }),
+    ),
+    response,
+  );
+
+  const accessorPrototype = {};
+  const expectedIdTracker = defineTrackedThrowingGetter(accessorPrototype, 'expectedId');
+
+  assert.equal(
+    getValidatedStudySessionSubmissionResponse(response, Object.create(accessorPrototype)),
+    response,
+  );
+  assert.equal(expectedIdTracker.calls, 0);
+});
+
+test('getValidatedStudySessionSubmissionResponse ignores own accessor-backed option fields without invoking getters', () => {
+  const response = {
+    success: true,
+    card: createValidSubmissionCard(),
+  };
+  const options = {};
+  const expectedIdTracker = defineTrackedThrowingGetter(options, 'expectedId');
+
+  assert.equal(getValidatedStudySessionSubmissionResponse(response, options), response);
+  assert.equal(expectedIdTracker.calls, 0);
+});
+
+test('getValidatedStudySessionSubmissionResponse ignores array-shaped options even with own named fields', () => {
+  const response = {
+    success: true,
+    card: createValidSubmissionCard(),
+  };
+  const options = [];
+  options.expectedId = 8;
+
+  assert.equal(getValidatedStudySessionSubmissionResponse(response, options), response);
+
+  const accessorOptions = [];
+  const expectedIdTracker = defineTrackedThrowingGetter(accessorOptions, 'expectedId');
+
+  assert.equal(getValidatedStudySessionSubmissionResponse(response, accessorOptions), response);
+  assert.equal(expectedIdTracker.calls, 0);
 });
 
 test('getValidatedStudySessionSubmissionResponse rejects inherited response and card fields without invoking getters', () => {
