@@ -70,6 +70,7 @@ function hasDeckCardMutationPayload(payload, options = {}) {
   return (
     isObjectRecord(payload)
     && hasUsableCardId(id)
+    && hasRouteSafeId(deckId)
     && isValidCardContent(frontContent)
     && isValidCardContent(backContent)
     && hasValidMutationNextReview(payload)
@@ -79,7 +80,6 @@ function hasDeckCardMutationPayload(payload, options = {}) {
       !hasExpectedDeckId
       || (
         hasRouteSafeId(expectedDeckId)
-        && hasRouteSafeId(deckId)
         && hasSameDeckId(deckId, expectedDeckId)
       )
     )

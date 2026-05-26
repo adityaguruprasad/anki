@@ -18,6 +18,7 @@ const VALID_NEXT_REVIEW = '2026-05-10T12:00:00.000Z';
 function createValidCreatedCard(overrides = {}) {
   return {
     id: 11,
+    deck_id: 42,
     front_content: 'Front',
     back_content: 'Back',
     next_review: VALID_NEXT_REVIEW,
@@ -478,6 +479,19 @@ test('card-create response completion converts malformed current successes to ge
       isCurrent: true,
       responseOk: true,
       payload: { id: 11, front_content: 'Front' },
+    }),
+    {
+      type: CARD_CREATE_COMPLETION_TYPES.INVALID_RESPONSE,
+      ignored: false,
+      error: CARD_CREATE_MESSAGES.createFailed,
+    },
+  );
+
+  assert.deepEqual(
+    getCardCreateResponseCompletion({
+      isCurrent: true,
+      responseOk: true,
+      payload: createValidCreatedCard({ deck_id: undefined }),
     }),
     {
       type: CARD_CREATE_COMPLETION_TYPES.INVALID_RESPONSE,

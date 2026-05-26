@@ -16,6 +16,7 @@ const VALID_NEXT_REVIEW = '2026-05-10T12:00:00.000Z';
 function createValidCardPayload(overrides = {}) {
   return {
     id: 7,
+    deck_id: 42,
     front_content: 'Front',
     back_content: 'Back',
     next_review: VALID_NEXT_REVIEW,
@@ -89,6 +90,7 @@ function defineThrowingGetter(record, fieldName) {
 test('parseDeckCardMutationResponsePayload preserves valid cards and extra fields', () => {
   const payload = {
     id: '0007',
+    deck_id: '00042',
     front_content: 'Front',
     back_content: 'Back',
     next_review: '2026-05-10T12:00:00.000Z',
@@ -225,6 +227,15 @@ test('parseDeckCardMutationResponsePayload accepts matching expected deck ids', 
   assert.equal(hasDeckCardMutationPayload(payload, { expectedDeckId: 42 }), true);
 });
 
+test('parseDeckCardMutationResponsePayload accepts route-safe deck ids without expectedDeckId', () => {
+  const payload = createValidCardPayload({
+    deck_id: '00042',
+  });
+
+  assert.equal(parseDeckCardMutationResponsePayload(payload), payload);
+  assert.equal(hasDeckCardMutationPayload(payload), true);
+});
+
 test('parseDeckCardMutationResponsePayload rejects malformed top-level payloads', () => {
   [
     undefined,
@@ -257,6 +268,28 @@ test('parseDeckCardMutationResponsePayload rejects missing or unusable card ids'
     createValidCardPayload({ id: Number.MAX_SAFE_INTEGER }),
     createValidCardPayload({ id: Number.MAX_SAFE_INTEGER + 1 }),
     createValidCardPayload({ id: {} }),
+  ].forEach(assertMalformed);
+});
+
+test('parseDeckCardMutationResponsePayload rejects missing or unusable deck ids', () => {
+  [
+    createValidCardPayload({ deck_id: undefined }),
+    createValidCardPayload({ deck_id: null }),
+    createValidCardPayload({ deck_id: '' }),
+    createValidCardPayload({ deck_id: '  ' }),
+    createValidCardPayload({ deck_id: 'deck-42' }),
+    createValidCardPayload({ deck_id: '0' }),
+    createValidCardPayload({ deck_id: '-1' }),
+    createValidCardPayload({ deck_id: '1.5' }),
+    createValidCardPayload({ deck_id: String(MAX_POSTGRES_SERIAL_ID + 1) }),
+    createValidCardPayload({ deck_id: 0 }),
+    createValidCardPayload({ deck_id: -1 }),
+    createValidCardPayload({ deck_id: 1.5 }),
+    createValidCardPayload({ deck_id: Number.NaN }),
+    createValidCardPayload({ deck_id: Number.POSITIVE_INFINITY }),
+    createValidCardPayload({ deck_id: MAX_POSTGRES_SERIAL_ID + 1 }),
+    createValidCardPayload({ deck_id: Number.MAX_SAFE_INTEGER }),
+    createValidCardPayload({ deck_id: {} }),
   ].forEach(assertMalformed);
 });
 
@@ -402,6 +435,7 @@ test('parseDeckCardMutationResponsePayload rejects prototype-backed fields witho
 test('hasDeckCardMutationPayload can opt out of scheduling metadata for smaller card contracts', () => {
   const payload = {
     id: 7,
+    deck_id: 42,
     front_content: 'Front',
     back_content: 'Back',
     next_review: VALID_NEXT_REVIEW,
@@ -452,9 +486,9 @@ test('parseDeckCardMutationResponsePayload rejects responses for a different exp
   assert.equal(hasDeckCardMutationPayload({ ...payload, id: 7 }, { expectedId: null }), false);
 });
 
-test('parseDeckCardMutationResponsePayload rejects missing or mismatched expected deck ids', () => {
+test('parseDeckCardMutationResponsePayload rejects invalid or mismatched deck ids with expectedDeckId', () => {
   [
-    createValidCardPayload(),
+    createValidCardPayload({ deck_id: undefined }),
     createValidCardPayload({ deck_id: 8 }),
     createValidCardPayload({ deck_id: 'deck-7' }),
     createValidCardPayload({ deck_id: 0 }),
