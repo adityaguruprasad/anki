@@ -5,6 +5,10 @@ const {
   selectStudyDeckTarget,
 } = require('./dashboardDeckTarget');
 const { MAX_POSTGRES_SERIAL_ID } = require('./cardIdentifier');
+const {
+  getOwnArrayDataPropertyValue,
+  getOwnDataPropertyValue,
+} = require('./recordDataProperty');
 
 const STUDY_SESSION_REQUESTS = {
   LOAD_CARDS: 'load-cards',
@@ -36,12 +40,18 @@ function selectDueDeckForRecovery(decks) {
 
   let selectedDeck = null;
 
-  for (const deck of decks) {
+  for (let index = 0; index < decks.length; index += 1) {
+    const deck = getOwnArrayDataPropertyValue(decks, index);
     if (!hasDueCards(deck)) {
       continue;
     }
 
-    if (!selectedDeck || deck.dueCards > selectedDeck.dueCards) {
+    const dueCards = getOwnDataPropertyValue(deck, 'dueCards');
+    const selectedDueCards = selectedDeck
+      ? getOwnDataPropertyValue(selectedDeck, 'dueCards')
+      : null;
+
+    if (!selectedDeck || dueCards > selectedDueCards) {
       selectedDeck = deck;
     }
   }
@@ -75,7 +85,7 @@ function getStudySessionRequest(search, decks) {
   }
 
   const targetDeck = selectStudySessionTarget(decks);
-  const targetDeckId = targetDeck ? normalizeStudyDeckId(targetDeck.id) : null;
+  const targetDeckId = normalizeStudyDeckId(getOwnDataPropertyValue(targetDeck, 'id'));
 
   if (targetDeckId && hasDueCards(targetDeck)) {
     return {

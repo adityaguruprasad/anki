@@ -69,6 +69,55 @@ test('getStudySessionRequest preserves an unrouteable due deck instead of loadin
   assert.equal(request.deck, unrouteableDueDeck);
 });
 
+test('getStudySessionRequest recovery selection requires own data deck entries', () => {
+  const fallbackDeck = { id: 7, name: 'Math', totalCards: 10, dueCards: 0 };
+  const unrouteableDueDeck = {
+    id: 'science deck',
+    name: 'Science',
+    totalCards: 5,
+    dueCards: 4,
+  };
+
+  const ownDataRequest = getStudySessionRequest('', [fallbackDeck, unrouteableDueDeck]);
+  assert.deepEqual(ownDataRequest, {
+    type: STUDY_SESSION_REQUESTS.NO_DUE_DECK,
+    deck: unrouteableDueDeck,
+  });
+  assert.equal(ownDataRequest.deck, unrouteableDueDeck);
+
+  const inheritedEntryPayload = [fallbackDeck];
+  inheritedEntryPayload.length = 2;
+  const inheritedEntryPrototype = Object.create(Array.prototype);
+  Object.defineProperty(inheritedEntryPrototype, '1', {
+    configurable: true,
+    enumerable: true,
+    value: unrouteableDueDeck,
+  });
+  Object.setPrototypeOf(inheritedEntryPayload, inheritedEntryPrototype);
+
+  assert.deepEqual(getStudySessionRequest('', inheritedEntryPayload), {
+    type: STUDY_SESSION_REQUESTS.NO_DUE_DECK,
+    deck: fallbackDeck,
+  });
+
+  const accessorEntryPayload = [fallbackDeck];
+  let getterCalls = 0;
+  Object.defineProperty(accessorEntryPayload, '1', {
+    configurable: true,
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      throw new Error('deck entry getter should not run');
+    },
+  });
+
+  assert.deepEqual(getStudySessionRequest('', accessorEntryPayload), {
+    type: STUDY_SESSION_REQUESTS.NO_DUE_DECK,
+    deck: fallbackDeck,
+  });
+  assert.equal(getterCalls, 0);
+});
+
 test('getStudySessionRequest reports no due deck instead of selecting a non-due fallback for study', () => {
   const fallbackDeck = { id: 1, name: 'Math', totalCards: 10, dueCards: 0 };
 
