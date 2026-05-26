@@ -3557,6 +3557,44 @@ test('GET /api/decks/:deckId/cards accepts nextCursor round-trip with both curso
   assert.equal(db.calls[0].params[3], 3);
 });
 
+test('GET /api/decks/:deckId/cards accepts equivalent complete cursor aliases', async () => {
+  const card = createCardReadRow({
+    id: 2,
+    deck_id: 42,
+    front_content: 'Older card',
+    back_content: 'Answer',
+    created_at: '2026-05-08T12:00:00.000Z',
+    next_review: '2026-05-19T12:00:00.000Z',
+  });
+  const db = createDb([
+    {
+      rowCount: 1,
+      rows: [{ ...card, __cursor_created_at: '2026-05-08T12:00:00.000000Z', __owned_deck_id: 42, __owned_user_id: 1 }],
+    },
+  ]);
+  const req = {
+    params: { deckId: '42' },
+    query: {
+      limit: '2',
+      beforeCreatedAt: '2026-05-08T06:00:00.123456-07:00',
+      beforeId: '0003',
+      cursorCreatedAt: '2026-05-08T13:00:00.123456Z',
+      cursorId: 3,
+    },
+    user: { userId: 1 },
+  };
+  const res = createRes();
+
+  await getCardsByDeck(req, res, db);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, { cards: [card], nextCursor: null });
+  assert.equal(db.calls.length, 1);
+  assert.equal(db.calls[0].params[2], '2026-05-08T13:00:00.123456Z');
+  assert.equal(db.calls[0].params[3], 3);
+  assertBrowseCursorPredicateSql(db.calls[0].sql);
+});
+
 test('GET /api/decks/:deckId/cards rejects conflicting complete cursor families before db access', async () => {
   const conflictingCursors = [
     {
@@ -3570,6 +3608,12 @@ test('GET /api/decks/:deckId/cards rejects conflicting complete cursor families 
       beforeId: '3',
       cursorCreatedAt: '2026-05-08T13:00:00.000Z',
       cursorId: '4',
+    },
+    {
+      beforeCreatedAt: '2026-05-08T13:00:00.123456Z',
+      beforeId: '3',
+      cursorCreatedAt: '2026-05-08T13:00:00.123457Z',
+      cursorId: '3',
     },
   ];
 

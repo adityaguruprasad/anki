@@ -1,5 +1,5 @@
 const { isValidCardContent } = require('./cardContentValidation');
-const { isValidIsoTimestamp } = require('./isoTimestampValidation');
+const { isSameIsoTimestampInstant, isValidIsoTimestamp } = require('./isoTimestampValidation');
 const {
   hasRouteSafeCardId,
   hasRouteSafeId,
@@ -113,7 +113,7 @@ function hasMatchingCursorFamilies(cursor) {
   }
 
   return (
-    cursorCreatedAt === beforeCreatedAt
+    isSameIsoTimestampInstant(cursorCreatedAt, beforeCreatedAt)
     && normalizedCursorId === normalizedBeforeId
   );
 }

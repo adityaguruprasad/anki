@@ -1,6 +1,6 @@
 const { validateCardContent } = require('./cardContentValidation');
 const { validateDeckName } = require('./deckNameValidation');
-const { isValidIsoTimestamp } = require('./isoTimestampValidation');
+const { isSameIsoTimestampInstant, isValidIsoTimestamp } = require('./isoTimestampValidation');
 const {
   getOwnArrayDataPropertyValue,
   getOwnDataPropertyValue,
@@ -1273,7 +1273,10 @@ function validateBrowseCardsCursor(query = {}) {
       return { ok: false, error: cursorIdValidation.error };
     }
 
-    if (beforeCreatedAt !== cursorCreatedAt || beforeIdValidation.value !== cursorIdValidation.value) {
+    if (
+      !isSameIsoTimestampInstant(beforeCreatedAt, cursorCreatedAt)
+      || beforeIdValidation.value !== cursorIdValidation.value
+    ) {
       return {
         ok: false,
         error: 'Invalid cursor: beforeCreatedAt/beforeId and cursorCreatedAt/cursorId must match when both are provided',

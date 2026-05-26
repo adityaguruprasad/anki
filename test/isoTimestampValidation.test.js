@@ -1,7 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { isValidIsoTimestamp } = require('../isoTimestampValidation');
+const {
+  isSameIsoTimestampInstant,
+  isValidIsoTimestamp,
+} = require('../isoTimestampValidation');
 
 test('isValidIsoTimestamp accepts strict API cursor timestamp formats', () => {
   [
@@ -39,4 +42,29 @@ test('isValidIsoTimestamp rejects malformed or impossible timestamps', () => {
   ].forEach((timestamp) => {
     assert.equal(isValidIsoTimestamp(timestamp), false);
   });
+});
+
+test('isSameIsoTimestampInstant compares valid timestamps at UTC microsecond precision', () => {
+  assert.equal(
+    isSameIsoTimestampInstant(
+      '2026-05-08T06:00:00.123456-07:00',
+      '2026-05-08T13:00:00.123456Z',
+    ),
+    true,
+  );
+  assert.equal(
+    isSameIsoTimestampInstant(
+      '2026-05-08T13:00:00.123Z',
+      '2026-05-08T13:00:00.123000+00:00',
+    ),
+    true,
+  );
+  assert.equal(
+    isSameIsoTimestampInstant(
+      '2026-05-08T13:00:00.123456Z',
+      '2026-05-08T13:00:00.123457Z',
+    ),
+    false,
+  );
+  assert.equal(isSameIsoTimestampInstant('not-a-date', '2026-05-08T13:00:00.000Z'), false);
 });

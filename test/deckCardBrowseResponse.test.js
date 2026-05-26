@@ -201,6 +201,12 @@ test('parseDeckCardBrowseResponsePayload preserves valid cursor objects', () => 
       beforeCreatedAt: '2026-05-08T13:00:00.000Z',
       beforeId: 3,
     },
+    {
+      cursorCreatedAt: '2026-05-08T06:00:00.123456-07:00',
+      cursorId: 3,
+      beforeCreatedAt: '2026-05-08T13:00:00.123456Z',
+      beforeId: '0003',
+    },
   ].forEach((nextCursor) => {
     const payload = {
       cards: [{ id: 1, front_content: 'Front', back_content: 'Back' }],
@@ -438,6 +444,14 @@ test('parseDeckCardBrowseResponsePayload rejects partial or blank cursor payload
         cursorCreatedAt: '2026-05-08T13:00:00.000Z',
         cursorId: 3,
         beforeCreatedAt: '2026-05-08T13:00:01.000Z',
+        beforeId: 3,
+      },
+    },
+    {
+      nextCursor: {
+        cursorCreatedAt: '2026-05-08T13:00:00.123456Z',
+        cursorId: 3,
+        beforeCreatedAt: '2026-05-08T13:00:00.123457Z',
         beforeId: 3,
       },
     },
