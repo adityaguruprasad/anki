@@ -4,6 +4,7 @@ const { isSameIsoTimestampInstant, isValidIsoTimestamp } = require('./isoTimesta
 const {
   getOwnArrayDataPropertyValue,
   getOwnDataPropertyValue,
+  getOwnObjectLikePropertyDescriptor,
   getOwnRecordPropertyDescriptor,
   hasOwnDataProperty,
   hasOwnDataPropertyValue,
@@ -798,7 +799,13 @@ function assertDueCardListRow(row, deckId, options = {}) {
 }
 
 function normalizeAllowedEmptySidecarFields(options = {}) {
-  const allowedEmptySidecarFields = options?.allowedEmptySidecarFields;
+  const allowedEmptySidecarFieldsDescriptor = Array.isArray(options)
+    ? undefined
+    : getOwnObjectLikePropertyDescriptor(options, 'allowedEmptySidecarFields');
+  const allowedEmptySidecarFields = isDataPropertyDescriptor(allowedEmptySidecarFieldsDescriptor)
+    ? allowedEmptySidecarFieldsDescriptor.value
+    : undefined;
+
   if (allowedEmptySidecarFields === undefined) {
     return [];
   }
