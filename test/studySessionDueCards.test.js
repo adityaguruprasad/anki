@@ -77,6 +77,94 @@ test('selectValidatedStudySessionDueCard accepts cards anchored to the requested
   assert.equal(hasStudySessionDueCardRowPayload(card, { expectedDeckId: 7 }), true);
 });
 
+test('selectValidatedStudySessionDueCard preserves unanchored behavior when expected deck is absent', () => {
+  const card = {
+    id: 42,
+    front_content: 'Question',
+    back_content: 'Answer',
+  };
+  const nullPrototypeOptions = Object.create(null);
+
+  assert.equal(selectValidatedStudySessionDueCard([card]), card);
+  assert.equal(selectValidatedStudySessionDueCard([card], {}), card);
+  assert.equal(selectValidatedStudySessionDueCard([card], nullPrototypeOptions), card);
+  assert.equal(hasStudySessionDueCardRowPayload(card, { unrelated: 7 }), true);
+});
+
+test('selectValidatedStudySessionDueCard rejects own null expected deck options', () => {
+  const card = {
+    id: 42,
+    deck_id: 7,
+    front_content: 'Question',
+    back_content: 'Answer',
+  };
+  const options = { expectedDeckId: null };
+
+  assertMalformedSelection([card], options);
+  assert.equal(hasStudySessionDueCardRowPayload(card, options), false);
+});
+
+test('selectValidatedStudySessionDueCard preserves null-prototype expected deck options', () => {
+  const card = {
+    id: 42,
+    deck_id: 7,
+    front_content: 'Question',
+    back_content: 'Answer',
+  };
+  const matchingOptions = Object.create(null);
+  matchingOptions.expectedDeckId = '7';
+  const mismatchedOptions = Object.create(null);
+  mismatchedOptions.expectedDeckId = 8;
+  const invalidOptions = Object.create(null);
+  invalidOptions.expectedDeckId = 'deck-7';
+
+  assert.equal(selectValidatedStudySessionDueCard([card], matchingOptions), card);
+  assert.equal(hasStudySessionDueCardRowPayload(card, matchingOptions), true);
+  assertMalformedSelection([card], mismatchedOptions);
+  assert.equal(hasStudySessionDueCardRowPayload(card, mismatchedOptions), false);
+  assertMalformedSelection([card], invalidOptions);
+  assert.equal(hasStudySessionDueCardRowPayload(card, invalidOptions), false);
+});
+
+test('selectValidatedStudySessionDueCard ignores unsafe expected deck option shapes without invoking getters', () => {
+  const card = {
+    id: 42,
+    front_content: 'Question',
+    back_content: 'Answer',
+  };
+  const inheritedDataOptions = Object.create({ expectedDeckId: 7 });
+  const ownAccessorOptions = {};
+  const getOwnAccessCount = defineThrowingGetter(ownAccessorOptions, 'expectedDeckId');
+  const inheritedAccessorPrototype = {};
+  const getInheritedAccessCount = defineThrowingGetter(
+    inheritedAccessorPrototype,
+    'expectedDeckId',
+  );
+  const inheritedAccessorOptions = Object.create(inheritedAccessorPrototype);
+  const arrayDataOptions = [];
+  arrayDataOptions.expectedDeckId = 7;
+  const arrayAccessorOptions = [];
+  const getArrayAccessCount = defineThrowingGetter(arrayAccessorOptions, 'expectedDeckId');
+
+  [
+    inheritedDataOptions,
+    ownAccessorOptions,
+    inheritedAccessorOptions,
+    null,
+    7,
+    'deck-7',
+    true,
+    arrayDataOptions,
+    arrayAccessorOptions,
+  ].forEach((options) => {
+    assert.equal(selectValidatedStudySessionDueCard([card], options), card);
+    assert.equal(hasStudySessionDueCardRowPayload(card, options), true);
+  });
+  assert.equal(getOwnAccessCount(), 0);
+  assert.equal(getInheritedAccessCount(), 0);
+  assert.equal(getArrayAccessCount(), 0);
+});
+
 test('selectValidatedStudySessionDueCard rejects cards outside the requested deck', () => {
   const baseCard = {
     id: 42,

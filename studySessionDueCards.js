@@ -20,12 +20,12 @@ function hasMatchingExpectedDeckId(deckId, expectedDeckId) {
 }
 
 function hasStudySessionDueCardRowPayload(card, options = {}) {
-  const { expectedDeckId } = options;
   if (!isObjectRecord(card)) {
     return false;
   }
 
-  // Only omitted/undefined preserves legacy unanchored callers; null or invalid values opt into validation and fail.
+  // Only own data expectedDeckId values anchor; omitted/undefined preserves legacy unanchored callers.
+  const expectedDeckId = getOwnDataPropertyValue(options, 'expectedDeckId');
   const hasExpectedDeckId = expectedDeckId !== undefined;
   const id = getOwnDataPropertyValue(card, 'id');
   const deckId = getOwnDataPropertyValue(card, 'deck_id');
