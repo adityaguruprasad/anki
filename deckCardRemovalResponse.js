@@ -7,6 +7,7 @@ const {
 } = require('./recordDataProperty');
 
 const MALFORMED_DECK_CARD_REMOVAL_PAYLOAD_ERROR = 'Malformed deck-card removal payload';
+const DEFAULT_DECK_CARD_REMOVAL_FAILURE_MESSAGE = 'Unable to remove card.';
 // Forward only caller-controlled match options accepted by hasDeckCardMutationPayload;
 // delete echoes always fix requireSchedulingMetadata to false internally. Non-enumerable
 // descriptors are skipped first to match object-spread visibility without invoking getters.
@@ -70,8 +71,26 @@ function parseDeckCardRemovalSuccessPayload(payload, options = {}) {
   return payload;
 }
 
+function getDeckCardRemovalFailureMessage(
+  payload,
+  fallbackMessage = DEFAULT_DECK_CARD_REMOVAL_FAILURE_MESSAGE,
+) {
+  const serverError = getOwnDataPropertyValue(payload, 'error');
+
+  if (typeof serverError === 'string') {
+    const error = serverError.trim();
+    if (error) {
+      return error;
+    }
+  }
+
+  return fallbackMessage;
+}
+
 module.exports = {
+  DEFAULT_DECK_CARD_REMOVAL_FAILURE_MESSAGE,
   MALFORMED_DECK_CARD_REMOVAL_PAYLOAD_ERROR,
+  getDeckCardRemovalFailureMessage,
   hasDeckCardRemovalSuccessPayload,
   parseDeckCardRemovalSuccessPayload,
 };

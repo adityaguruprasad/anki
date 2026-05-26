@@ -347,8 +347,8 @@ test('card mutations validate successful payloads before updating visible state'
   );
   assert.match(
     deckSource,
-    /const \{ parseDeckCardMutationResponsePayload \} = deckCardMutationResponse;/,
-    'Expected deck.js to destructure the card-mutation response parser',
+    /const \{[\s\S]*getDeckCardMutationFailureMessage,[\s\S]*parseDeckCardMutationResponsePayload,[\s\S]*\} = deckCardMutationResponse;/,
+    'Expected deck.js to destructure the card-mutation response helpers',
   );
 
   assert.notEqual(addAuthExpiredIndex, -1, 'Expected auth-expired handling to remain in addCard');
@@ -400,8 +400,8 @@ test('card mutations validate successful payloads before updating visible state'
   assert.ok(saveValidationIndex < saveEditFormIndex, 'Expected saveCard validation before edit form writes');
   assert.match(
     saveBody.slice(saveResponseOkIndex, saveValidationIndex),
-    /error: data\.error \|\| 'Unable to save card\.'/,
-    'Expected saveCard non-2xx responses to keep backend error copy behavior',
+    /error: getDeckCardMutationFailureMessage\(data\),/,
+    'Expected saveCard non-2xx responses to use safe backend error copy behavior',
   );
   assert.match(
     saveBody.slice(saveValidationIndex, saveMergeIndex),
@@ -580,8 +580,8 @@ test('deleteCard validates successful removal payloads before updating visible s
   );
   assert.match(
     deckSource,
-    /const \{ parseDeckCardRemovalSuccessPayload \} = deckCardRemovalResponse;/,
-    'Expected deck.js to destructure the card-removal response parser',
+    /const \{[\s\S]*getDeckCardRemovalFailureMessage,[\s\S]*parseDeckCardRemovalSuccessPayload,[\s\S]*\} = deckCardRemovalResponse;/,
+    'Expected deck.js to destructure the card-removal response helpers',
   );
 
   assert.notEqual(authExpiredIndex, -1, 'Expected auth-expired handling to remain in deleteCard');
@@ -603,8 +603,8 @@ test('deleteCard validates successful removal payloads before updating visible s
   assert.ok(validationIndex < silentRefreshIndex, 'Expected deleteCard validation before silent refresh');
   assert.match(
     body.slice(responseOkIndex, validationIndex),
-    /error: data\.error \|\| 'Unable to remove card\.',/,
-    'Expected deleteCard non-2xx responses to keep backend error copy behavior',
+    /error: getDeckCardRemovalFailureMessage\(data\),/,
+    'Expected deleteCard non-2xx responses to use safe backend error copy behavior',
   );
   assert.match(
     body.slice(validationIndex, removeCardIndex),

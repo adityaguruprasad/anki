@@ -2,7 +2,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  DEFAULT_DECK_CARD_MUTATION_FAILURE_MESSAGE,
   MALFORMED_DECK_CARD_MUTATION_PAYLOAD_ERROR,
+  getDeckCardMutationFailureMessage,
   hasDeckCardMutationPayload,
   parseDeckCardMutationResponsePayload,
 } = require('../deckCardMutationResponse');
@@ -70,6 +72,20 @@ function createPayloadWithPrototypeField(fieldName, overrides = {}) {
   };
 }
 
+function defineThrowingGetter(record, fieldName) {
+  let getterCalls = 0;
+
+  Object.defineProperty(record, fieldName, {
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      throw new Error(`${fieldName} getter should not run`);
+    },
+  });
+
+  return () => getterCalls;
+}
+
 test('parseDeckCardMutationResponsePayload preserves valid cards and extra fields', () => {
   const payload = {
     id: '0007',
@@ -87,6 +103,72 @@ test('parseDeckCardMutationResponsePayload preserves valid cards and extra field
 
   assert.equal(parsed, payload);
   assert.deepEqual(parsed, payload);
+});
+
+test('getDeckCardMutationFailureMessage returns trimmed own string server errors', () => {
+  assert.equal(
+    getDeckCardMutationFailureMessage({ error: '  Card was stale  ' }),
+    'Card was stale',
+  );
+
+  const nullPrototypePayload = Object.create(null);
+  nullPrototypePayload.error = '  Card was deleted  ';
+
+  assert.equal(
+    getDeckCardMutationFailureMessage(nullPrototypePayload),
+    'Card was deleted',
+  );
+});
+
+test('getDeckCardMutationFailureMessage ignores inherited server errors without invoking getters', () => {
+  assert.equal(
+    getDeckCardMutationFailureMessage(Object.create({ error: 'Inherited error' })),
+    DEFAULT_DECK_CARD_MUTATION_FAILURE_MESSAGE,
+  );
+
+  const prototype = {};
+  const getGetterCalls = defineThrowingGetter(prototype, 'error');
+
+  assert.equal(
+    getDeckCardMutationFailureMessage(Object.create(prototype)),
+    DEFAULT_DECK_CARD_MUTATION_FAILURE_MESSAGE,
+  );
+  assert.equal(getGetterCalls(), 0);
+});
+
+test('getDeckCardMutationFailureMessage ignores own accessor server errors without invoking getters', () => {
+  const payload = {};
+  const getGetterCalls = defineThrowingGetter(payload, 'error');
+
+  assert.equal(
+    getDeckCardMutationFailureMessage(payload),
+    DEFAULT_DECK_CARD_MUTATION_FAILURE_MESSAGE,
+  );
+  assert.equal(getGetterCalls(), 0);
+});
+
+test('getDeckCardMutationFailureMessage falls back for blank, missing, and non-string errors', () => {
+  [
+    undefined,
+    null,
+    {},
+    { error: '' },
+    { error: '   ' },
+    { error: 404 },
+    { error: { message: 'Card was stale' } },
+  ].forEach((payload) => {
+    assert.equal(
+      getDeckCardMutationFailureMessage(payload),
+      DEFAULT_DECK_CARD_MUTATION_FAILURE_MESSAGE,
+    );
+  });
+});
+
+test('getDeckCardMutationFailureMessage uses a custom fallback for unusable server errors', () => {
+  assert.equal(
+    getDeckCardMutationFailureMessage({ error: '   ' }, 'Could not save card changes.'),
+    'Could not save card changes.',
+  );
 });
 
 test('parseDeckCardMutationResponsePayload accepts numeric ids and non-blank string content', () => {

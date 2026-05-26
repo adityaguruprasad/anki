@@ -64,8 +64,14 @@ const {
   mergeUniqueCards,
 } = deckCardState;
 const { parseDeckCardBrowseResponsePayload } = deckCardBrowseResponse;
-const { parseDeckCardMutationResponsePayload } = deckCardMutationResponse;
-const { parseDeckCardRemovalSuccessPayload } = deckCardRemovalResponse;
+const {
+  getDeckCardMutationFailureMessage,
+  parseDeckCardMutationResponsePayload,
+} = deckCardMutationResponse;
+const {
+  getDeckCardRemovalFailureMessage,
+  parseDeckCardRemovalSuccessPayload,
+} = deckCardRemovalResponse;
 const {
   beginDeckCardBrowserReplaceRequest,
   canStartDeckCardBrowserAppendRequest,
@@ -1173,7 +1179,7 @@ const DeckManagement = ({ env, onAuthExpired }) => {
       if (!response.ok) {
         setCardActionState(card.id, {
           saving: false,
-          error: data.error || 'Unable to save card.',
+          error: getDeckCardMutationFailureMessage(data),
           success: '',
         });
         return;
@@ -1277,7 +1283,7 @@ const DeckManagement = ({ env, onAuthExpired }) => {
       if (!response.ok) {
         setCardActionState(cardId, {
           deleting: false,
-          error: data.error || 'Unable to remove card.',
+          error: getDeckCardRemovalFailureMessage(data),
           success: '',
         });
         return;

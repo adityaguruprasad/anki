@@ -1,5 +1,6 @@
 const { isValidCardContent } = require('./cardContentValidation');
 const MALFORMED_DECK_CARD_MUTATION_PAYLOAD_ERROR = 'Malformed deck-card mutation payload';
+const DEFAULT_DECK_CARD_MUTATION_FAILURE_MESSAGE = 'Unable to save card.';
 const { MAX_INTERVAL_DAYS, MIN_EASE_FACTOR } = require('./spacedRepetition');
 const {
   hasRouteSafeCardId,
@@ -93,8 +94,26 @@ function parseDeckCardMutationResponsePayload(payload, options = {}) {
   return payload;
 }
 
+function getDeckCardMutationFailureMessage(
+  payload,
+  fallbackMessage = DEFAULT_DECK_CARD_MUTATION_FAILURE_MESSAGE,
+) {
+  const serverError = getOwnDataPropertyValue(payload, 'error');
+
+  if (typeof serverError === 'string') {
+    const error = serverError.trim();
+    if (error) {
+      return error;
+    }
+  }
+
+  return fallbackMessage;
+}
+
 module.exports = {
+  DEFAULT_DECK_CARD_MUTATION_FAILURE_MESSAGE,
   MALFORMED_DECK_CARD_MUTATION_PAYLOAD_ERROR,
+  getDeckCardMutationFailureMessage,
   hasDeckCardMutationPayload,
   parseDeckCardMutationResponsePayload,
 };

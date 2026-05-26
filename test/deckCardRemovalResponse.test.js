@@ -2,7 +2,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  DEFAULT_DECK_CARD_REMOVAL_FAILURE_MESSAGE,
   MALFORMED_DECK_CARD_REMOVAL_PAYLOAD_ERROR,
+  getDeckCardRemovalFailureMessage,
   hasDeckCardRemovalSuccessPayload,
   parseDeckCardRemovalSuccessPayload,
 } = require('../deckCardRemovalResponse');
@@ -57,6 +59,72 @@ test('parseDeckCardRemovalSuccessPayload preserves valid success payloads and ex
   assert.equal(parsed, payload);
   assert.deepEqual(parsed, payload);
   assert.equal(hasDeckCardRemovalSuccessPayload(payload), true);
+});
+
+test('getDeckCardRemovalFailureMessage returns trimmed own string server errors', () => {
+  assert.equal(
+    getDeckCardRemovalFailureMessage({ error: '  Card already removed  ' }),
+    'Card already removed',
+  );
+
+  const nullPrototypePayload = Object.create(null);
+  nullPrototypePayload.error = '  Card belongs to another deck  ';
+
+  assert.equal(
+    getDeckCardRemovalFailureMessage(nullPrototypePayload),
+    'Card belongs to another deck',
+  );
+});
+
+test('getDeckCardRemovalFailureMessage ignores inherited server errors without invoking getters', () => {
+  assert.equal(
+    getDeckCardRemovalFailureMessage(Object.create({ error: 'Inherited error' })),
+    DEFAULT_DECK_CARD_REMOVAL_FAILURE_MESSAGE,
+  );
+
+  const prototype = {};
+  const getGetterCalls = defineThrowingGetter(prototype, 'error');
+
+  assert.equal(
+    getDeckCardRemovalFailureMessage(Object.create(prototype)),
+    DEFAULT_DECK_CARD_REMOVAL_FAILURE_MESSAGE,
+  );
+  assert.equal(getGetterCalls(), 0);
+});
+
+test('getDeckCardRemovalFailureMessage ignores own accessor server errors without invoking getters', () => {
+  const payload = {};
+  const getGetterCalls = defineThrowingGetter(payload, 'error');
+
+  assert.equal(
+    getDeckCardRemovalFailureMessage(payload),
+    DEFAULT_DECK_CARD_REMOVAL_FAILURE_MESSAGE,
+  );
+  assert.equal(getGetterCalls(), 0);
+});
+
+test('getDeckCardRemovalFailureMessage falls back for blank, missing, and non-string errors', () => {
+  [
+    undefined,
+    null,
+    {},
+    { error: '' },
+    { error: '   ' },
+    { error: 404 },
+    { error: { message: 'Card already removed' } },
+  ].forEach((payload) => {
+    assert.equal(
+      getDeckCardRemovalFailureMessage(payload),
+      DEFAULT_DECK_CARD_REMOVAL_FAILURE_MESSAGE,
+    );
+  });
+});
+
+test('getDeckCardRemovalFailureMessage uses a custom fallback for unusable server errors', () => {
+  assert.equal(
+    getDeckCardRemovalFailureMessage({ error: '   ' }, 'Could not remove card.'),
+    'Could not remove card.',
+  );
 });
 
 test('parseDeckCardRemovalSuccessPayload accepts null, past, and future next_review metadata', () => {
