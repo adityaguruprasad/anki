@@ -8,6 +8,7 @@ const { MAX_POSTGRES_SERIAL_ID } = require('./cardIdentifier');
 const {
   getOwnArrayDataPropertyValue,
   getOwnDataPropertyValue,
+  hasOwnDataPropertyValue,
 } = require('./recordDataProperty');
 
 const STUDY_SESSION_REQUESTS = {
@@ -111,8 +112,11 @@ function getValidatedStudySessionDeckListRequest(search, decks) {
 }
 
 function shouldShowNoDueNoticeForInitialStudySessionRequest(request) {
-  return request?.type === STUDY_SESSION_REQUESTS.LOAD_CARDS
-    && (request.source === 'explicit' || request.source === 'selected');
+  return hasOwnDataPropertyValue(request, 'type', STUDY_SESSION_REQUESTS.LOAD_CARDS)
+    && (
+      hasOwnDataPropertyValue(request, 'source', 'explicit')
+      || hasOwnDataPropertyValue(request, 'source', 'selected')
+    );
 }
 
 module.exports = {

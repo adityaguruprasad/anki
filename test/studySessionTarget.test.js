@@ -226,6 +226,18 @@ test('getValidatedStudySessionDeckListRequest normalizes automatically selected 
 });
 
 test('shouldShowNoDueNoticeForInitialStudySessionRequest covers initial deck loads only', () => {
+  const nullPrototypeRequest = Object.create(null);
+  Object.defineProperties(nullPrototypeRequest, {
+    type: {
+      value: STUDY_SESSION_REQUESTS.LOAD_CARDS,
+      enumerable: true,
+    },
+    source: {
+      value: 'selected',
+      enumerable: true,
+    },
+  });
+
   assert.equal(
     shouldShowNoDueNoticeForInitialStudySessionRequest({
       type: STUDY_SESSION_REQUESTS.LOAD_CARDS,
@@ -240,6 +252,10 @@ test('shouldShowNoDueNoticeForInitialStudySessionRequest covers initial deck loa
       deckId: 2,
       source: 'selected',
     }),
+    true,
+  );
+  assert.equal(
+    shouldShowNoDueNoticeForInitialStudySessionRequest(nullPrototypeRequest),
     true,
   );
   assert.equal(
@@ -263,4 +279,72 @@ test('shouldShowNoDueNoticeForInitialStudySessionRequest covers initial deck loa
     false,
   );
   assert.equal(shouldShowNoDueNoticeForInitialStudySessionRequest(null), false);
+});
+
+test('shouldShowNoDueNoticeForInitialStudySessionRequest ignores inherited request state without invoking getters', () => {
+  const inheritedDataRequest = Object.create({
+    type: STUDY_SESSION_REQUESTS.LOAD_CARDS,
+    source: 'selected',
+  });
+
+  assert.equal(
+    shouldShowNoDueNoticeForInitialStudySessionRequest(inheritedDataRequest),
+    false,
+  );
+
+  let typeGetterCalls = 0;
+  let sourceGetterCalls = 0;
+  const accessorPrototype = {};
+  Object.defineProperty(accessorPrototype, 'type', {
+    configurable: true,
+    get() {
+      typeGetterCalls += 1;
+      throw new Error('inherited type getter should not run');
+    },
+  });
+  Object.defineProperty(accessorPrototype, 'source', {
+    configurable: true,
+    get() {
+      sourceGetterCalls += 1;
+      throw new Error('inherited source getter should not run');
+    },
+  });
+
+  const inheritedRequest = Object.create(accessorPrototype);
+  assert.equal(
+    shouldShowNoDueNoticeForInitialStudySessionRequest(inheritedRequest),
+    false,
+  );
+  assert.equal(typeGetterCalls, 0);
+  assert.equal(sourceGetterCalls, 0);
+});
+
+test('shouldShowNoDueNoticeForInitialStudySessionRequest rejects accessor-backed request state without invoking getters', () => {
+  let typeGetterCalls = 0;
+  let sourceGetterCalls = 0;
+  const request = {};
+
+  Object.defineProperty(request, 'type', {
+    configurable: true,
+    enumerable: true,
+    get() {
+      typeGetterCalls += 1;
+      throw new Error('type getter should not run');
+    },
+  });
+  Object.defineProperty(request, 'source', {
+    configurable: true,
+    enumerable: true,
+    get() {
+      sourceGetterCalls += 1;
+      throw new Error('source getter should not run');
+    },
+  });
+
+  assert.equal(
+    shouldShowNoDueNoticeForInitialStudySessionRequest(request),
+    false,
+  );
+  assert.equal(typeGetterCalls, 0);
+  assert.equal(sourceGetterCalls, 0);
 });
